@@ -96,6 +96,7 @@ export const WEAPONS = {
   shotgun: { name: 'Shotgun', dmg: 14, pellets: 8, rpm: 70, mag: 7, reload: 3.0, recoil: 2.6, spread: .07, ads: .05, range: 30, auto: false, fov: 60, snd: [1200, 80, .9] },
   dmr:     { name: 'DMR', dmg: 62, rpm: 200, mag: 10, reload: 2.6, recoil: 2, spread: .01, ads: .0004, range: 220, auto: false, fov: 30, snd: [1900, 110, .8] },
   lmg:     { name: 'LMG', dmg: 24, rpm: 700, mag: 100, reload: 4.5, recoil: 1.1, spread: .03, ads: .012, range: 130, auto: true, fov: 55, snd: [2100, 120, .65] },
+  rpg:     { name: 'Rocket Launcher', dmg: 0, rpm: 55, mag: 1, reload: 2.6, recoil: 3.2, spread: .004, ads: .001, range: 200, auto: false, fov: 55, snd: [700, 55, 1], rocket: true },
   pistol:  { name: 'Pistol', dmg: 30, rpm: 300, mag: 15, reload: 1.5, recoil: 1.2, spread: .015, ads: .006, range: 50, auto: false, fov: 62, snd: [3000, 200, .45] },
 };
 export function makeGun(kind) {
@@ -138,6 +139,11 @@ export function makeGun(kind) {
     M(box(.03, .09, .04), poly, 0, -.08, .1, g, -.35); M(box(.045, .08, .2), poly, 0, -.02, .24, g); M(box(.05, .045, .14), poly, 0, -.035, -.23, g); // grip, stock, forend
     for (const s of [-1, 1]) M(cyl(.006, .006, .2, 6), stl, s * .03, -.07, -.48, g, .25, 0, s * .25); rail(0, .045, .05, .1); // bipod
     muzzleAt.set(0, .005, -.63); fore = -.23; sightY = .065;
+  } else if (kind === 'rpg') { // shoulder-fired launcher
+    const olive = mat(0x4d5a3a, { r: .8 }); M(cyl(.045, .045, .9, 12), olive, 0, .02, -.1, g, Math.PI / 2); M(cyl(.055, .05, .08, 12), blk, 0, .02, -.56, g, Math.PI / 2); M(cyl(.06, .045, .1, 12), blk, 0, .02, .37, g, Math.PI / 2);
+    M(box(.028, .085, .04), poly, 0, -.06, .02, g, -.3); M(box(.028, .07, .035), poly, 0, -.05, -.2, g, .2); M(box(.03, .05, .09), blk, -.06, .06, -.12, g); // grips, sight
+    const war = M(new THREE.ConeGeometry(.05, .14, 10), mat(0x6a6250, { r: .6, m: .3 }), 0, .02, -.67, g, -Math.PI / 2); g.userData.war = war;
+    muzzleAt.set(0, .02, -.62); fore = -.2; sightY = .085;
   } else { // pistol
     M(box(.032, .035, .19), stl, 0, .02, -.04, g); M(box(.03, .03, .16), poly, 0, -.01, -.04, g); g.userData.magM = M(box(.03, .1, .045), poly, 0, -.06, .03, g, -.25); // slide, frame, grip
     M(box(.008, .006, .006), stl, 0, .04, -.13, g); M(box(.016, .006, .006), stl, 0, .04, .045, g); M(cyl(.006, .006, .02, 8), stl, 0, .02, -.14, g, Math.PI / 2);

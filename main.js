@@ -113,7 +113,7 @@ function explode(c, r, dmg, team) { for (let x = -r; x <= r; x++) for (let y = -
   fx.explosion(c, r); sfx.at(c, () => sfx.boom(1), .8);
   for (let k = 0; k < 6; k++) { const d = new THREE.Vector3(Math.random() - .5, -Math.random() * .8, Math.random() - .5).normalize(); const h = rayVox(c, d, r + 2); if (h) { const n = new THREE.Vector3(h.px - h.x, h.py - h.y, h.pz - h.z); if (n.lengthSq() == 1) fx.decal('scorch', c.clone().addScaledVector(d, h.dist), n, r * 1.3, h.y > 0 ? h.x + ',' + h.y + ',' + h.z : null); } } if (c.distanceTo(P.pos) < 14) shake = Math.max(shake, .5 * (1 - c.distanceTo(P.pos) / 14)); }
 let shake = 0, hurtFlash = 0;
-function hurt(u, d) { if (u === P) { if (G.mode === 'zombies') zombies.state.lastHurt = G.t; if (P.dead > 0) return; P.hp -= d; hurtFlash = Math.min(1, hurtFlash + d / 30); sfx.hurt(); if (P.hp <= 0) { if (G.mode === 'zombies') zombies.over(); else { P.dead = 5; msg('You were knocked out – respawning in 5s', 3); } } } else { u.hp -= d; if (u.hp <= 0) u.deadT = 1.4; } }
+function hurt(u, d) { if (u === P) { if (G.mode === 'zombies') zombies.state.lastHurt = G.t; if (P.dead > 0 || P.downed) return; P.hp -= d; hurtFlash = Math.min(1, hurtFlash + d / 30); sfx.hurt(); if (P.hp <= 0) { if (G.mode === 'zombies') zombies.onZeroHP(); else { P.dead = 5; msg('You were knocked out – respawning in 5s', 3); } } } else { u.hp -= d; if (u.hp <= 0) u.deadT = 1.4; } }
 let msgT = 0; function msg(s, t = 2) { $('msg').textContent = s; msgT = t; }
 // ---------------- Units (original troops) ----------------
 const UDEF = { skirm: { n: 'Rifleman', hp: 200, spd: 3.3, dmg: 7, rate: .55, range: 20, wall: 75, col: 0xff8a30, s: 1 },
@@ -208,43 +208,47 @@ const keys = {}; addEventListener('keydown', e => { keys[e.code] = true; if (!(e
 const locked = () => document.pointerLockElement === renderer.domElement;
 document.addEventListener('mousemove', e => { if (!locked()) return; look(e.movementX * .0022, e.movementY * .0022); });
 function look(dx, dy) { P.swX = (P.swX || 0) + dx; P.swY = (P.swY || 0) + dy; P.yaw -= dx; P.pitch = Math.max(-1.55, Math.min(1.55, P.pitch - dy)); }
-let mouseL = false; renderer.domElement.addEventListener('mousedown', e => { sfx.init(); if (IS_TOUCH) return; if (!locked()) { renderer.domElement.requestPointerLock(); return; } if (e.button == 0) mouseL = true; if (e.button == 2) { if (G.phase == 'build') place(); else P.adsHeld = true; } });
+let mouseL = false; renderer.domElement.addEventListener('mousedown', e => { sfx.init(); if (IS_TOUCH) return; if (!locked()) { renderer.domElement.requestPointerLock(); return; } if (e.button == 0) mouseL = true; if (e.button == 2) { if (building()) place(); else P.adsHeld = true; } });
 addEventListener('mouseup', e => { if (e.button == 0) mouseL = false; if (e.button == 2) P.adsHeld = false; }); addEventListener('contextmenu', e => e.preventDefault());
-const pieces = () => G.mode == 'attack' ? PIECES_ATT : PIECES_DEF;
+const pieces = () => G.mode == 'attack' || G.mode == 'zombies' ? PIECES_ATT : PIECES_DEF;
+const building = () => G.phase == 'build' || G.phase == 'zbuild';
 const act = { piece() { P.piece = (P.piece + 1) % pieces().length; sfx.ui(); hotbar(); }, mat() { P.mat = (P.mat + 1) % 3; sfx.ui(); hotbar(); },
-  reload() { if (P.ammo < P.mag && P.reload <= 0 && (G.mode !== 'zombies' || P.reserve[P.slots[P.w]] > 0)) { P.reload = WP().reload * (G.mode === 'zombies' && zombies.state.perks.reload ? .6 : 1); P.reloadMax = P.reload; sfx.reload(); } }, swap() { equip(1 - P.w); }, ads() { input.ads = !input.ads; }, skip() { if (G.phase == 'build') G.timer = 0; else if (G.phase == 'raid' && Q.get('dev')) G.timer = 0; }, build: () => G.mode === 'zombies' ? zombies.buy() : place() };
-function onKey(c) { if (G.phase == 'menu' || G.over) return; if (c == 'KeyE' && G.mode === 'zombies') zombies.buy(); if (c == 'KeyQ') act.piece(); if (c == 'KeyZ') act.mat(); if (c == 'KeyR') act.reload(); if (c == 'KeyG') act.skip(); if (c == 'Digit1') equip(0); if (c == 'Digit2') equip(1); }
+  reload() { if (P.ammo < P.mag && P.reload <= 0 && (G.mode !== 'zombies' || P.reserve[P.slots[P.w]] > 0)) { P.reload = WP().reload * (G.mode === 'zombies' && zombies.state.perks.reload ? .6 : 1); P.reloadMax = P.reload; sfx.reload(); } }, swap() { equip(1 - P.w); }, ads() { input.ads = !input.ads; }, skip() { if (G.mode === 'zombies') { zombies.skip(); return; } if (G.phase == 'build') G.timer = 0; else if (G.phase == 'raid' && Q.get('dev')) G.timer = 0; }, build: () => G.mode === 'zombies' ? (G.phase == 'zbuild' && !nearZStation() ? place() : zombies.use()) : place() };
+const nearZStation = () => zombies.state.stations.some(s => !s.used && Math.hypot(P.pos.x - s.x, P.pos.z - s.z) < 3.4) || (zombies.state.remote && zombies.state.remote.down && zombies.state.remote.pos.distanceTo(P.pos) < 2.4);
+function onKey(c) { if (G.phase == 'menu' || G.over) return; if (c == 'KeyE' && G.mode === 'zombies') zombies.use(); if (c == 'KeyQ') { if (building()) act.piece(); else act.swap(); } if (c == 'KeyZ') act.mat(); if (c == 'KeyR') act.reload(); if (c == 'KeyG') act.skip(); if (c == 'Digit1') equip(0); if (c == 'Digit2') equip(1); }
 addEventListener('wheel', e => { if (G.phase != 'menu' && !G.over) equip(1 - P.w); }, { passive: true });
 const input = { mx: 0, mz: 0, fire: false, jump: false, ads: false };
 if (IS_TOUCH) initTouch(input, look, act, () => sfx.init());
+const heldUse = () => !!(keys.KeyE || input.use);
 const fwd = () => new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation);
 function canPlace(x, y, z) { if (!inb(x, y, z) || get(x, y, z)) return false; const p = P.pos; if (Math.abs(x + .5 - p.x) < .9 && Math.abs(z + .5 - p.z) < .9 && y >= Math.floor(p.y) && y <= p.y + 1.8) return false;
-  if (G.mode == 'attack' && G.phase == 'build' && Math.hypot(x - CX, z - CZ) < 26) return false; return true; }
+  if (G.mode == 'attack' && G.phase == 'build' && Math.hypot(x - CX, z - CZ) < 26) return false; if (G.mode == 'zombies' && !zombies.canBuild(x, y, z)) return false; return true; }
 function pieceCells(h) { const name = pieces()[P.piece]; const f = fwd(); const ax = Math.abs(f.x) > Math.abs(f.z); const fx_ = ax ? Math.sign(f.x) : 0, fz = ax ? 0 : Math.sign(f.z); const rx = fz ? 1 : 0, rz = fx_ ? 1 : 0;
   const cells = [], X = h.px, Y = h.py, Z = h.pz;
   if (name == 'Wall') for (let i = -1; i <= 1; i++) for (let j = 0; j < 3; j++) cells.push([X + i * rx, Y + j, Z + i * rz]);
   if (name == 'Floor') for (let i = -1; i <= 1; i++) for (let k = 0; k < 3; k++) cells.push([X + i * rx + k * fx_, Y, Z + i * rz + k * fz]);
   if (name == 'Ramp') for (let i = -1; i <= 1; i++) for (let k = 0; k < 3; k++) cells.push([X + i * rx + k * fx_, Y + k, Z + i * rz + k * fz]);
   if (COST[name]) cells.push([X, Y, Z]); return cells; }
-function place() { if (P.dead > 0 || G.phase == 'menu' || G.over) return; const h = rayVox(camera.position, fwd(), 8); if (!h) { msg('Aim at a surface (within 8 blocks)', 1); return; }
+function place() { if (P.dead > 0 || P.downed || G.phase == 'menu' || G.over) return; if (G.mode == 'zombies' && G.phase != 'zbuild') { msg('Building is only allowed in the build phase', 1); return; } const h = rayVox(camera.position, fwd(), 8); if (!h) { msg('Aim at a surface (within 8 blocks)', 1); return; }
   const name = pieces()[P.piece];
   if (COST[name]) { if (G.gears < COST[name]) { msg('Not enough Gears', 1); return; } if (G.phase != 'build') { msg('Defenses can only be placed during prep', 1); return; }
     const x = h.px, y = h.py, z = h.pz; G.gears -= COST[name]; if (name == 'AT Mine') addTrap(x, y, z); else { placeStructure(name == 'MG Nest' ? 'turret' : 'mortar', x + 1, z + 1, y); stats.baseTotal = stats.base; stats.coreTotal = stats.core; } sfx.place(); hotbar(); return; }
-  const mt = MATS[P.mat]; const ok = pieceCells(h).filter(c => canPlace(...c)); if (!ok.length) { msg(G.mode == 'attack' && G.phase == 'build' ? 'Cannot build inside the enemy shield zone' : 'No room', 1); return; }
-  if (G.mat[mt] < ok.length) { msg('Not enough ' + INFO[mt].n, 1); return; } G.mat[mt] -= ok.length; for (const c of ok) setB(...c, mt); sfx.place(); }
-function updateGhost() { ghost.count = 0; if (G.phase != 'build' || P.dead > 0) return; const h = rayVox(camera.position, fwd(), 8); if (!h) return; const m = new THREE.Matrix4(); let n = 0, bad = 0;
+  const mt = MATS[P.mat]; const ok = pieceCells(h).filter(c => canPlace(...c)); if (!ok.length) { msg(G.mode == 'attack' && G.phase == 'build' ? 'Cannot build inside the enemy shield zone' : G.mode == 'zombies' ? 'Build inside the outpost walls' : 'No room', 1); return; }
+  if (G.mat[mt] < ok.length) { msg('Not enough ' + INFO[mt].n, 1); return; } G.mat[mt] -= ok.length; for (const c of ok) setB(...c, mt); sfx.place(); if (G.mode == 'zombies') zombies.onPlace(ok, mt); }
+function updateGhost() { ghost.count = 0; if (!building() || P.dead > 0) return; const h = rayVox(camera.position, fwd(), 8); if (!h) return; const m = new THREE.Matrix4(); let n = 0, bad = 0;
   for (const c of pieceCells(h)) { const ok = canPlace(...c); if (!ok) bad++; if (n < 9) { m.makeTranslation(c[0] + .5, c[1] + .5, c[2] + .5); ghost.setMatrixAt(n++, m); } }
   ghost.count = bad == n ? 0 : n; ghost.material.color.set(bad == n ? 0xff5050 : 0x60ff90); ghost.material.opacity = bad == n ? .12 : .3; ghost.instanceMatrix.needsUpdate = true; }
 let hitT = 0;
 const WP = () => WEAPONS[P.slots[P.w]];
 function equip(i) { if (i == P.w && vm.userData.gun) return; P.w = i; const k = P.slots[i], W_ = WEAPONS[k]; if (P.ammoOf[k] == null) P.ammoOf[k] = W_.mag; P.mag = W_.mag; P.ammo = P.ammoOf[k]; P.reload = 0; P.swap = .35; vm.userData.setGun(k); sfx.ui(); }
-function shoot() { const W_ = WP(); if (P.reload > 0 || P.cd > 0 || P.dead > 0 || P.swap > 0) return; if (P.ammo <= 0) { act.reload(); return; }
+function shoot() { const W_ = WP(); if (P.reload > 0 || P.cd > 0 || P.dead > 0 || P.downed || P.swap > 0) return; if (P.ammo <= 0) { act.reload(); return; }
   if (!W_.auto && P.trigHeld) return; P.trigHeld = true;
-  P.ammo--; P.ammoOf[P.slots[P.w]] = P.ammo; P.cd = 60 / W_.rpm; P.recoil = Math.min(1.6, P.recoil + W_.recoil * .6); P.pitch = Math.min(1.55, P.pitch + W_.recoil * .006 * (1 - P.adsT * .4)); P.yaw += (Math.random() - .5) * W_.recoil * .004; sfx.shot(W_.snd);
+  P.ammo--; P.shots = (P.shots || 0) + 1; P.ammoOf[P.slots[P.w]] = P.ammo; P.cd = 60 / W_.rpm; P.recoil = Math.min(1.6, P.recoil + W_.recoil * .6); P.pitch = Math.min(1.55, P.pitch + W_.recoil * .006 * (1 - P.adsT * .4)); P.yaw += (Math.random() - .5) * W_.recoil * .004; sfx.shot(W_.snd);
   const spread = W_.spread + (W_.ads - W_.spread) * P.adsT + (P.onGround ? 0 : .02) + Math.hypot(P.vel.x, P.vel.z) * .0015 * (1 - P.adsT);
   const o = camera.position.clone(); const mz = vm.userData.flash.getWorldPosition(new THREE.Vector3());
   vm.userData.flash.visible = true; vm.userData.flash.rotation.z = Math.random() * 6; fx.muzzle(mz, [1, .7, .35]);
   const gun = vm.userData.gun; if (gun) { const ep = gun.localToWorld(gun.userData.eject.clone()); const r = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion), u = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion); fx.shell(ep, r.multiplyScalar(2 + Math.random()).addScaledVector(u, 1.5 + Math.random()).add(P.vel)); }
+  if (W_.rocket) { const d = fwd(); launchRocket(mz.clone().addScaledVector(d, .4), d.multiplyScalar(42), true); if (G.mode === 'zombies') zombies.rocket(mz, d); return; }
   let hitAny = false, killAny = false;
   for (let pi = 0; pi < (W_.pellets || 1); pi++) { const d = fwd(); d.x += (Math.random() - .5) * spread * 2; d.y += (Math.random() - .5) * spread * 2; d.z += (Math.random() - .5) * spread * 2; d.normalize();
     const R = W_.range; const hb = rayVox(o, d, R); let best = null, bt = hb ? hb.dist : R, head = false;
@@ -255,6 +259,28 @@ function shoot() { const W_ = WP(); if (P.reload > 0 || P.cd > 0 || P.dead > 0 |
     if (best) { const dmg = Math.round(W_.dmg * (head ? 2 : 1) * fall); if (G.mode === 'zombies') zombies.damage(best, dmg, head); else best.hp -= dmg; fx.number(end, dmg, head); fx.impactMat(end, d.clone().negate(), 'flesh'); hitAny = true; if (G.mode === 'zombies' && best.hp <= 0) killAny = true; if (best.hp <= 0 && !best.deadT) { best.deadT = 1.4; killAny = true; msg(best.d.n + ' down!', .7); } }
     else if (hb && G.mode !== 'zombies') { const t = get(hb.x, hb.y, hb.z); hitFx(end, hb, d); if (!(P.team == 'def' && INFO[t] && INFO[t].base)) { const bd = Math.round(W_.dmg * 1.15); if (!G.shield || !INFO[t].base) fx.number(end, bd, false, '#ffcf8a'); damageBlock(hb.x, hb.y, hb.z, bd); } } }
   if (hitAny) { sfx.hit(killAny); hitT = .18; $('hitm').className = killAny ? 'kill' : ''; } }
+// ---------------- Rockets (secondary weapon) ----------------
+const rockets = []; const rkGeo = new THREE.ConeGeometry(.07, .35, 8); rkGeo.rotateX(-Math.PI / 2); const rkMat = new THREE.MeshStandardMaterial({ color: 0x6a6250, emissive: 0xff7a2a, emissiveIntensity: .4 });
+function launchRocket(pos, vel, mine) { const m = new THREE.Mesh(rkGeo, rkMat); m.position.copy(pos); m.lookAt(pos.clone().add(vel)); scene.add(m); rockets.push({ m, pos: pos.clone(), vel: vel.clone(), life: 4, mine, puff: 0 }); sfx.at(pos, () => sfx.boom(.25), .4); }
+function updateRockets(dt) {
+  for (let i = rockets.length - 1; i >= 0; i--) { const r = rockets[i]; const step = r.vel.clone().multiplyScalar(dt), L = step.length(); r.life -= dt;
+    const h = rayVox(r.pos, step.clone().normalize(), L + .1); let hitU = null;
+    for (const u of G.units) { if (u.hp <= 0 || u.team == P.team) continue; const c = u.pos.clone(); c.y += 1 * (u.d.s || 1); if (c.distanceTo(r.pos) < .9 * (u.d.s || 1)) { hitU = u; break; } }
+    if (h || hitU || r.life <= 0) { const at = h ? r.pos.clone().addScaledVector(step.normalize(), Math.max(0, h.dist - .15)) : r.pos.clone(); scene.remove(r.m); rockets.splice(i, 1); rocketBoom(at, r.mine); continue; }
+    r.pos.add(step); r.m.position.copy(r.pos); r.puff -= dt; if (r.puff <= 0) { r.puff = .03; fx.smokePuff(r.pos.x, r.pos.y - 1.1, r.pos.z, false); } }
+}
+// Splash: big damage + knockback to enemies, light self-damage; visual-only for a co-op teammate's rocket (host applies its hits).
+function rocketBoom(c, mine) { const R = 4.5;
+  fx.explosion(c, 3); sfx.at(c, () => sfx.boom(1), .8); if (c.distanceTo(P.pos) < 16) shake = Math.max(shake, .7 * (1 - c.distanceTo(P.pos) / 16));
+  if (!mine) return; let hitAny = false, killAny = false;
+  for (const u of G.units) { if (u.hp <= 0 || u.team == P.team) continue; const dd = u.pos.distanceTo(c); if (dd > R) continue; const dmg = Math.round(320 * (1 - dd / (R + 1)));
+    const push = u.pos.clone().sub(c).setY(0); if (push.lengthSq() < .01) push.set(Math.random() - .5, 0, Math.random() - .5); push.normalize().multiplyScalar(1.6 * (1 - dd / R));
+    const nx = u.pos.x + push.x, nz = u.pos.z + push.z; if (!solid(nx, u.pos.y + .1, nz) && !solid(nx, u.pos.y + 1.1, nz)) { u.pos.x = nx; u.pos.z = nz; }
+    u.flinch = .5; if (u.m && u.m.userData.body) u.m.userData.body.rotation.x = -.9;
+    if (G.mode === 'zombies') zombies.damage(u, dmg, false); else hurt(u, dmg); hitAny = true; if (u.hp <= 0) killAny = true; fx.number(u.pos.clone().setY(u.pos.y + 1.8), dmg, false); }
+  const sd = c.distanceTo(P.pos.clone().setY(P.pos.y + .8)); if (sd < R - .5) { hurt(P, Math.round(22 * (1 - sd / R))); P.vel.y = Math.max(P.vel.y, 5 * (1 - sd / R)); }
+  if (G.mode !== 'zombies') for (let x = -2; x <= 2; x++) for (let y = -2; y <= 2; y++) for (let z = -2; z <= 2; z++) if (x * x + y * y + z * z <= 4) { const bx = Math.floor(c.x) + x, by = Math.floor(c.y) + y, bz = Math.floor(c.z) + z, t = get(bx, by, bz); if (t && !(P.team == 'def' && INFO[t] && INFO[t].base)) damageBlock(bx, by, bz, 120, true); }
+  if (hitAny) { sfx.hit(killAny); hitT = .18; $('hitm').className = killAny ? 'kill' : ''; } }
 function hitFx(p, hb, d) { const t = get(hb.x, hb.y, hb.z); const n = new THREE.Vector3(hb.px - hb.x, hb.py - hb.y, hb.pz - hb.z); if (n.lengthSq() != 1) n.copy(d).negate();
   const m = INFO[t] ? INFO[t].m : 'grass'; fx.impactMat(p, n, m); if (hb.y > 0 || m == 'grass') fx.decal('hole', p, n, m == 'grass' ? .12 : .07 + Math.random() * .04, hb.y > 0 ? hb.x + ',' + hb.y + ',' + hb.z : null); }
 function collides(p) { for (let x = Math.floor(p.x - .3); x <= Math.floor(p.x + .3); x++) for (let z = Math.floor(p.z - .3); z <= Math.floor(p.z + .3); z++) for (let y = Math.floor(p.y); y <= Math.floor(p.y + 1.75); y++) if (get(x, y, z)) return true; return false; }
@@ -262,11 +288,11 @@ function updatePlayer(dt) { if (P.dead > 0) { P.dead -= dt; if (P.dead <= 0) { P
   const sp = (keys.ShiftLeft ? 7.5 : 5); const f = new THREE.Vector3(-Math.sin(P.yaw), 0, -Math.cos(P.yaw)), r = new THREE.Vector3(-f.z, 0, f.x); const m = new THREE.Vector3();
   if (keys.KeyW) m.add(f); if (keys.KeyS) m.sub(f); if (keys.KeyD) m.add(r); if (keys.KeyA) m.sub(r); if (m.lengthSq()) m.normalize().multiplyScalar(sp);
   if (input.mx || input.mz) { const mag = Math.min(1, Math.hypot(input.mx, input.mz)); m.copy(f).multiplyScalar(-input.mz).addScaledVector(r, input.mx).normalize().multiplyScalar((mag > .9 ? 7 : 5) * mag); }
-  P.vel.x = m.x; P.vel.z = m.z; P.vel.y -= 22 * dt; if ((keys.Space || input.jump) && P.onGround) { P.vel.y = 8; P.onGround = false; }
+  if (P.downed) m.multiplyScalar(.18); P.vel.x = m.x; P.vel.z = m.z; P.vel.y -= 22 * dt; if ((keys.Space || input.jump) && P.onGround && !P.downed) { P.vel.y = 8; P.onGround = false; }
   for (const ax of ['x', 'z', 'y']) { const old = P.pos[ax]; P.pos[ax] += P.vel[ax] * dt; if (collides(P.pos)) { if (ax != 'y' && P.onGround) { const up = P.pos.clone(); up.y = Math.floor(P.pos.y) + 1.01; if (!collides(up)) { P.pos.copy(up); continue; } } P.pos[ax] = old; if (ax == 'y') { if (P.vel.y < 0) P.onGround = true; P.vel.y = 0; } } else if (ax == 'y') P.onGround = false; }
   if (P.pos.y < -10) P.pos.copy(P.spawn);
   P.cd -= dt; P.swap = Math.max(0, P.swap - dt); if (P.reload > 0) { P.reload -= dt; if (P.reload <= 0) { const k = P.slots[P.w], n = G.mode === 'zombies' ? Math.min(P.mag - P.ammo, P.reserve[k] || 0) : P.mag - P.ammo; P.ammo += n; if (G.mode === 'zombies') P.reserve[k] -= n; P.ammoOf[k] = P.ammo; } } if (mouseL || input.fire) shoot(); else P.trigHeld = false;
-  const wantAds = (P.adsHeld || input.ads) && G.phase != 'build' && P.reload <= 0 && P.dead <= 0; P.adsT += ((wantAds ? 1 : 0) - P.adsT) * Math.min(1, dt * 12);
+  const wantAds = (P.adsHeld || input.ads) && !building() && P.reload <= 0 && P.dead <= 0; P.adsT += ((wantAds ? 1 : 0) - P.adsT) * Math.min(1, dt * 12);
   const fv = 75 + (WP().fov - 75) * P.adsT; if (Math.abs(camera.fov - fv) > .05) { camera.fov = fv; camera.updateProjectionMatrix(); }
   const ob = P.bob; P.bob += dt * Math.hypot(P.vel.x, P.vel.z) * 1.6; if (P.onGround && Math.floor(ob / Math.PI) != Math.floor(P.bob / Math.PI)) { const t = get(Math.floor(P.pos.x), Math.floor(P.pos.y - .1), Math.floor(P.pos.z)); sfx.step(t > 1); } P.recoil = Math.max(0, P.recoil - dt * 6); }
 function updateViewmodel(dt) { const b = Math.sin(P.bob), b2 = Math.abs(Math.cos(P.bob)); const rm = P.reloadMax || 1.6; const rl = P.reload > 0 ? Math.sin(Math.min(1, (rm - P.reload) / rm) * Math.PI) : 0; const a = P.adsT, h = 1 - a;
@@ -281,8 +307,8 @@ function updateViewmodel(dt) { const b = Math.sin(P.bob), b2 = Math.abs(Math.cos
 // ---------------- Match flow ----------------
 function applyAtmos() { const L = Q.get('light') || $('lightsel').value, rain = (Q.get('rain') || ($('rainchk').checked ? '1' : '')) == '1' && (QNAME == 'high' || QNAME == 'ultra' || Q.get('rain') == '1');
   GX.setLighting(L, rain); fx.setRain(rain); sfx.rainLoop(rain); GX.setLens(Q.has('lens') ? Q.get('lens') == '1' : $('lenschk').checked); }
-const zombies = createZombies({ G, P, scene, GX, sfx, fx, setB, get, solid, buildChunk, dirty, astar, rebuildGrid, costD, hurt, msg, equip, PBRS, mobile: IS_TOUCH });
-function start(mode) { sfx.init(); if (mode === 'zombies') { G.mode = mode; $('menu').style.display = 'none'; $('hud').style.display = ''; zombies.init(); return; } P.slots = [Q.get('gun') || $('primary').value || 'carbine', 'pistol']; P.ammoOf = {}; P.w = -1; equip(0); G.mode = mode; G.layout = +$('layout').value; G.buildT = Math.max(0, +$('buildT').value || 300); $('menu').style.display = 'none'; $('hud').style.display = '';
+const zombies = createZombies({ G, P, scene, GX, sfx, fx, setB, get, solid, buildChunk, dirty, astar, rebuildGrid, costD, hurt, msg, equip, PBRS, mobile: IS_TOUCH, damageBlock, held: heldUse, hotbar, launchRocket });
+function start(mode, opts) { sfx.init(); if (mode === 'zombies') { G.mode = mode; $('menu').style.display = 'none'; $('hud').style.display = ''; zombies.init(opts); return; } P.slots = [Q.get('gun') || $('primary').value || 'carbine', 'rpg']; P.ammoOf = {}; P.w = -1; equip(0); G.mode = mode; G.layout = +$('layout').value; G.buildT = Math.max(0, +$('buildT').value || 300); $('menu').style.display = 'none'; $('hud').style.display = '';
   P.team = mode == 'attack' ? 'att' : 'def'; const L = LAYOUTS[G.layout]; buildWorld(L); G.shield = true;
   if (mode == 'attack') { P.spawn.set(CX + .5, 1, 3); P.yaw = Math.PI; G.mat = { 2: 300, 3: 200, 4: 80 };
     const roster = ['skirm', 'breaker', 'skirm', 'bulwark', 'skirm', 'breaker', 'skirm', 'skirm', 'breaker', 'bulwark', 'skirm', 'breaker'];
@@ -301,15 +327,15 @@ function end(why) { G.over = true; G.phase = 'over'; document.exitPointerLock &&
   $('endT').textContent = win ? 'VICTORY' : 'DEFEAT'; $('endS').textContent = `${why}\nDestruction: ${pct()}%   CP: ${coreDown() ? 'TOPPLED' : 'standing'}\nAttacker Crests: ${'★'.repeat(s)}${'☆'.repeat(3 - s)}`; }
 function update(dt) { if (G.phase == 'menu' || G.over) return; G.t += dt; G.timer -= dt;
   if (G.phase == 'build' && G.timer <= 0) startRaid();
-  if (G.mode === 'zombies') { updatePlayer(dt); zombies.tick(dt); if (msgT > 0) { msgT -= dt; if (msgT <= 0) $('msg').textContent = ''; } return; }
-  updatePlayer(dt); G.units = G.units.filter(u => updateUnit(u, dt)); updateStructures(dt); updateTraps();
+  if (G.mode === 'zombies') { updatePlayer(dt); updateRockets(dt); zombies.tick(dt); if (msgT > 0) { msgT -= dt; if (msgT <= 0) $('msg').textContent = ''; } return; }
+  updatePlayer(dt); updateRockets(dt); G.units = G.units.filter(u => updateUnit(u, dt)); updateStructures(dt); updateTraps();
   if (G.phase == 'raid') { const atts = G.units.filter(u => u.team == 'att' && u.hp > 0);
     if (G.mode == 'attack') { if (pct() >= 99) end('Base fully demolished!'); else if (G.timer <= 0) end('Raid timer expired'); }
     else { if (coreDown()) end('The Command Post fell'); else if (!atts.length) { if (G.wave >= 3) end('All waves repelled!'); else nextWave(); } else if (G.timer <= 0) { if (G.wave >= 3) end('Survived the siege'); else nextWave(); } } }
   for (const t of G.traps) if (t.armed) t.m.rotation.y += dt * .5;
   if (msgT > 0) { msgT -= dt; if (msgT <= 0) $('msg').textContent = ''; } }
 function syncCamera(dt) { shake = Math.max(0, shake - dt * 1.5); const sx = (Math.random() - .5) * shake * .15;
-  camera.position.set(P.pos.x, P.pos.y + 1.6 + (P.onGround ? Math.abs(Math.cos(P.bob)) * .04 : 0), P.pos.z); camera.rotation.set(P.pitch + P.recoil * .015 + sx, P.yaw + sx, 0); }
+  camera.position.set(P.pos.x, P.pos.y + (P.downed ? .55 : 1.6) + (P.onGround ? Math.abs(Math.cos(P.bob)) * .04 : 0), P.pos.z); camera.rotation.set(P.pitch + P.recoil * .015 + sx, P.yaw + sx, 0); }
 // ---------------- HUD ----------------
 let hudT = 0;
 function hotbar() { const ps = pieces(); $('hotbar').innerHTML = ps.map((p, i) => `<div class="slot ${i == P.piece ? 'on' : ''}">${p}${COST[p] ? `<br><small>${COST[p]}⚙</small>` : ''}</div>`).join('') + `<div class="slot on" style="border-color:#7ad0ff;color:#7ad0ff">${INFO[MATS[P.mat]].n}<br><small>${G.mat[MATS[P.mat]]}</small></div>`; }
@@ -346,6 +372,10 @@ if (isIOS && !standalone && !document.documentElement.requestFullscreen && !loca
 $('ioshintx').onclick = () => { localStorage.setItem('vr_ioshint', '1'); $('ioshint').classList.remove('show'); };
 $('queue').onclick = () => { msg('Queue matched!'); start(Math.random() < .5 ? 'attack' : 'defend'); lockIfDesktop(); };
 $('zombies').onclick = () => { start('zombies'); lockIfDesktop(); };
+$('zHost').onclick = () => { start('zombies', { role: 'host' }); lockIfDesktop(); };
+$('zJoin').onclick = () => { const code = zombies.cleanCode($('zCode').value); if (code.length < 4) { $('zJoinMsg').textContent = 'Enter the room code from the host'; return; } $('zJoinMsg').textContent = 'Connecting to room ' + code + '…'; $('zJoin').disabled = true; sfx.init();
+  zombies.net.join(code).then(() => { start('zombies', { role: 'client' }); lockIfDesktop(); }).catch(e => { $('zJoinMsg').textContent = (e && e.message) || 'Could not connect'; $('zJoin').disabled = false; }); };
+if (Q.get('join')) { $('zCode').value = zombies.cleanCode(Q.get('join')); $('zJoinMsg').textContent = 'Tap JOIN CO-OP to join room ' + $('zCode').value; $('zJoin').classList.add('gold'); }
 $('att').onclick = () => { start('attack'); lockIfDesktop(); }; $('def').onclick = () => { start('defend'); lockIfDesktop(); };
 if (IS_TOUCH) $('help').textContent = 'Left stick move · drag right side to look · FIRE / BUILD / JUMP / RELOAD buttons · PIECE & MAT cycle build piece and material · play in landscape';
 $('fsb').onclick = () => { if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document); else goFullscreen(); };
@@ -353,7 +383,7 @@ if (!(document.documentElement.requestFullscreen || document.documentElement.web
 // test hooks
 window.__sim = secs => { for (let i = 0; i < secs * 20 && !G.over; i++) update(.05); return [pct(), coreDown()]; };
 window.__boom = (x, y, z, r) => explode(new THREE.Vector3(x, y, z), r, 300, 'att');
-if (Q.get('dev') === '1') window.__zombies = zombies;
+if (Q.get('dev') === '1') { window.__zombies = zombies; window.__coop = { place, act, syncCamera, keys, input, setB, get, rockets, rocketBoom, launchRocket }; }
 window.__G = G; window.__P = P; window.__stats = stats; window.__pct = pct; window.__Q = QNAME;
 if (Q.get('auto')) { if (Q.get('layout')) $('layout').value = Q.get('layout'); if (Q.get('build')) $('buildT').value = Q.get('build'); start(Q.get('auto')); if (Q.get('pitch')) P.pitch = +Q.get('pitch'); if (Q.get('yaw')) P.yaw = +Q.get('yaw');
   if (Q.get('px')) P.pos.set(+Q.get('px'), +(Q.get('py') || 1), +Q.get('pz')); }

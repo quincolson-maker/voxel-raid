@@ -68,3 +68,10 @@ node tests/zombies-input.cjs http://localhost:8767
 ```
 
 The first tests round transitions/scaling/actor caps, shops, ammo, gate, box, perks, powers, death/high-score persistence and both classic modes; it saves `shot-zombies-desktop.png` and `shot-zombies-mobile.png`. The second exercises real mouse/touch fire/headshots, reload, E/USE purchases, melee, regeneration and drop collection. Debug mode (`?dev=1&auto=zombies`) exposes survival state for these tests. Mobile coverage is Chrome iPhone-sized touch emulation, not physical iPhone/Safari testing.
+
+## Dead Signal co-op, build phase & rocket launcher
+
+- **7:00 build phase** before round 1 (solo and co-op): big countdown; RMB / BUILD places Wall/Ramp/Floor (Q piece, Z material) inside the outpost. **G** (desktop) or the on-screen **SKIP** (phone) starts round 1 immediately; in co-op either player can skip and both see it. Zombies claw through player-built blocks (arena walls stay intact). Dev: `?zbuild=SECONDS`.
+- **2-player co-op** (peer-to-peer WebRTC via vendored PeerJS + free public broker; no game server): menu → **Host 2-Player Co-op** shows a room code and `?join=CODE` link; teammate enters the code (or opens the link) and taps **Join Co-op**. Host is authoritative for zombies, rounds, drops, purchases and per-player points; builds, positions, firing and rockets are synced. Downed players can be revived by holding **E / USE** for 3 s; game over when both are down. If a player disconnects the other continues solo (a joiner whose host leaves takes over the simulation).
+- **Rocket launcher** secondary (all modes): 1/2, wheel, Q (outside building) or SWAP on phone. Splash damage with knockback, light self-damage, 1-round mag, limited reserve refilled by Max Ammo / Ammo Cache.
+- Test: `node tests/coop.cjs http://localhost:8767` (two tabs over a `?loopnet=1` BroadcastChannel transport using the same protocol — this box's managed Chrome blocks non-proxied WebRTC UDP, so the real PeerJS/WebRTC path is not exercised by CI).

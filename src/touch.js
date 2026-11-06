@@ -25,9 +25,9 @@ export function initTouch(input, look, act, unlockAudio) {
     for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) el.addEventListener(ev, u); };
   btn('tFire', () => input.fire = true, () => input.fire = false, true);
   btn('tJump', () => input.jump = true, () => input.jump = false);
-  btn('tBuild', act.build); btn('tReload', act.reload); btn('tPiece', act.piece); btn('tMat', act.mat); btn('tSkip', act.skip); btn('tAds', act.ads); btn('tSwap', act.swap);
+  btn('tBuild', () => { input.use = true; act.build(); }, () => input.use = false); btn('tReload', act.reload); btn('tPiece', act.piece); btn('tMat', act.mat); btn('tSkip', act.skip); btn('tAds', act.ads); btn('tSwap', act.swap);
   // block page scroll/zoom gestures that would otherwise steal touches (iOS Safari)
   document.addEventListener('touchmove', e => { if (e.target.closest && e.target.closest('#touch')) e.preventDefault(); }, { passive: false });
   document.addEventListener('gesturestart', e => e.preventDefault());
-  addEventListener('blur', () => { input.mx = input.mz = 0; input.fire = input.jump = false; });
+  addEventListener('blur', () => { input.mx = input.mz = 0; input.fire = input.jump = input.use = false; });
 }

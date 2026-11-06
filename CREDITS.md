@@ -30,3 +30,5 @@ Downloadable CC0/CC-BY gun models were reviewed on Poly Pizza (e.g. Quaternius C
 
 ## Realism pass (v8)
 All new effects (bullet-hole/scorch decals, debris/rubble, dust, rain, shell casings, lens shader, height fog, reverb impulse, footsteps) are procedural original code — no new third-party assets. No CC0/CC-BY rigged human met license requirements (Mixamo is not CC), so soldiers remain original procedural models.
+
+- PeerJS 1.5.4 (MIT) — vendored at `vendor/peerjs.min.js` for co-op WebRTC data channels; signaling via the free public PeerJS broker.

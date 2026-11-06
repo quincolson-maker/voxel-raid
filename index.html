@@ -68,10 +68,16 @@ select,input{background:#1c2540;box-shadow:none}
 .touch.zombie-mode #top{min-width:240px;width:40vw;max-width:340px;font-size:10px}.touch.zombie-mode #vitals{font-size:10px;min-width:0;max-width:27vw}.touch.zombie-mode #right{font-size:10px}
 .touch #zRound{font-size:48px;bottom:16px;left:20px}.touch #zUse{bottom:6%;font-size:12px}.touch #zPowers{top:22%;font-size:11px}
 #endS{white-space:pre-wrap!important}
+#coopRow{align-items:center}#zCode{width:7.5em;font:bold 1em monospace;text-transform:uppercase;padding:.45em;border-radius:8px;border:2px solid #6fd6ff;background:#0d1a22;color:#bff0ff;text-align:center;letter-spacing:.15em}
+#zHost,#zJoin{background:linear-gradient(#1f4f66,#163445);border-color:#6fd6ff;color:#dff6ff}
+#zBuild{position:absolute;top:13%;width:100%;text-align:center;text-shadow:0 3px 6px #000;color:#ffe1a6}#zBuild .zbt{font-weight:900;letter-spacing:.2em;color:#ffb366}#zBuildT{font:900 64px/1 "Segoe UI",sans-serif;color:#fff}#zBuild .zbs{font-size:.9em;opacity:.9}
+#zCoop{position:absolute;left:50%;transform:translateX(-50%);top:calc(max(8px,env(safe-area-inset-top)) + 4.6em);font-size:.8em;text-align:center;border-color:#6fd6ff99;max-width:92vw;word-break:break-all}
+.zombie-mode.zbuild #hotbar{display:flex}
+.touch #zBuildT{font-size:38px}.touch #zBuild{top:20%;font-size:11px}.touch #zCoop{font-size:9px;top:auto;bottom:4px}
 </style>
 </head><body>
 <div id="hud" style="display:none">
- <div id="zHud" hidden><div id="zRound"></div><div id="zUse"></div><div id="zPowers"></div></div><div id="vign"></div><div id="nums"></div>
+ <div id="zHud" hidden><div id="zRound"></div><div id="zUse"></div><div id="zPowers"></div><div id="zBuild" hidden><div class="zbt">BUILD YOUR DEFENSES</div><div id="zBuildT">7:00</div><div class="zbs">Press <b>G</b> or tap <b>SKIP</b> to start round 1 now</div></div><div id="zCoop" class="pill" hidden></div></div><div id="vign"></div><div id="nums"></div>
  <div id="top" class="pill"><div class="row"><span id="mode"></span><span id="timer"></span><span id="stars"></span></div><div id="sub" style="font-size:.8em;opacity:.85"></div><div class="bar"><i id="dbar"></i></div></div>
  <div id="cross"></div><div id="hitm">✕</div><div id="msg"></div>
  <div id="vitals" class="pill"><div class="bar" id="hpbar"><i id="hp"></i></div><div id="ammo"></div><div id="res"></div></div>
@@ -92,7 +98,8 @@ select,input{background:#1c2540;box-shadow:none}
 <div id="menu" class="panel">
  <h1>VOXEL RAID<br><span style="font-size:.55em">Breach &amp; Hold</span></h1>
  <div style="opacity:.85;text-align:center">Assault fortified positions or hold the Command Post. Every wall can be breached.</div>
- <button id="zombies">☣ ENDLESS ZOMBIES — Dead Signal</button><div class="help">Survive the night · earn points · buy weapons · open the east wing</div>
+ <button id="zombies">☣ ENDLESS ZOMBIES — Dead Signal</button><div class="help">Survive the night · 7:00 build phase (skippable) · earn points · buy weapons · open the east wing</div>
+ <div class="row2" id="coopRow"><button id="zHost">👥 Host 2-Player Co-op</button><input id="zCode" placeholder="ROOM CODE" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false"><button id="zJoin">Join Co-op</button></div><div class="help" id="zJoinMsg">Co-op: host gets a room code + link to share · teammate enters the code (or opens the link) and taps Join</div>
  <button id="queue" class="gold">⚔ Queue Match</button>
  <div class="row2"><button id="att">Play Attack</button><button id="def">Play Defend</button></div>
  <div class="row2"><label>Base <select id="layout"></select></label></div>
@@ -105,5 +112,6 @@ select,input{background:#1c2540;box-shadow:none}
 <div id="rot"><div class="ph"></div><p>Rotate your phone to landscape</p><button id="rotskip">Play anyway</button></div>
 <div id="ioshint" class="pill">For true fullscreen on iPhone: tap Share → <b>Add to Home Screen</b>, then launch Voxel Raid from your home screen. <button id="ioshintx" style="padding:.2em .6em">OK</button></div>
 <button id="fsb">⛶ Fullscreen</button>
-<script type="module" src="./game.min.js?v=9-zombies"></script>
+<script src="./vendor/peerjs.min.js"></script>
+<script type="module" src="./game.min.js?v=10-coop"></script>
 </body></html>
