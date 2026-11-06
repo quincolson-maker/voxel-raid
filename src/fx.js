@@ -27,7 +27,7 @@ export class FX {
   constructor(scene, camera, renderer, Q, solid) {
     this.scene = scene; this.camera = camera; this.renderer = renderer; this.solid = solid;
     this.add = new Pool(scene, Math.round(Q.particles * .6), true); this.smoke = new Pool(scene, Math.round(Q.particles * .4), false);
-    const nd = Math.round(Q.particles / 4); this.deb = new THREE.InstancedMesh(new THREE.BoxGeometry(.22, .22, .22), new THREE.MeshStandardMaterial({ roughness: .8 }), nd);
+    const nd = Math.round(Q.particles / 4); this.deb = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(.13, 0), new THREE.MeshStandardMaterial({ roughness: .8 }), nd);
     this.deb.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.deb.castShadow = false; this.deb.frustumCulled = false; scene.add(this.deb);
     this.d = Array.from({ length: nd }, () => ({ p: new THREE.Vector3(), v: new THREE.Vector3(), r: new THREE.Euler(), w: new THREE.Vector3(), life: 0, s: 1 })); this.di = 0;
     const c = new THREE.Color(1, 1, 1); for (let i = 0; i < nd; i++) { this.deb.setColorAt(i, c); this.deb.setMatrixAt(i, new THREE.Matrix4().makeScale(0, 0, 0)); }
@@ -42,7 +42,7 @@ export class FX {
       d.w.set(Math.random() * 10, Math.random() * 10, Math.random() * 10); d.life = 1.6 + Math.random(); d.s = .6 + Math.random() * .9;
       this.deb.setColorAt(i, c.clone().multiplyScalar(.75 + Math.random() * .4)); }
     this.deb.instanceColor.needsUpdate = true;
-    for (let k = 0; k < 4; k++) this.smoke.emit(x + .5, y + .5, z + .5, (Math.random() - .5) * 2, Math.random() * 1.5, (Math.random() - .5) * 2, .75, .7, .62, 1.2, .9, 2.5, 0, .5); }
+    for (let k = 0; k < 4; k++) this.smoke.emit(x + .5, y + .5, z + .5, (Math.random() - .5) * 2, Math.random() * 1.5, (Math.random() - .5) * 2, .55, .5, .44, 1.4, 1.4, 2.8, -.1, .55); }
   muzzle(p, col = [.5, .85, 1]) { for (let k = 0; k < 3; k++) this.add.emit(p.x, p.y, p.z, (Math.random() - .5), (Math.random() - .5), (Math.random() - .5), ...col, .5, .06, 2); if (this.light) { this.light.color.setRGB(...col); this.light.position.copy(p); this.light.intensity = 6; this.lightT = .05; } }
   impact(p, col = [1, .85, .5]) { for (let k = 0; k < 6; k++) this.add.emit(p.x, p.y, p.z, (Math.random() - .5) * 6, Math.random() * 5, (Math.random() - .5) * 6, ...col, .12, .3, 0, 14); }
   explosion(p, r) { for (let k = 0; k < 26; k++) { const a = Math.random() * 6.28, u = Math.random() * 2 - 1, s = (2 + Math.random() * 6) * r / 2;
