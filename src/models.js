@@ -88,25 +88,73 @@ export function makeRoof(kind, s) {
   else if (kind === 'vault') { for (let i = 0; i < 4; i++) { const c = prop(i % 2 ? 'ammo_box' : 'wooden_military_crate'); if (!c) { M(box(.9, .5, .6), mat(0x5a5a3c), (i - 1.5) * .9, .25, 0, g); continue; } c.position.set((i % 2 - .5) * 1.6, 0, (Math.floor(i / 2) - .5) * 1.4); c.rotation.y = i * .7; c.scale.setScalar(i % 2 ? 1.6 : 1); g.add(c); } }
   return g;
 }
-// ------------- First-person rifle viewmodel (original design) -------------
-export function makeViewmodel() {
-  const g = new THREE.Group(), gun = new THREE.Group(); g.add(gun);
-  const poly = mat(0x1e1f22, { r: .6, m: .2 }), steel = mat(0x2c2e31, { r: .35, m: .9 }), tan = mat(0x8a7a5c, { r: .7, m: .1 }), sleeve = mat(0x7d7058, { r: 1 }), glove = mat(0x2a2722, { r: .9 });
-  M(box(.045, .07, .3), steel, 0, 0, -.05, gun); M(box(.05, .065, .26), tan, 0, .002, -.33, gun); // receiver, handguard
-  M(cyl(.009, .009, .2, 10), steel, 0, .01, -.55, gun, Math.PI / 2); M(cyl(.016, .016, .06, 10), steel, 0, .01, -.66, gun, Math.PI / 2); // barrel + muzzle device
-  const mag = M(box(.035, .16, .07), poly, 0, -.1, -.09, gun, .22); M(box(.03, .1, .045), poly, 0, -.07, .06, gun, -.3); // mag, grip
-  M(box(.04, .08, .2), tan, 0, -.01, .2, gun); M(box(.045, .1, .03), poly, 0, -.015, .31, gun); // stock
-  M(cyl(.019, .019, .08, 12), poly, 0, .065, -.08, gun, Math.PI / 2); M(box(.02, .025, .05), poly, 0, .045, -.08, gun); // red-dot optic
-  M(new THREE.CircleGeometry(.015, 12), mat(0x0a0c10, { r: .05, m: .6 }), 0, .065, -.039, gun);
-  M(box(.018, .02, .2), poly, 0, .04, -.3, gun); // top rail
-  const limb = (a, b, r, m) => { const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b); const L = A.distanceTo(B); const o = M(cap(r, L), m, 0, 0, 0, g); o.position.copy(A).lerp(B, .5); o.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), B.clone().sub(A).normalize()); return o; };
-  // right hand on pistol grip, left hand on handguard; forearms run back/down out of frame
-  M(sph(.038), glove, .0, -.09, .07, g); limb([.0, -.1, .09], [.09, -.32, .42], .042, sleeve);
-  M(sph(.04), glove, -.005, -.045, -.36, g); limb([-.01, -.07, -.35], [-.2, -.34, -.02], .044, sleeve);
-  const flash = new THREE.Mesh(new THREE.PlaneGeometry(.22, .22), new THREE.MeshBasicMaterial({ map: flashTex(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
-  flash.position.set(0, .01, -.72); flash.visible = false; gun.add(flash);
+// ------------- Weapons: detailed original procedural models (generic, no trademarks) -------------
+export const WEAPONS = {
+  carbine: { name: 'Carbine', dmg: 26, rpm: 750, mag: 30, reload: 2.1, recoil: .9, spread: .012, ads: .002, range: 120, auto: true, fov: 52, snd: [2600, 150, .55] },
+  smg9:    { name: 'SMG-9', dmg: 18, rpm: 850, mag: 30, reload: 1.8, recoil: .5, spread: .02, ads: .006, range: 60, auto: true, fov: 58, snd: [3400, 220, .4] },
+  shotgun: { name: 'Shotgun', dmg: 14, pellets: 8, rpm: 70, mag: 7, reload: 3.0, recoil: 2.6, spread: .07, ads: .05, range: 30, auto: false, fov: 60, snd: [1200, 80, .9] },
+  dmr:     { name: 'DMR', dmg: 62, rpm: 200, mag: 10, reload: 2.6, recoil: 2, spread: .01, ads: .0004, range: 220, auto: false, fov: 30, snd: [1900, 110, .8] },
+  lmg:     { name: 'LMG', dmg: 24, rpm: 700, mag: 100, reload: 4.5, recoil: 1.1, spread: .03, ads: .012, range: 130, auto: true, fov: 55, snd: [2100, 120, .65] },
+  pistol:  { name: 'Pistol', dmg: 30, rpm: 300, mag: 15, reload: 1.5, recoil: 1.2, spread: .015, ads: .006, range: 50, auto: false, fov: 62, snd: [3000, 200, .45] },
+};
+export function makeGun(kind) {
+  const g = new THREE.Group(); const blk = mat(0x1b1c1e, { r: .55, m: .25 }), stl = mat(0x2c2e31, { r: .32, m: .9 }), fde = mat(0x8a7a5c, { r: .7, m: .1 }), poly = mat(0x232427, { r: .75 }), glass = mat(0x0a1018, { r: .05, m: .7 });
+  const rail = (x, y, z, L) => { M(box(.022, .012, L), stl, x, y, z, g); for (let i = 0; i < L / .012 / 2; i++) M(box(.026, .006, .005), stl, x, y + .008, z - L / 2 + i * .024, g); };
+  const muzzleAt = new THREE.Vector3(); let fore = -.3, sightY = .07;
+  if (kind === 'carbine') { // M4-pattern carbine
+    M(box(.045, .065, .2), blk, 0, 0, -.02, g); M(box(.04, .05, .12), blk, 0, -.045, .03, g); rail(0, .04, -.05, .2); // upper/lower receiver, flat-top rail
+    M(cyl(.024, .024, .22, 8), fde, 0, .005, -.24, g, Math.PI / 2); rail(0, .034, -.24, .2); // free-float handguard
+    M(cyl(.008, .008, .16, 8), stl, 0, .005, -.42, g, Math.PI / 2); M(cyl(.012, .011, .045, 8), stl, 0, .005, -.52, g, Math.PI / 2); // barrel, flash hider
+    M(box(.006, .04, .01), stl, 0, .04, -.33, g); // front sight post
+    M(box(.03, .14, .065), poly, 0, -.11, -.05, g, .25); M(box(.028, .085, .04), poly, 0, -.08, .08, g, -.35); // curved mag, grip
+    M(cyl(.012, .012, .16, 8), stl, 0, -.005, .16, g, Math.PI / 2); M(box(.04, .075, .12), poly, 0, -.02, .24, g); // buffer tube, stock
+    M(cyl(.016, .016, .07, 12), blk, 0, .07, -.04, g, Math.PI / 2); M(new THREE.CircleGeometry(.014, 12), glass, 0, .07, -.0049, g); // red dot
+    muzzleAt.set(0, .005, -.55); fore = -.24; sightY = .07;
+  } else if (kind === 'smg9') { // MP5-pattern SMG
+    M(cyl(.026, .026, .24, 10), blk, 0, 0, -.05, g, Math.PI / 2); M(box(.04, .04, .14), blk, 0, -.03, -.02, g); M(cyl(.012, .012, .12, 8), blk, 0, .022, -.12, g, Math.PI / 2); // receiver tube, cocking tube
+    M(cyl(.028, .03, .12, 10), poly, 0, -.008, -.2, g, Math.PI / 2); M(cyl(.007, .007, .06, 8), stl, 0, 0, -.28, g, Math.PI / 2); // forend, barrel
+    M(box(.024, .11, .04), stl, 0, -.08, -.08, g, .35); M(box(.026, .08, .036), poly, 0, -.07, .04, g, -.3); // slim curved mag, grip
+    for (const s of [-1, 1]) M(box(.006, .006, .16), stl, s * .02, -.005, .13, g); M(box(.045, .06, .012), stl, 0, -.02, .21, g); // retractable stock
+    M(cyl(.014, .014, .025, 10), stl, 0, .04, -.24, g); M(cyl(.016, .016, .02, 10), stl, 0, .045, .02, g, Math.PI / 2); // drum sights
+    muzzleAt.set(0, 0, -.31); fore = -.19; sightY = .055;
+  } else if (kind === 'shotgun') {
+    M(box(.045, .065, .2), blk, 0, 0, 0, g); M(cyl(.011, .011, .5, 8), stl, 0, .018, -.33, g, Math.PI / 2); M(cyl(.013, .013, .4, 8), stl, 0, -.015, -.28, g, Math.PI / 2); // receiver, barrel, mag tube
+    M(cyl(.026, .026, .13, 10), poly, 0, -.012, -.25, g, Math.PI / 2); // pump forend
+    M(box(.028, .085, .04), poly, 0, -.07, .1, g, -.35); M(box(.04, .07, .22), poly, 0, -.025, .22, g, .08); M(box(.006, .012, .01), stl, 0, .03, -.56, g); // grip, stock, bead
+    for (let i = 0; i < 4; i++) M(cyl(.009, .009, .03, 8), mat(0x8a1a1a, { r: .5 }), .028, .0, .03 - i * .035, g, 0, 0, Math.PI / 2); // side-saddle shells
+    muzzleAt.set(0, .018, -.58); fore = -.25; sightY = .04;
+  } else if (kind === 'dmr') {
+    M(box(.045, .07, .26), poly, 0, 0, -.02, g); M(cyl(.025, .025, .25, 8), poly, 0, .002, -.27, g, Math.PI / 2); M(cyl(.01, .01, .32, 8), stl, 0, .002, -.52, g, Math.PI / 2); M(cyl(.014, .014, .05, 8), stl, 0, .002, -.69, g, Math.PI / 2);
+    M(box(.03, .1, .06), stl, 0, -.08, -.04, g, .1); M(box(.028, .085, .04), poly, 0, -.08, .09, g, -.35); M(box(.042, .09, .2), poly, 0, -.02, .22, g); M(box(.04, .03, .08), poly, 0, .045, .2, g); // mag, grip, stock, cheek riser
+    M(cyl(.02, .02, .2, 14), blk, 0, .075, -.04, g, Math.PI / 2); M(cyl(.026, .02, .05, 14), blk, 0, .075, -.16, g, Math.PI / 2); M(cyl(.024, .02, .04, 14), blk, 0, .075, .08, g, Math.PI / 2); // scope
+    M(new THREE.CircleGeometry(.018, 14), glass, 0, .075, .1001, g); M(cyl(.012, .012, .03, 8), blk, 0, .1, -.04, g); for (const z of [-.08, .02]) M(box(.02, .02, .015), stl, 0, .05, z, g);
+    for (const s of [-1, 1]) M(cyl(.005, .005, .14, 6), stl, s * .03, -.06, -.35, g, .3, 0, s * .3); // folded bipod
+    muzzleAt.set(0, .002, -.72); fore = -.27; sightY = .075;
+  } else if (kind === 'lmg') {
+    M(box(.055, .08, .3), blk, 0, 0, -.02, g); M(cyl(.016, .016, .4, 8), stl, 0, .005, -.38, g, Math.PI / 2); M(cyl(.02, .016, .06, 8), stl, 0, .005, -.6, g, Math.PI / 2); // receiver, heavy barrel
+    M(box(.08, .1, .1), mat(0x3e4630, { r: .8 }), .03, -.08, -.04, g); M(box(.03, .015, .14), stl, 0, .055, -.03, g); M(box(.02, .03, .08), stl, 0, .075, -.2, g); // ammo box, feed tray, carry handle
+    M(box(.03, .09, .04), poly, 0, -.08, .1, g, -.35); M(box(.045, .08, .2), poly, 0, -.02, .24, g); M(box(.05, .045, .14), poly, 0, -.035, -.23, g); // grip, stock, forend
+    for (const s of [-1, 1]) M(cyl(.006, .006, .2, 6), stl, s * .03, -.07, -.48, g, .25, 0, s * .25); rail(0, .045, .05, .1); // bipod
+    muzzleAt.set(0, .005, -.63); fore = -.23; sightY = .065;
+  } else { // pistol
+    M(box(.032, .035, .19), stl, 0, .02, -.04, g); M(box(.03, .03, .16), poly, 0, -.01, -.04, g); M(box(.03, .1, .045), poly, 0, -.06, .03, g, -.25); // slide, frame, grip
+    M(box(.008, .006, .006), stl, 0, .04, -.13, g); M(box(.016, .006, .006), stl, 0, .04, .045, g); M(cyl(.006, .006, .02, 8), stl, 0, .02, -.14, g, Math.PI / 2);
+    muzzleAt.set(0, .02, -.15); fore = 0; sightY = .043;
+  }
   g.traverse(o => { if (o.isMesh) { o.castShadow = false; o.renderOrder = 10; } });
-  g.userData = { gun, core: mag, flash }; return g;
+  g.userData = { muzzleAt, fore, sightY }; return g;
+}
+export function makeViewmodel() {
+  const g = new THREE.Group(); const sleeve = mat(0x7d7058, { r: 1 }), glove = mat(0x2a2722, { r: .9 }); const hands = new THREE.Group(); g.add(hands);
+  const limb = (a, b, r, m, par) => { const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b); const L = A.distanceTo(B); const o = M(cap(r, L), m, 0, 0, 0, par); o.position.copy(A).lerp(B, .5); o.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), B.clone().sub(A).normalize()); o.renderOrder = 10; return o; };
+  const flash = new THREE.Mesh(new THREE.PlaneGeometry(.2, .2), new THREE.MeshBasicMaterial({ map: flashTex(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })); flash.visible = false; flash.renderOrder = 11;
+  const cache = {}; let gun = null;
+  g.userData = { flash, setGun(kind) { if (gun) g.remove(gun); gun = cache[kind] || (cache[kind] = makeGun(kind)); g.add(gun); gun.add(flash); flash.position.copy(gun.userData.muzzleAt).add(new THREE.Vector3(0, 0, -.06));
+    hands.clear(); const f = gun.userData.fore; M(sph(.034), glove, 0, -.085, .06, hands); limb([0, -.095, .08], [.08, -.3, .4], .038, sleeve, hands);
+    if (kind === 'pistol') { M(sph(.034), glove, -.02, -.07, .05, hands); limb([-.02, -.08, .07], [-.14, -.3, .38], .038, sleeve, hands); }
+    else { M(sph(.036), glove, -.004, -.035, f, hands); limb([-.01, -.055, f + .01], [-.2, -.32, .02], .04, sleeve, hands); }
+    hands.traverse(o => o.isMesh && (o.renderOrder = 10, o.castShadow = false)); g.userData.sightY = gun.userData.sightY; }, get gun() { return gun; } };
+  return g;
 }
 function flashTex() { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'); const gr = x.createRadialGradient(32, 32, 0, 32, 32, 32);
   gr.addColorStop(0, '#fff8e0'); gr.addColorStop(.2, '#ffd27a'); gr.addColorStop(.55, 'rgba(255,120,30,.45)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = gr; x.fillRect(0, 0, 64, 64);

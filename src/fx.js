@@ -84,7 +84,7 @@ export class SFX {
     const f = c.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q; const g = c.createGain(); this.env(g, t, .004, peak * vol, dec); s.connect(f); f.connect(g); g.connect(this.master); s.start(t, Math.random() * .5, dur || dec + .05); }
   tone(type, f0, f1, peak, dec, vol = 1) { const c = this.ctx, t = c.currentTime, o = c.createOscillator(); o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dec);
     const g = c.createGain(); this.env(g, t, .004, peak * vol, dec); o.connect(g); g.connect(this.master); o.start(t); o.stop(t + dec + .05); }
-  shot() { if (!this.ok('shot')) return; this.nz('bandpass', 2400, .8, .5, .09); this.tone('square', 900, 120, .18, .08); this.tone('sine', 140, 50, .5, .12); }
+  shot(p = [2400, 140, .5]) { if (!this.ok('shot', .02)) return; const [f, lo, v] = p; this.nz('bandpass', f, .7, v, .07 + v * .08); this.nz('lowpass', 700, .7, v * .8, .12 + v * .2); this.tone('sine', lo, 40, v * .9, .1 + v * .1); this.tone('square', f / 3, 90, .08, .05); }
   enemyShot(v) { if (v < .05 || !this.ok('es', .06)) return; this.nz('bandpass', 1800, 1.2, .35, .07, v); this.tone('triangle', 700, 200, .1, .06, v); }
   zap(v) { if (v < .05 || !this.ok('zap', .08)) return; this.tone('sawtooth', 1600, 300, .2, .15, v); this.nz('highpass', 3000, .5, .2, .08, v); }
   hit(kill) { if (!this.ok('hit', .02)) return; this.tone('square', kill ? 1300 : 1900, kill ? 600 : 1500, .15, kill ? .18 : .05); }

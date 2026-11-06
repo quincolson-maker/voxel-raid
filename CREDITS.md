@@ -23,3 +23,7 @@ No Bohemia Interactive / Arma or Supercell assets, models, textures or likenesse
 
 Textures were resized and re-encoded to WebP (512 px default, 1k lazy-loaded on High/Ultra); glTF textures downscaled to 512 px.
 Library: three.js r170 (MIT) incl. examples/jsm add-ons (MIT).
+
+## Weapons
+All six weapons (Carbine, SMG-9, Shotgun, DMR, LMG, Pistol) are original procedural models authored in code (`src/models.js` → `makeGun`), with generic names and no trademarks or manufacturer markings. Firing sounds are synthesized with WebAudio.
+Downloadable CC0/CC-BY gun models were reviewed on Poly Pizza (e.g. Quaternius CC0 low-poly rifles), but they are stylized flat-colour low-poly and clashed with the realistic look, so none were used. No third-party weapon assets are included.
