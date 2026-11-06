@@ -145,7 +145,7 @@ export function createGraphics(qname) {
     if (composer) { composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(innerWidth, innerHeight); }
     if (fxaa) { const pr = renderer.getPixelRatio(); fxaa.material.uniforms.resolution.value.set(1 / (innerWidth * pr), 1 / (innerHeight * pr)); } };
   addEventListener('resize', resize); resize();
-  const render = () => composer ? composer.render() : renderer.render(scene, camera);
+  function render() { return this.composer ? this.composer.render() : renderer.render(scene, camera); }
   const followSun = p => { sun.position.copy(p).addScaledVector(sunDir, 90); sun.target.position.copy(p); sky.position.copy(camera.position); };
   return { renderer, scene, camera, sun, sunDir, hemi, composer, aoPass, render, resize, Q: Qp, followSun,
     setPR(pr) { renderer.setPixelRatio(pr); resize(); }, disableAO() { if (aoPass) { aoPass.enabled = false; } } };

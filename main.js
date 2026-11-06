@@ -307,11 +307,26 @@ let hbKey = ''; function hotbarSync() { const k = P.piece + ',' + P.mat + ',' + 
 // ---------------- Menu ----------------
 LAYOUTS.forEach((l, i) => { const o = document.createElement('option'); o.value = i; o.textContent = l.name + ' – ' + l.desc; $('layout').appendChild(o); });
 $('layout').value = Math.floor(Math.random() * LAYOUTS.length);
-const lockIfDesktop = () => { if (!IS_TOUCH) renderer.domElement.requestPointerLock(); };
+function goFullscreen() { const e = document.documentElement; const rq = e.requestFullscreen || e.webkitRequestFullscreen || e.webkitRequestFullScreen || e.mozRequestFullScreen || e.msRequestFullscreen;
+  if (!rq || document.fullscreenElement || document.webkitFullscreenElement) return; try { const r = rq.call(e, { navigationUI: 'hide' }); r && r.then && r.then(() => screen.orientation?.lock?.('landscape').catch(() => {})).catch(() => {}); } catch (_) {} }
+const lockIfDesktop = () => { if (IS_TOUCH) goFullscreen(); else renderer.domElement.requestPointerLock(); };
+// orientation: robust across old phones (window.orientation, matchMedia, size compare), never blocks forever
+let rotSkipped = false;
+function isLandscape() { const vv = window.visualViewport; const w = vv ? vv.width : innerWidth, h = vv ? vv.height : innerHeight;
+  if (Math.abs(w - h) > 40) return w > h; if (typeof window.orientation === 'number') return Math.abs(window.orientation) === 90;
+  if (screen.orientation && screen.orientation.type) return screen.orientation.type.startsWith('landscape'); return matchMedia('(orientation: landscape)').matches; }
+function checkRot() { $('rot').classList.toggle('show', IS_TOUCH && !rotSkipped && !isLandscape()); }
+const recheck = () => { checkRot(); setTimeout(checkRot, 250); setTimeout(checkRot, 800); GX.resize(); fx.setScale(); };
+addEventListener('resize', recheck); addEventListener('orientationchange', recheck); window.visualViewport?.addEventListener('resize', recheck); screen.orientation?.addEventListener?.('change', recheck);
+$('rotskip').onclick = () => { rotSkipped = true; checkRot(); }; setTimeout(() => { if ($('rot').classList.contains('show')) $('rotskip').textContent = 'Play anyway (portrait)'; }, 4000); checkRot();
+const isIOS = /iP(hone|od|ad)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const standalone = navigator.standalone || matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches;
+if (isIOS && !standalone && !document.documentElement.requestFullscreen && !localStorage.getItem('vr_ioshint')) $('ioshint').classList.add('show');
+$('ioshintx').onclick = () => { localStorage.setItem('vr_ioshint', '1'); $('ioshint').classList.remove('show'); };
 $('queue').onclick = () => { msg('Queue matched!'); start(Math.random() < .5 ? 'attack' : 'defend'); lockIfDesktop(); };
 $('att').onclick = () => { start('attack'); lockIfDesktop(); }; $('def').onclick = () => { start('defend'); lockIfDesktop(); };
 if (IS_TOUCH) $('help').textContent = 'Left stick move · drag right side to look · FIRE / BUILD / JUMP / RELOAD buttons · PIECE & MAT cycle build piece and material · play in landscape';
-$('fsb').onclick = () => { const e = document.documentElement; if (document.fullscreenElement) document.exitFullscreen(); else (e.requestFullscreen || e.webkitRequestFullscreen)?.call(e).then?.(() => screen.orientation?.lock?.('landscape').catch(() => {})).catch(() => {}); };
+$('fsb').onclick = () => { if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document); else goFullscreen(); };
 if (!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen)) $('fsb').style.display = 'none';
 // test hooks
 window.__G = G; window.__P = P; window.__stats = stats; window.__pct = pct; window.__Q = QNAME;
@@ -320,9 +335,11 @@ if (Q.get('auto')) { if (Q.get('layout')) $('layout').value = Q.get('layout'); i
 // ---------------- Loop with adaptive resolution ----------------
 const TSCALE = +(Q.get('ts') || 1); let last = performance.now(), fAcc = 0, fN = 0, lowT = 0, pr = renderer.getPixelRatio();
 function loop(t) { requestAnimationFrame(loop); const rdt = Math.max(0, Math.min(.1, (t - last) / 1000)); last = t; const dt = Math.min(.05, rdt);
+  try {
   for (let k = 0; k < TSCALE; k++) update(dt);
   if (G.phase != 'menu') { syncCamera(dt); updateViewmodel(dt); updateGhost(); hud(dt); }
   flushChunks(); fx.update(dt); GX.followSun(P.pos); GX.render();
+  } catch (e) { if (!window.__loopErr) { window.__loopErr = e; console.error('frame error', e); } if (/render|WebGL|shader/i.test(String(e && e.stack)) && GX.composer) { GX.composer = null; } }
   fAcc += rdt; fN++; if (fAcc > 2) { const fps = fN / fAcc; $('fps').textContent = Math.round(fps) + ' fps · ' + QNAME;
     if (!Q.get('auto') && G.phase != 'menu') { if (fps < 28) { lowT++; if (lowT >= 2) { lowT = 0; if (GX.aoPass && GX.aoPass.enabled) GX.disableAO(); else if (pr > .55) { pr = Math.max(.5, pr - .15); GX.setPR(pr); fx.setScale(); } } } else lowT = 0; }
     fAcc = 0; fN = 0; }
