@@ -132,6 +132,7 @@ export class SFX {
   enemyShot(v) { if (v < .05 || !this.ok('es', .06)) return; this.nz('bandpass', 1800, 1.2, .35, .07, v); this.tone('triangle', 700, 200, .1, .06, v); }
   zap(v) { if (v < .05 || !this.ok('zap', .08)) return; this.tone('sawtooth', 1600, 300, .2, .15, v); this.nz('highpass', 3000, .5, .2, .08, v); }
   hit(kill) { if (!this.ok('hit', .02)) return; this.tone('square', kill ? 1300 : 1900, kill ? 600 : 1500, .15, kill ? .18 : .05); }
+  groan() { if (!this.ok('groan', .45)) return; this.tone('sawtooth', 85 + Math.random() * 45, 45, .13, .8); this.nz('bandpass', 280, 2, .18, .7); }
   hurt() { if (!this.ok('hurt', .15)) return; this.tone('sawtooth', 220, 80, .35, .2); this.nz('lowpass', 600, 1, .4, .15); }
   boom(v) { if (v < .03 || !this.ok('boom', .05)) return; this.nz('lowpass', 500, .7, 1.2, .9, v, 1.2); this.tone('sine', 90, 30, 1, .6, v); }
   brk(mat, v = 1) { if (v < .05 || !this.ok('brk', .04)) return; const f = { 2: 700, 3: 1300, 4: 2600 }[mat] || 1000; this.nz('bandpass', f, 1.5, .5, .18, v); if (mat == 4) this.tone('triangle', 1800, 900, .15, .2, v); }

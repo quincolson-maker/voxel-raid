@@ -59,10 +59,19 @@ select,input{background:#1c2540;box-shadow:none}
 #ioshint{position:fixed;left:50%;bottom:max(12px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:30;max-width:90vw;font-size:.85em;display:none}#ioshint.show{display:block}
 #fsb{position:fixed;right:max(8px,env(safe-area-inset-right));bottom:max(8px,env(safe-area-inset-bottom));z-index:40;padding:.3em .6em;font-size:.8em}
 .touch #fsb{bottom:auto;top:calc(max(8px,env(safe-area-inset-top)) + 6.5em)}
+#menu{justify-content:safe center}
+#zombies{background:linear-gradient(#842e31,#421e26);border-color:#df7472;color:#ffe0c2;letter-spacing:.08em}
+#zHud{position:absolute;inset:0}#zRound{position:absolute;left:24px;bottom:115px;color:#e24540;font:italic 900 70px Georgia,serif;text-shadow:2px 3px 1px #280505,0 0 18px #a52024;letter-spacing:-8px}
+#zUse{position:absolute;bottom:19%;width:100%;text-align:center;color:#ffe5aa;text-shadow:0 2px 4px #000;font-weight:bold}
+#zPowers{position:absolute;top:18%;width:100%;text-align:center;color:#aaffb8;font-weight:bold;text-shadow:0 2px 4px #000}
+.zombie-mode #top{border-color:#ad514e;min-width:280px}.zombie-mode #right{color:#ffdb9b}.zombie-mode #hotbar{display:none}
+.touch.zombie-mode #top{min-width:240px;width:40vw;max-width:340px;font-size:10px}.touch.zombie-mode #vitals{font-size:10px;min-width:0;max-width:27vw}.touch.zombie-mode #right{font-size:10px}
+.touch #zRound{font-size:48px;bottom:16px;left:20px}.touch #zUse{bottom:6%;font-size:12px}.touch #zPowers{top:22%;font-size:11px}
+#endS{white-space:pre-wrap!important}
 </style>
 </head><body>
 <div id="hud" style="display:none">
- <div id="vign"></div><div id="nums"></div>
+ <div id="zHud" hidden><div id="zRound"></div><div id="zUse"></div><div id="zPowers"></div></div><div id="vign"></div><div id="nums"></div>
  <div id="top" class="pill"><div class="row"><span id="mode"></span><span id="timer"></span><span id="stars"></span></div><div id="sub" style="font-size:.8em;opacity:.85"></div><div class="bar"><i id="dbar"></i></div></div>
  <div id="cross"></div><div id="hitm">✕</div><div id="msg"></div>
  <div id="vitals" class="pill"><div class="bar" id="hpbar"><i id="hp"></i></div><div id="ammo"></div><div id="res"></div></div>
@@ -83,6 +92,7 @@ select,input{background:#1c2540;box-shadow:none}
 <div id="menu" class="panel">
  <h1>VOXEL RAID<br><span style="font-size:.55em">Breach &amp; Hold</span></h1>
  <div style="opacity:.85;text-align:center">Assault fortified positions or hold the Command Post. Every wall can be breached.</div>
+ <button id="zombies">☣ ENDLESS ZOMBIES — Dead Signal</button><div class="help">Survive the night · earn points · buy weapons · open the east wing</div>
  <button id="queue" class="gold">⚔ Queue Match</button>
  <div class="row2"><button id="att">Play Attack</button><button id="def">Play Defend</button></div>
  <div class="row2"><label>Base <select id="layout"></select></label></div>
@@ -95,5 +105,5 @@ select,input{background:#1c2540;box-shadow:none}
 <div id="rot"><div class="ph"></div><p>Rotate your phone to landscape</p><button id="rotskip">Play anyway</button></div>
 <div id="ioshint" class="pill">For true fullscreen on iPhone: tap Share → <b>Add to Home Screen</b>, then launch Voxel Raid from your home screen. <button id="ioshintx" style="padding:.2em .6em">OK</button></div>
 <button id="fsb">⛶ Fullscreen</button>
-<script type="module" src="./game.min.js?v=8"></script>
+<script type="module" src="./game.min.js?v=9-zombies"></script>
 </body></html>

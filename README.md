@@ -39,3 +39,32 @@ Citadel Ring (centralized core), Honeycomb Grid (compartments), Sentinel Spread 
 - Quality presets Low/Medium/High/Ultra (menu or `?q=`), auto-detect (phones default Low/Medium), adaptive resolution when FPS < 28.
 - Touch controls: left joystick, right-side drag look, FIRE (drag to aim while firing), BUILD, JUMP, RELOAD, PIECE, MAT, SKIP; landscape prompt; fullscreen button. Pointer lock is desktop-only.
 - Bots: buffed raiders, new Bulwark Golem tank, grid A* pathing that routes through the weakest walls.
+
+## Endless Zombies — Dead Signal
+
+Live: https://voxel-raid.onrender.com/ (existing free Render static hosting; no new services).
+Choose **ENDLESS ZOMBIES — Dead Signal** in the main menu. Attack and Defend are unchanged.
+
+- Original night-outpost survival arena; buy the east-wing gate to expand the playable area.
+- Endless rounds with a 6-second opening countdown and 9-second resupply breaks. Round size is `5 + 3*round`; health and movement speed rise each round. Walkers, runners from round 3, and a brute every fifth round.
+- Start with a pistol and 500 points. Earn 10 per hit, 60 per kill, or 100 per headshot kill (plus hit points); headshots do 3x base damage before range falloff. Two weapon slots; purchases replace the held weapon. Reserve ammo is finite in Zombies only.
+- Glowing stations: Carbine (500), Shotgun (750), Ammo Cache (350), East Wing (1000), Mystery Box (950; Carbine/SMG-9/Shotgun/DMR/LMG), Iron Heart (2000; 180 HP), Quick Hands (1500; 40% faster reloads). Approach within 3.4m to see the prompt.
+- Occasional collectible drops: Max Ammo, Insta-Kill (30s), Double Points (30s), Nuke. Drops expire after 24 seconds. Active effect timers appear on the HUD.
+- Health regenerates after 5 seconds without damage. Death ends the solo run: completed rounds, reached round, kills, headshot kills, earned/unspent points, and a local best-round record. Local records are per browser/device, not cloud saves.
+- Humanoid shambling animations, melee, flinches, headshots, falling deaths, and synthesized spatial groans. Original assets/names; not Call of Duty assets or a recreation of its maps.
+- Desktop: WASD, mouse look, left click fire, right click ADS, R reload, Shift sprint, Space jump, 1/2 or wheel swap, **E buy/use**, Esc release mouse.
+- Phone: landscape; left joystick moves, drag right side to aim, FIRE, ADS, RELOAD, JUMP, SWAP, **USE** (replaces BUILD). A full joystick push sprints. Add to Home Screen for iPhone fullscreen.
+- Performance: shared geometry/materials, recycled zombie models, at most 16 live zombies on touch devices or 28 on desktop (remaining wave enemies spawn as slots free up), four simultaneous drops. Quality presets/adaptive resolution still apply. This is solo only; no co-op/revive, physics ragdolls, or persistent online progression.
+
+### Build and smoke tests
+
+`sh build.sh` regenerates `game.min.js` (the checked-in bundle used by Render). Deploy updates by pushing `main` to the existing linked GitHub repository; do not create paid hosting.
+
+Serve the repository with `python3 -m http.server 8767`. With `puppeteer-core` installed and Chrome at `/usr/bin/google-chrome` (or `CHROME_PATH` set):
+
+```
+node tests/zombies.cjs http://localhost:8767
+node tests/zombies-input.cjs http://localhost:8767
+```
+
+The first tests round transitions/scaling/actor caps, shops, ammo, gate, box, perks, powers, death/high-score persistence and both classic modes; it saves `shot-zombies-desktop.png` and `shot-zombies-mobile.png`. The second exercises real mouse/touch fire/headshots, reload, E/USE purchases, melee, regeneration and drop collection. Debug mode (`?dev=1&auto=zombies`) exposes survival state for these tests. Mobile coverage is Chrome iPhone-sized touch emulation, not physical iPhone/Safari testing.

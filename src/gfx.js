@@ -60,6 +60,7 @@ const LensShader = { uniforms: { tDiffuse: { value: null }, uT: { value: 0 }, uC
   void main(){ vec2 d=vUv-.5; float r2=dot(d,d); vec2 o=d*uCA*(1.+r2*4.); vec3 c=vec3(texture2D(tDiffuse,vUv+o).r,texture2D(tDiffuse,vUv).g,texture2D(tDiffuse,vUv-o).b);
   c*=1.-uVig*smoothstep(.1,.75,r2*2.2); c+=(h(vUv*1000.)-.5)*uGrain; gl_FragColor=vec4(c,1.); }` };
 export const LIGHTING = {
+  night:    { sun: [-.4, .7, -.5], col: 0x9fc3e2, I: 1.25, hemi: .65, exp: 1.0, fog: 0x15242b, fogK: 2, bg: .015, env: .15 },
   day:      { sun: [-.55, .62, -.56], col: 0xfff0dc, I: 3.2, hemi: .35, exp: .9, fog: 0xb4c2cc, fogK: 1, bg: .9, env: .7 },
   golden:   { sun: [-.8, .2, -.55], col: 0xffb070, I: 3.0, hemi: .25, exp: .95, fog: 0xd8b898, fogK: 1.2, bg: .75, env: .55 },
   overcast: { sun: [-.3, .9, -.3], col: 0xdde4ee, I: .8, hemi: .9, exp: 1.0, fog: 0x9aa4ac, fogK: 1.9, bg: .55, env: .9 },
@@ -76,7 +77,7 @@ export function createGraphics(qname) {
   const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.05, 600); camera.rotation.order = 'YXZ'; scene.add(camera);
   const sunDir = new THREE.Vector3(-.55, .62, -.56).normalize();
   const pm = new THREE.PMREMGenerator(renderer);
-  new RGBELoader().load('assets/hdri/kloofendal_1k.hdr', hdr => { hdr.mapping = THREE.EquirectangularReflectionMapping; scene.environment = pm.fromEquirectangular(hdr).texture; scene.background = hdr; scene.backgroundIntensity = .9; scene.environmentIntensity = .7; scene.backgroundBlurriness = 0; });
+  new RGBELoader().load('assets/hdri/kloofendal_1k.hdr', hdr => { hdr.mapping = THREE.EquirectangularReflectionMapping; scene.environment = pm.fromEquirectangular(hdr).texture; scene.background = scene.userData.zombieNight ? new THREE.Color(0x0c1721) : hdr; scene.backgroundIntensity = scene.userData.zombieNight ? .015 : .9; scene.environmentIntensity = scene.userData.zombieNight ? .15 : .7; scene.backgroundBlurriness = 0; });
   const hemi = new THREE.HemisphereLight(0xc8d8e8, 0x4a4a3a, .35); scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff0dc, 3.2); sun.position.copy(sunDir).multiplyScalar(80); scene.add(sun); scene.add(sun.target);
   if (Qp.shadow) { sun.castShadow = true; sun.shadow.mapSize.set(Qp.shadow, Qp.shadow); const s = sun.shadow.camera; const R = Qp.shadow >= 4096 ? 60 : 40; s.left = s.bottom = -R; s.right = s.top = R; s.near = 1; s.far = 220; sun.shadow.bias = -.0004; sun.shadow.normalBias = .04; }
