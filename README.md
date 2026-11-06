@@ -30,3 +30,12 @@ Citadel Ring (centralized core), Honeycomb Grid (compartments), Sentinel Spread 
 1. An authoritative server (Node/Colyseus or Cloudflare Durable Objects per match) with block-delta sync and client prediction.
 2. A matchmaking queue that assigns roles, with bots backfilling empty slots.
 3. Async raids on saved player bases, then accounts and progression.
+
+## Graphics & mobile update
+- Procedural PBR texture atlas (wood grain, cobblestone, riveted plate, castle brick, gold, shingles, iron) with normal/roughness/metal maps and crack damage stages; per-vertex voxel AO.
+- Sky with sun, image-based lighting, soft real-time shadows, GTAO ambient occlusion, bloom, ACES tone mapping, fog; hilly terrain with instanced trees, rocks and grass.
+- Original low-poly troops (Ember Ranger, Powder Sapper, Bulwark Golem, Bastion Warden) with walk/attack/death animation; modeled defense heads, keep heartstone, roofs; first-person Arc Repeater viewmodel.
+- Particles (muzzle flash, explosions, smoke/fire on damaged buildings, debris chunks), hit markers, damage numbers, synthesized WebAudio SFX.
+- Quality presets Low/Medium/High/Ultra (menu or `?q=`), auto-detect (phones default Low/Medium), adaptive resolution when FPS < 28.
+- Touch controls: left joystick, right-side drag look, FIRE (drag to aim while firing), BUILD, JUMP, RELOAD, PIECE, MAT, SKIP; landscape prompt; fullscreen button. Pointer lock is desktop-only.
+- Bots: buffed raiders, new Bulwark Golem tank, grid A* pathing that routes through the weakest walls.

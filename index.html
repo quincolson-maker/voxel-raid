@@ -1,27 +1,93 @@
-<!doctype html><html><head><meta charset="utf-8"><link rel="icon" href="data:,"><title>Voxel Raid: Bastion Breakers</title>
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#1a2238">
+<link rel="icon" href="data:,"><title>Voxel Raid: Bastion Breakers</title>
 <style>
-body{margin:0;overflow:hidden;background:#000;font-family:monospace;color:#fff}
+:root{--gold:#ffd34a;--panel:rgba(16,22,40,.72);--fs:clamp(11px,1.6vmin + 4px,17px)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:"Trebuchet MS",Verdana,system-ui,sans-serif;color:#fff;font-size:var(--fs);user-select:none;-webkit-user-select:none;touch-action:none}
+canvas{display:block}
 #hud{position:fixed;inset:0;pointer-events:none}
-#top{position:absolute;top:8px;left:50%;transform:translateX(-50%);background:#0008;padding:6px 14px;border-radius:6px;font-size:16px;text-align:center}
-#bot{position:absolute;bottom:10px;left:10px;background:#0008;padding:8px;border-radius:6px;font-size:14px;white-space:pre}
-#right{position:absolute;bottom:10px;right:10px;background:#0008;padding:8px;border-radius:6px;font-size:13px;white-space:pre}
-#cross{position:absolute;top:50%;left:50%;width:14px;height:14px;margin:-7px;border:2px solid #fff;border-radius:50%}
-#msg{position:absolute;top:30%;width:100%;text-align:center;font-size:28px;text-shadow:0 0 6px #000}
-.panel{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0a0f1ccc;gap:10px}
-button,select,input{font:16px monospace;padding:8px 14px;border-radius:6px;border:1px solid #888;background:#223;color:#fff;cursor:pointer}
-h1{color:#ffcf4a;margin:0}
+.pill{background:var(--panel);border:2px solid rgba(255,211,74,.35);border-radius:12px;padding:.4em .8em;box-shadow:0 3px 10px #0006;text-shadow:0 2px 0 #0008}
+#top{position:absolute;top:max(8px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);text-align:center;min-width:min(440px,70vw)}
+#top .row{display:flex;justify-content:space-between;gap:1em;font-weight:bold}
+#timer{color:var(--gold);font-size:1.3em}
+.bar{height:.6em;background:#0008;border-radius:6px;overflow:hidden;margin-top:.3em}.bar>i{display:block;height:100%;background:linear-gradient(90deg,#ff9a2e,#ffd34a);width:0}
+#stars{color:var(--gold);letter-spacing:.15em}
+#cross{position:absolute;top:50%;left:50%;width:26px;height:26px;transform:translate(-50%,-50%);border:2px solid #fffc;border-radius:50%;box-shadow:0 0 3px #000}
+#cross:after{content:"";position:absolute;left:50%;top:50%;width:4px;height:4px;margin:-2px;background:#fff;border-radius:50%}
+#hitm{position:absolute;top:50%;left:50%;transform:translate(-50%,-52%);font-size:34px;font-weight:900;opacity:0;color:#fff;text-shadow:0 0 4px #000}
+#hitm.kill{color:#ff4040}
+#msg{position:absolute;top:24%;width:100%;text-align:center;font-size:1.8em;font-weight:bold;color:#fff;text-shadow:0 3px 0 #000a,0 0 12px #000}
+#vitals{position:absolute;left:max(10px,env(safe-area-inset-left));bottom:max(10px,env(safe-area-inset-bottom));min-width:13em}
+#hpbar>i{background:linear-gradient(90deg,#e83a3a,#7ee05a)}
+#ammo{font-size:1.4em;font-weight:bold;color:var(--gold)}
+#res{font-size:.85em;opacity:.9;margin-top:.2em}
+#hotbar{position:absolute;bottom:max(10px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);display:flex;gap:.3em}
+.slot{background:var(--panel);border:2px solid #fff3;border-radius:8px;padding:.3em .55em;font-size:.8em;text-align:center;min-width:4.5em}
+.slot.on{border-color:var(--gold);color:var(--gold);transform:translateY(-3px)}
+#right{position:absolute;right:max(10px,env(safe-area-inset-right));top:max(8px,env(safe-area-inset-top));font-size:.85em;text-align:right;white-space:pre}
+#vign{position:absolute;inset:0;box-shadow:inset 0 0 160px rgba(255,0,0,.9);opacity:0;transition:opacity .25s}
+#nums .dmg{position:absolute;left:0;top:0;font-weight:900;text-shadow:0 2px 0 #000,0 0 4px #000;pointer-events:none;will-change:transform}
+#fps{position:absolute;left:4px;top:4px;font-size:11px;opacity:.6}
+.touch #fps{top:auto;bottom:4px}
+.panel{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.7em;background:radial-gradient(ellipse at center,rgba(30,40,80,.75),rgba(5,8,20,.92));padding:1em;overflow:auto}
+.panel h1{color:var(--gold);margin:0;font-size:clamp(26px,6vmin,58px);text-shadow:0 4px 0 #8a4a10,0 8px 18px #000;text-align:center;letter-spacing:.03em}
+button,select,input{font:inherit;font-weight:bold;padding:.55em 1.1em;border-radius:10px;border:2px solid #0006;background:linear-gradient(#4a7bd8,#2d4f9a);color:#fff;cursor:pointer;box-shadow:0 4px 0 #1a2c5a;text-shadow:0 1px 0 #0008}
+button.gold{background:linear-gradient(#ffd34a,#e8961e);color:#3a2000;box-shadow:0 4px 0 #8a4a10;text-shadow:none;font-size:1.2em}
+select,input{background:#1c2540;box-shadow:none}
+.row2{display:flex;flex-wrap:wrap;gap:.6em;justify-content:center;align-items:center}
+.help{font-size:.8em;max-width:640px;text-align:center;opacity:.8}
+/* touch */
+#touch{position:fixed;inset:0;display:none;pointer-events:none}
+.touch #touch{display:block}
+#joy{position:absolute;left:0;bottom:0;width:45%;height:65%;pointer-events:auto}
+#stick{position:absolute;width:120px;height:120px;margin:-60px;border-radius:50%;border:3px solid #fff6;background:#0003;display:none}
+#knob{position:absolute;left:50%;top:50%;width:54px;height:54px;margin:-27px;border-radius:50%;background:#fffa;box-shadow:0 2px 6px #0008}
+#look{position:absolute;right:0;top:0;width:55%;height:100%;pointer-events:auto}
+.tb{position:absolute;pointer-events:auto;width:clamp(48px,11vmin,74px);height:clamp(48px,11vmin,74px);border-radius:50%;background:rgba(20,28,50,.6);border:2px solid #fff8;color:#fff;font-weight:bold;font-size:clamp(10px,2.4vmin,14px);display:flex;align-items:center;justify-content:center;text-align:center;line-height:1}
+.tb.big{width:clamp(70px,17vmin,104px);height:clamp(70px,17vmin,104px);background:rgba(220,60,40,.55);font-size:clamp(12px,3vmin,17px)}
+.tb:active,.tb.down{background:rgba(255,211,74,.6)}
+.touch #hotbar{bottom:auto;top:calc(max(8px,env(safe-area-inset-top)) + 5.2em)}
+.touch #vitals{bottom:auto;top:max(8px,env(safe-area-inset-top));min-width:10em}
+#rot{position:fixed;inset:0;background:#0b1020;display:none;align-items:center;justify-content:center;flex-direction:column;z-index:50;text-align:center;font-size:1.3em}
+#rot .ph{width:60px;height:100px;border:4px solid #fff;border-radius:10px;animation:rr 1.6s infinite}
+@keyframes rr{0%,30%{transform:rotate(0)}60%,100%{transform:rotate(-90deg)}}
+@media (orientation:portrait){.touch #rot{display:flex}}
+#fsb{position:fixed;right:max(8px,env(safe-area-inset-right));bottom:max(8px,env(safe-area-inset-bottom));z-index:40;padding:.3em .6em;font-size:.8em}
+.touch #fsb{bottom:auto;top:calc(max(8px,env(safe-area-inset-top)) + 6.5em)}
 </style>
 <script type="importmap">{"imports":{"three":"./three.module.js"}}</script>
 </head><body>
-<div id="hud" style="display:none"><div id="top"></div><div id="cross"></div><div id="msg"></div><div id="bot"></div><div id="right"></div></div>
-<div id="menu" class="panel">
-<h1>VOXEL RAID: Bastion Breakers</h1><div>An original voxel base-raid FPS prototype</div>
-<button id="queue">Queue Match (random role)</button>
-<div><button id="att">Play Attack</button> <button id="def">Play Defend</button></div>
-<div>Base layout: <select id="layout"></select></div>
-<div>Build phase (seconds): <input id="buildT" type="number" value="300" style="width:90px"></div>
-<div style="font-size:13px;max-width:600px;text-align:center;opacity:.8">WASD move · Mouse look · Space jump · Shift sprint · LMB shoot · RMB place · Q cycle piece · Z cycle material · R reload · G skip phase (dev) · Esc release mouse</div>
+<div id="hud" style="display:none">
+ <div id="vign"></div><div id="nums"></div>
+ <div id="top" class="pill"><div class="row"><span id="mode"></span><span id="timer"></span><span id="stars"></span></div><div id="sub" style="font-size:.8em;opacity:.85"></div><div class="bar"><i id="dbar"></i></div></div>
+ <div id="cross"></div><div id="hitm">✕</div><div id="msg"></div>
+ <div id="vitals" class="pill"><div class="bar" id="hpbar"><i id="hp"></i></div><div id="ammo"></div><div id="res"></div></div>
+ <div id="hotbar"></div><div id="right" class="pill"></div><div id="fps"></div>
 </div>
-<div id="end" class="panel" style="display:none"><h1 id="endT"></h1><div id="endS" style="font-size:20px;white-space:pre;text-align:center"></div><button onclick="location.href=location.pathname">Main Menu</button></div>
+<div id="touch">
+ <div id="joy"><div id="stick"><div id="knob"></div></div></div><div id="look"></div>
+ <div class="tb big" id="tFire" style="right:4%;bottom:22%">FIRE</div>
+ <div class="tb" id="tJump" style="right:17%;bottom:8%">JUMP</div>
+ <div class="tb" id="tBuild" style="right:2%;bottom:46%">BUILD</div>
+ <div class="tb" id="tReload" style="right:17%;bottom:30%">RELOAD</div>
+ <div class="tb" id="tPiece" style="right:2%;bottom:66%">PIECE</div>
+ <div class="tb" id="tMat" style="right:15%;bottom:58%">MAT</div>
+ <div class="tb" id="tSkip" style="left:2%;top:45%">SKIP</div>
+</div>
+<div id="menu" class="panel">
+ <h1>VOXEL RAID<br><span style="font-size:.55em">Bastion Breakers</span></h1>
+ <div style="opacity:.85;text-align:center">Raid fortified bases or hold the Heartstone Keep. Everything breaks.</div>
+ <button id="queue" class="gold">⚔ Queue Match</button>
+ <div class="row2"><button id="att">Play Attack</button><button id="def">Play Defend</button></div>
+ <div class="row2"><label>Base <select id="layout"></select></label></div>
+ <div class="row2"><label>Build phase (s) <input id="buildT" type="number" value="300" style="width:5em"></label>
+  <label>Graphics <select id="quality"><option value="auto">Auto</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="ultra">Ultra</option></select></label></div>
+ <div class="help" id="help">WASD move · Mouse look · Space jump · Shift sprint · LMB shoot · RMB build · Q piece · Z material · R reload · G skip prep · Esc release mouse</div>
+</div>
+<div id="end" class="panel" style="display:none"><h1 id="endT"></h1><div id="endS" style="font-size:1.2em;white-space:pre;text-align:center"></div><button class="gold" onclick="location.href=location.pathname">Main Menu</button></div>
+<div id="rot"><div class="ph"></div><p>Rotate your phone to landscape</p></div>
+<button id="fsb">⛶ Fullscreen</button>
 <script type="module" src="./main.js"></script>
 </body></html>
