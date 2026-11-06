@@ -88,11 +88,12 @@ select,input{background:#1c2540;box-shadow:none}
  <div class="row2"><label>Base <select id="layout"></select></label></div>
  <div class="row2"><label>Build phase (s) <input id="buildT" type="number" value="300" style="width:5em"></label>
   <label>Primary <select id="primary"><option value="carbine">Carbine</option><option value="smg9">SMG-9</option><option value="shotgun">Shotgun</option><option value="dmr">DMR</option><option value="lmg">LMG</option></select></label> <label>Graphics <select id="quality"><option value="auto">Auto</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="ultra">Ultra</option></select></label></div>
+ <div class="row2"><label>Lighting <select id="lightsel"><option value="day">Day</option><option value="golden">Golden hour</option><option value="overcast">Overcast</option><option value="dusk">Dusk</option></select></label> <label><input type="checkbox" id="rainchk"> Rain (High/Ultra)</label> <label><input type="checkbox" id="lenschk" checked> Lens FX</label></div>
  <div class="help" id="help">WASD move · Mouse look · Space jump · Shift sprint · LMB shoot · RMB aim (build phase: place) · 1/2 or wheel switch weapon · Q piece · Z material · R reload · G skip prep · Esc release mouse</div>
 </div>
 <div id="end" class="panel" style="display:none"><h1 id="endT"></h1><div id="endS" style="font-size:1.2em;white-space:pre;text-align:center"></div><button class="gold" onclick="location.href=location.pathname">Main Menu</button></div>
 <div id="rot"><div class="ph"></div><p>Rotate your phone to landscape</p><button id="rotskip">Play anyway</button></div>
 <div id="ioshint" class="pill">For true fullscreen on iPhone: tap Share → <b>Add to Home Screen</b>, then launch Voxel Raid from your home screen. <button id="ioshintx" style="padding:.2em .6em">OK</button></div>
 <button id="fsb">⛶ Fullscreen</button>
-<script type="module" src="./game.min.js?v=7"></script>
+<script type="module" src="./game.min.js?v=8"></script>
 </body></html>

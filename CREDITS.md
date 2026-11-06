@@ -27,3 +27,6 @@ Library: three.js r170 (MIT) incl. examples/jsm add-ons (MIT).
 ## Weapons
 All six weapons (Carbine, SMG-9, Shotgun, DMR, LMG, Pistol) are original procedural models authored in code (`src/models.js` → `makeGun`), with generic names and no trademarks or manufacturer markings. Firing sounds are synthesized with WebAudio.
 Downloadable CC0/CC-BY gun models were reviewed on Poly Pizza (e.g. Quaternius CC0 low-poly rifles), but they are stylized flat-colour low-poly and clashed with the realistic look, so none were used. No third-party weapon assets are included.
+
+## Realism pass (v8)
+All new effects (bullet-hole/scorch decals, debris/rubble, dust, rain, shell casings, lens shader, height fog, reverb impulse, footsteps) are procedural original code — no new third-party assets. No CC0/CC-BY rigged human met license requirements (Mixamo is not CC), so soldiers remain original procedural models.

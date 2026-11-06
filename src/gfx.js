@@ -11,10 +11,10 @@ import { FXAAShader } from '../addons/shaders/FXAAShader.js';
 
 // ---------------- Quality ----------------
 export const PRESETS = {
-  low:    { pr: 0.75, shadow: 0,    ao: false, bloom: false, msaa: 0, fxaa: false, trees: 70,  grass: 0,    particles: 500,  dist: 90,  light: false },
-  medium: { pr: 1.0,  shadow: 1024, ao: false, bloom: true,  msaa: 0, fxaa: true,  trees: 140, grass: 1500, particles: 1000, dist: 130, light: false },
-  high:   { pr: 1.5,  shadow: 2048, ao: true,  bloom: true,  msaa: 4, fxaa: false, trees: 220, grass: 4000, particles: 1800, dist: 190, light: true },
-  ultra:  { pr: 2.0,  shadow: 4096, ao: true,  bloom: true,  msaa: 4, fxaa: false, trees: 320, grass: 8000, particles: 2600, dist: 250, light: true },
+  low:    { pr: 0.75, shadow: 0,    ao: false, bloom: false, msaa: 0, fxaa: false, trees: 70,  grass: 600,  particles: 500,  dist: 90,  light: false },
+  medium: { pr: 1.0,  shadow: 1024, ao: false, bloom: true,  msaa: 0, fxaa: true,  trees: 140, grass: 2500, particles: 1000, dist: 130, light: false },
+  high:   { pr: 1.5,  shadow: 2048, ao: true,  bloom: true,  msaa: 4, fxaa: false, trees: 220, grass: 9000, particles: 1800, dist: 190, light: true },
+  ultra:  { pr: 2.0,  shadow: 4096, ao: true,  bloom: true,  msaa: 4, fxaa: false, trees: 320, grass: 16000, particles: 2600, dist: 250, light: true },
 };
 export const IS_TOUCH = new URLSearchParams(location.search).get('touch') === '1' ||
   (matchMedia('(pointer: coarse)').matches && navigator.maxTouchPoints > 0);
@@ -49,6 +49,22 @@ export function pbrMaterial(set, o = {}) {
   return new THREE.MeshStandardMaterial({ map: set.map, normalMap: set.normalMap, aoMap: set.arm, roughnessMap: set.arm, metalnessMap: set.arm, roughness: 1, metalness: set.metal ? 1 : 0, aoMapIntensity: .8, ...o });
 }
 // ---------------- Renderer, sky, lights, post ----------------
+THREE.ShaderChunk.fog_pars_vertex = '#ifdef USE_FOG\n varying float vFogDepth; varying float vFogH;\n#endif';
+THREE.ShaderChunk.fog_vertex = '#ifdef USE_FOG\n vFogDepth = - mvPosition.z;\n vec4 fogWP = vec4( transformed, 1.0 );\n #ifdef USE_INSTANCING\n fogWP = instanceMatrix * fogWP;\n #endif\n vFogH = ( modelMatrix * fogWP ).y;\n#endif';
+THREE.ShaderChunk.fog_pars_fragment = '#ifdef USE_FOG\n uniform vec3 fogColor; varying float vFogDepth; varying float vFogH;\n #ifdef FOG_EXP2\n uniform float fogDensity;\n #else\n uniform float fogNear; uniform float fogFar;\n #endif\n#endif';
+THREE.ShaderChunk.fog_fragment = '#ifdef USE_FOG\n #ifdef FOG_EXP2\n float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );\n fogFactor *= mix( 0.45, 1.0, exp( - max( vFogH - 1.0, 0.0 ) * 0.07 ) );\n #else\n float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );\n #endif\n gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );\n#endif';
+// cinematic lens pass: chromatic aberration, vignette, film grain (after tone mapping)
+const LensShader = { uniforms: { tDiffuse: { value: null }, uT: { value: 0 }, uCA: { value: .0015 }, uGrain: { value: .04 }, uVig: { value: .35 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }',
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uT,uCA,uGrain,uVig; varying vec2 vUv; float h(vec2 p){return fract(sin(dot(p,vec2(12.9898,78.233))+uT)*43758.5453);}
+  void main(){ vec2 d=vUv-.5; float r2=dot(d,d); vec2 o=d*uCA*(1.+r2*4.); vec3 c=vec3(texture2D(tDiffuse,vUv+o).r,texture2D(tDiffuse,vUv).g,texture2D(tDiffuse,vUv-o).b);
+  c*=1.-uVig*smoothstep(.1,.75,r2*2.2); c+=(h(vUv*1000.)-.5)*uGrain; gl_FragColor=vec4(c,1.); }` };
+export const LIGHTING = {
+  day:      { sun: [-.55, .62, -.56], col: 0xfff0dc, I: 3.2, hemi: .35, exp: .9, fog: 0xb4c2cc, fogK: 1, bg: .9, env: .7 },
+  golden:   { sun: [-.8, .2, -.55], col: 0xffb070, I: 3.0, hemi: .25, exp: .95, fog: 0xd8b898, fogK: 1.2, bg: .75, env: .55 },
+  overcast: { sun: [-.3, .9, -.3], col: 0xdde4ee, I: .8, hemi: .9, exp: 1.0, fog: 0x9aa4ac, fogK: 1.9, bg: .55, env: .9 },
+  dusk:     { sun: [-.85, .08, -.5], col: 0xff7a40, I: 1.6, hemi: .18, exp: .8, fog: 0x6a6070, fogK: 1.5, bg: .3, env: .35 },
+};
 export function createGraphics(qname) {
   const Qp = { ...PRESETS[qname] };
   const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: new URLSearchParams(location.search).has('auto') });
@@ -65,13 +81,13 @@ export function createGraphics(qname) {
   const sun = new THREE.DirectionalLight(0xfff0dc, 3.2); sun.position.copy(sunDir).multiplyScalar(80); scene.add(sun); scene.add(sun.target);
   if (Qp.shadow) { sun.castShadow = true; sun.shadow.mapSize.set(Qp.shadow, Qp.shadow); const s = sun.shadow.camera; const R = Qp.shadow >= 4096 ? 60 : 40; s.left = s.bottom = -R; s.right = s.top = R; s.near = 1; s.far = 220; sun.shadow.bias = -.0004; sun.shadow.normalBias = .04; }
   // post
-  let composer = null, aoPass = null, fxaa = null;
+  let composer = null, aoPass = null, fxaa = null, lens = null;
   if (Qp.bloom || Qp.ao || Qp.fxaa) {
     const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: Qp.msaa });
     composer = new EffectComposer(renderer, rt); composer.addPass(new RenderPass(scene, camera));
     if (Qp.ao) { aoPass = new GTAOPass(scene, camera, innerWidth, innerHeight); aoPass.updateGtaoMaterial({ radius: .6, distanceExponent: 1.5, thickness: 1, scale: 1.1, samples: qname === 'ultra' ? 16 : 10 }); aoPass.blendIntensity = .9; composer.addPass(aoPass); }
     if (Qp.bloom) composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), .18, .4, .95));
-    composer.addPass(new OutputPass());
+    composer.addPass(new OutputPass()); lens = new ShaderPass(LensShader); composer.addPass(lens);
     if (Qp.fxaa) { fxaa = new ShaderPass(FXAAShader); composer.addPass(fxaa); }
   }
   const resize = () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight);
@@ -80,6 +96,11 @@ export function createGraphics(qname) {
   addEventListener('resize', resize); resize();
   function render() { return this.composer ? this.composer.render() : renderer.render(scene, camera); }
   const followSun = p => { sun.position.copy(p).addScaledVector(sunDir, 90); sun.target.position.copy(p); };
-  return { renderer, scene, camera, sun, sunDir, hemi, composer, aoPass, render, resize, Q: Qp, followSun,
+  const mats = new Set();
+  function setLighting(name, wet) { const L = LIGHTING[name] || LIGHTING.day; sunDir.set(...L.sun).normalize(); sun.color.set(L.col); sun.intensity = L.I * (wet ? .45 : 1); hemi.intensity = L.hemi * (wet ? 1.4 : 1);
+    renderer.toneMappingExposure = L.exp; scene.fog.color.set(L.fog); scene.fog.density = 1.3 / Qp.dist * L.fogK * (wet ? 1.5 : 1); scene.backgroundIntensity = L.bg * (wet ? .6 : 1); scene.environmentIntensity = L.env;
+    hemi.color.set(L.fog); scene.traverse(o => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []; for (const m of ms) if (m.isMeshStandardMaterial && m.userData.baseRough == null) { m.userData.baseRough = m.roughness; } for (const m of ms) if (m.isMeshStandardMaterial) m.roughness = wet ? m.userData.baseRough * .45 : m.userData.baseRough; }); }
+  function setLens(on) { if (lens) lens.enabled = !!on; }
+  return { setLighting, setLens, lens: () => lens, renderer, scene, camera, sun, sunDir, hemi, composer, aoPass, render, resize, Q: Qp, followSun,
     setPR(pr) { renderer.setPixelRatio(pr); resize(); }, disableAO() { if (aoPass) { aoPass.enabled = false; } } };
 }
