@@ -94,9 +94,9 @@ export const WEAPONS = {
   carbine: { name: 'Carbine', dmg: 26, rpm: 750, mag: 30, reload: 2.1, recoil: .9, spread: .012, ads: .002, range: 120, auto: true, fov: 52, snd: [2600, 150, .55] },
   smg9:    { name: 'SMG-9', dmg: 18, rpm: 850, mag: 30, reload: 1.8, recoil: .5, spread: .02, ads: .006, range: 60, auto: true, fov: 58, snd: [3400, 220, .4] },
   shotgun: { name: 'Shotgun', dmg: 14, pellets: 8, rpm: 70, mag: 7, reload: 3.0, recoil: 2.6, spread: .07, ads: .05, range: 30, auto: false, fov: 60, snd: [1200, 80, .9] },
-  dmr:     { name: 'DMR', dmg: 62, rpm: 200, mag: 10, reload: 2.6, recoil: 2, spread: .01, ads: .0004, range: 220, auto: false, fov: 30, snd: [1900, 110, .8] },
+  dmr:     { name: 'DMR', dmg: 62, rpm: 200, mag: 10, reload: 2.6, recoil: 2, spread: .01, ads: .0004, range: 220, auto: false, fov: 30, scope: true, snd: [1900, 110, .8] },
   lmg:     { name: 'LMG', dmg: 24, rpm: 700, mag: 100, reload: 4.5, recoil: 1.1, spread: .03, ads: .012, range: 130, auto: true, fov: 55, snd: [2100, 120, .65] },
-  rpg:     { name: 'Rocket Launcher', dmg: 0, rpm: 55, mag: 1, reload: 2.6, recoil: 3.2, spread: .004, ads: .001, range: 200, auto: false, fov: 55, snd: [700, 55, 1], rocket: true },
+  rpg:     { name: 'RPG-7', dmg: 0, rpm: 55, mag: 1, reload: 2.6, recoil: 3.2, spread: .004, ads: .001, range: 200, auto: false, fov: 55, snd: [700, 55, 1], rocket: true },
   pistol:  { name: 'Pistol', dmg: 30, rpm: 300, mag: 15, reload: 1.5, recoil: 1.2, spread: .015, ads: .006, range: 50, auto: false, fov: 62, snd: [3000, 200, .45] },
 };
 export function makeGun(kind) {
@@ -139,11 +139,18 @@ export function makeGun(kind) {
     M(box(.03, .09, .04), poly, 0, -.08, .1, g, -.35); M(box(.045, .08, .2), poly, 0, -.02, .24, g); M(box(.05, .045, .14), poly, 0, -.035, -.23, g); // grip, stock, forend
     for (const s of [-1, 1]) M(cyl(.006, .006, .2, 6), stl, s * .03, -.07, -.48, g, .25, 0, s * .25); rail(0, .045, .05, .1); // bipod
     muzzleAt.set(0, .005, -.63); fore = -.23; sightY = .065;
-  } else if (kind === 'rpg') { // shoulder-fired launcher
-    const olive = mat(0x4d5a3a, { r: .8 }); M(cyl(.045, .045, .9, 12), olive, 0, .02, -.1, g, Math.PI / 2); M(cyl(.055, .05, .08, 12), blk, 0, .02, -.56, g, Math.PI / 2); M(cyl(.06, .045, .1, 12), blk, 0, .02, .37, g, Math.PI / 2);
-    M(box(.028, .085, .04), poly, 0, -.06, .02, g, -.3); M(box(.028, .07, .035), poly, 0, -.05, -.2, g, .2); M(box(.03, .05, .09), blk, -.06, .06, -.12, g); // grips, sight
-    const war = M(new THREE.ConeGeometry(.05, .14, 10), mat(0x6a6250, { r: .6, m: .3 }), 0, .02, -.67, g, -Math.PI / 2); g.userData.war = war;
-    muzzleAt.set(0, .02, -.62); fore = -.2; sightY = .085;
+  } else if (kind === 'rpg') { // RPG-7 pattern: steel tube, wooden heat guards, optic, two pistol grips, finned warhead
+    const wood = mat(0x7a4a26, { r: .7 }), tube = wm(0x2e3230, .6, .8, .3);
+    M(cyl(.032, .032, .95, 14), tube, 0, .02, -.08, g, Math.PI / 2); // tube
+    M(cyl(.05, .036, .2, 14), tube, 0, .02, .47, g, Math.PI / 2); M(cyl(.056, .05, .04, 14), blk, 0, .02, .58, g, Math.PI / 2); // flared venturi
+    M(cyl(.042, .042, .3, 12), wood, 0, .02, -.02, g, Math.PI / 2); M(cyl(.043, .043, .012, 12), stl, 0, .02, -.17, g, Math.PI / 2); M(cyl(.043, .043, .012, 12), stl, 0, .02, .13, g, Math.PI / 2); // heat guard + bands
+    M(box(.026, .085, .036), wood, 0, -.06, .02, g, -.25); M(box(.024, .08, .034), wood, 0, -.055, -.2, g, .15); M(box(.008, .03, .05), stl, 0, -.02, -.02, g); // pistol grips, trigger guard
+    M(box(.03, .05, .11), blk, -.055, .06, -.03, g); M(cyl(.017, .017, .04, 10), blk, -.055, .07, .045, g, Math.PI / 2); M(box(.02, .03, .03), blk, -.03, .045, -.03, g); // side optic
+    const war = new THREE.Group(); war.position.set(0, .02, -.555); g.add(war); const wh = mat(0x4f5a3c, { r: .6, m: .3 });
+    M(cyl(.022, .022, .16, 10), stl, 0, 0, .04, war, Math.PI / 2); M(cyl(.06, .03, .1, 14), wh, 0, 0, -.08, war, Math.PI / 2); M(new THREE.ConeGeometry(.06, .17, 14), wh, 0, 0, -.215, war, -Math.PI / 2); M(cyl(.008, .008, .05, 6), stl, 0, 0, -.32, war, Math.PI / 2);
+    for (let i = 0; i < 4; i++) M(box(.004, .05, .05), stl, Math.cos(i * 1.57) * .03, Math.sin(i * 1.57) * .03, .1, war, 0, 0, i * 1.57);
+    g.userData.war = war; war.userData.home = war.position.clone();
+    muzzleAt.set(0, .02, -.47); fore = -.2; sightY = .085;
   } else { // pistol
     M(box(.032, .035, .19), stl, 0, .02, -.04, g); M(box(.03, .03, .16), poly, 0, -.01, -.04, g); g.userData.magM = M(box(.03, .1, .045), poly, 0, -.06, .03, g, -.25); // slide, frame, grip
     M(box(.008, .006, .006), stl, 0, .04, -.13, g); M(box(.016, .006, .006), stl, 0, .04, .045, g); M(cyl(.006, .006, .02, 8), stl, 0, .02, -.14, g, Math.PI / 2);
@@ -151,12 +158,12 @@ export function makeGun(kind) {
   }
   g.traverse(o => { if (o.isMesh) { o.castShadow = false; o.renderOrder = 10; } });
   const magM = g.userData.magM; if (magM) magM.userData.home = magM.position.clone();
-  g.userData = { muzzleAt, fore, sightY, magM, eject: new THREE.Vector3(.03, .03, kind === 'pistol' ? -.04 : -.02) }; return g;
+  const war = g.userData.war; g.userData = { war, muzzleAt, fore, sightY, magM, eject: new THREE.Vector3(.03, .03, kind === 'pistol' ? -.04 : -.02) }; return g;
 }
 export function makeViewmodel() {
   const g = new THREE.Group(); const sleeve = mat(0x7d7058, { r: 1 }), glove = mat(0x2a2722, { r: .9 }); const hands = new THREE.Group(); g.add(hands);
   const limb = (a, b, r, m, par) => { const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b); const L = A.distanceTo(B); const o = M(cap(r, L), m, 0, 0, 0, par); o.position.copy(A).lerp(B, .5); o.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), B.clone().sub(A).normalize()); o.renderOrder = 10; return o; };
-  const flash = new THREE.Mesh(new THREE.PlaneGeometry(.2, .2), new THREE.MeshBasicMaterial({ map: flashTex(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })); flash.visible = false; flash.renderOrder = 11;
+  const flash = new THREE.Mesh(new THREE.PlaneGeometry(.09, .09), new THREE.MeshBasicMaterial({ map: flashTex(), transparent: true, opacity: .55, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })); flash.visible = false; flash.renderOrder = 11;
   const cache = {}; let gun = null;
   g.userData = { flash, setGun(kind) { if (gun) g.remove(gun); gun = cache[kind] || (cache[kind] = makeGun(kind)); g.add(gun); gun.add(flash); flash.position.copy(gun.userData.muzzleAt).add(new THREE.Vector3(0, 0, -.06));
     hands.clear(); const f = gun.userData.fore; M(sph(.034), glove, 0, -.085, .06, hands); limb([0, -.095, .08], [.08, -.3, .4], .038, sleeve, hands);

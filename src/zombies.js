@@ -91,7 +91,7 @@ export function createZombies(ctx) {
   function remoteFire(w) {
     const R = Z.remote; if (!R) return; const dir = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(R.pitch, R.yaw, 0, 'YXZ'));
     const mz = R.pos.clone().add(new THREE.Vector3(0, 1.35, 0)).addScaledVector(dir, .75);
-    fx.muzzle(mz, [1, .7, .35]); fx.tracer(mz, mz.clone().addScaledVector(dir, 30), 0xffb060, .05);
+    fx.muzzle(mz, [1, .72, .4], .6); fx.tracer(mz, mz.clone().addScaledVector(dir, 30), 0xffb060, .05);
     if (w === 'rpg') return; const W_ = WEAPONS[w] || WEAPONS.pistol; sfx.at(R.pos, () => sfx.shot(W_.snd));
   }
   // ---------------- arena ----------------
@@ -172,22 +172,24 @@ export function createZombies(ctx) {
     u.pos.set(x, 1, z); u.tpos.copy(u.pos); addUnit(u); Z.pending--;
   }
   function kill(u, head = false, drop = true, who = 'h') {
-    if (u.deadT) return; u.hp = 0; u.deadT = 1.6; Z.kills++; if (head) Z.heads++; award(head ? 100 : 60, who);
+    if (u.deadT) return; ctx.feed((who === 'r' ? 'P2' : linked() ? 'P1' : 'YOU') + '  ⌖' + (head ? ' ◉' : '') + '  ' + (u.kind || 'zombie').toUpperCase(), who === 'r' ? '' : 'me'); u.hp = 0; u.deadT = 1.6; Z.kills++; if (head) Z.heads++; award(head ? 100 : 60, who);
     if (drop && Math.random() < .12 && Z.drops.length < 4) dropPower(u.pos);
   }
   function damage(u, amount, head, who = 'h') {
     if (isClient()) { net.send({ t: 'hit', id: u.id, a: amount, hd: !!head }); u.flinch = .22; u.hp -= amount; if (u.hp <= 0) u.hp = 1; return; }
     award(10, who); u.flinch = .22; u.hp -= Z.timers.insta > 0 ? 1e9 : amount * (head ? 1.5 : 1); if (u.hp <= 0) kill(u, head, true, who);
   }
-  const powerNames = { ammo: 'MAX AMMO', insta: 'INSTA-KILL', double: 'DOUBLE POINTS', nuke: 'NUKE' };
+  const powerNames = { ammo: 'MAX AMMO', insta: 'INSTA-KILL', double: 'DOUBLE POINTS', nuke: 'NUKE', strike: 'PRECISION STRIKE', uav: 'RECON DRONE' };
   function dropMesh(pos, kind) { const m = new THREE.Group(); m.position.copy(pos); cube(m, [.55, .55, .55], [0, .5, 0], mat(0x91ff8c, { e: 0x54ff64, ei: 1.5 })); label(m, powerNames[kind], '#aaffaa', 1.4); scene.add(m); return m; }
-  function dropPower(pos, kind) { kind ||= Object.keys(powerNames)[Math.floor(Math.random() * 4)]; Z.drops.push({ m: dropMesh(pos, kind), kind, life: 24, id: Z.nextId++ }); }
+  function dropPower(pos, kind) { kind ||= Object.keys(powerNames)[Math.floor(Math.random() * 6)]; Z.drops.push({ m: dropMesh(pos, kind), kind, life: 24, id: Z.nextId++ }); }
   function freeDrop(d) { scene.remove(d.m); d.m.traverse(o => { if (o.isSprite) { o.material.map.dispose(); o.material.dispose(); } }); }
   function refill() { for (const k of P.slots) { P.ammoOf[k] = WEAPONS[k].mag; P.reserve[k] = WEAPONS[k].mag * 5; } P.ammo = P.mag; P.reload = 0; }
   function power(kind) {
     msg(powerNames[kind], 3); sfx.horn(); net.send({ t: 'msg', s: powerNames[kind], h: 1, d: 3 });
     if (kind === 'ammo') { refill(); net.send({ t: 'pw', k: 'ammo' }); }
     else if (kind === 'nuke') { for (const u of active()) kill(u, false, false); fx.explosion(P.pos.clone().setY(3), 3); sfx.boom(.7); }
+    else if (kind === 'strike') { let c = P.pos, bd = 0; for (const u of active()) { const d = u.pos.distanceTo(P.pos); if (d > bd) { bd = d; c = u.pos; } } ctx.precisionStrike(P.pos, Math.atan2(-(c.x - P.pos.x), -(c.z - P.pos.z))); }
+    else if (kind === 'uav') Z.uavT = 30;
     else Z.timers[kind] = 30;
   }
   function nearest() { let best, dist = 3.4; for (const s of Z.stations) { if (s.used || (!Z.opened && s.x > 52)) continue; const d = Math.hypot(P.pos.x - s.x, P.pos.z - s.z); if (d < dist) { best = s; dist = d; } } return best; }
@@ -244,7 +246,7 @@ export function createZombies(ctx) {
   }
   function deathAnim(u, dt) { const r = u.m.userData; u.deadT -= dt; r.body.rotation.x = Math.min(1.55, r.body.rotation.x + dt * 3); r.body.position.y = Math.max(-.5, r.body.position.y - dt * .5); if (u.deadT <= 0) { scene.remove(u.m); Z.pool.push(u); return false; } return true; }
   function common(dt) {
-    for (const k in Z.timers) Z.timers[k] = Math.max(0, Z.timers[k] - dt);
+    for (const k in Z.timers) Z.timers[k] = Math.max(0, Z.timers[k] - dt); Z.uavT = Math.max(0, (Z.uavT || 0) - dt);
     if (!P.downed && G.t - Z.lastHurt > 5) P.hp = Math.min(Z.maxHP, P.hp + dt * 12);
     const R = Z.remote;
     if (R) {
@@ -314,7 +316,7 @@ export function createZombies(ctx) {
       u.m.rotation.y = Math.atan2(-dx, -dz);
       if (Math.hypot(dx, dz) < 1.45 * u.d.s && Math.abs(T.pos.y - u.pos.y) < 2.4 && u.cd <= 0) {
         u.cd = 1.05; const dmg = u.kind === 'brute' ? 45 : 24;
-        if (T === P) { Z.lastHurt = G.t; hurt(P, dmg); } else net.send({ t: 'hurt', d: dmg });
+        if (T === P) { Z.lastHurt = G.t; P.hitFrom = u.pos; hurt(P, dmg); } else net.send({ t: 'hurt', d: dmg });
       }
       if (bd > 1.15 && !u.flinch) {
         if (u.repath <= 0) { u.path = astar(u.pos.x, u.pos.z, T.pos.x, T.pos.z, costD, 0); u.pi = 0; u.repath = 1.8 + Math.random(); }
@@ -366,7 +368,8 @@ export function createZombies(ctx) {
     $('tPiece').style.display = $('tMat').style.display = build ? '' : 'none';
     $('tSkip').style.display = build ? '' : 'none';
   }
+  function strikeAt(c) { ctx.explodeFx(c); if (isClient()) return; for (const u of active()) if (u.pos.distanceTo(c) < 4.5) damage(u, 400, false); }
   function rocket(o, d) { net.send({ t: 'rk', o: [o.x, o.y, o.z].map(v => +v.toFixed(2)), v: [d.x, d.y, d.z].map(v => +v.toFixed(3)) }); }
-  const api = { rocket, state: Z, net, init, tick, hud, damage, buy, use, over, refill, power, dropPower, kill, nextRound, skip, endBuild, canBuild, onPlace, onZeroHP, hostBuy, snap, cleanCode, linked };
+  const api = { strikeAt, rocket, state: Z, net, init, tick, hud, damage, buy, use, over, refill, power, dropPower, kill, nextRound, skip, endBuild, canBuild, onPlace, onZeroHP, hostBuy, snap, cleanCode, linked };
   return api;
 }

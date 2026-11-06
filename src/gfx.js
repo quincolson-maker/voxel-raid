@@ -54,11 +54,12 @@ THREE.ShaderChunk.fog_vertex = '#ifdef USE_FOG\n vFogDepth = - mvPosition.z;\n v
 THREE.ShaderChunk.fog_pars_fragment = '#ifdef USE_FOG\n uniform vec3 fogColor; varying float vFogDepth; varying float vFogH;\n #ifdef FOG_EXP2\n uniform float fogDensity;\n #else\n uniform float fogNear; uniform float fogFar;\n #endif\n#endif';
 THREE.ShaderChunk.fog_fragment = '#ifdef USE_FOG\n #ifdef FOG_EXP2\n float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );\n fogFactor *= mix( 0.45, 1.0, exp( - max( vFogH - 1.0, 0.0 ) * 0.07 ) );\n #else\n float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );\n #endif\n gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );\n#endif';
 // cinematic lens pass: chromatic aberration, vignette, film grain (after tone mapping)
-const LensShader = { uniforms: { tDiffuse: { value: null }, uT: { value: 0 }, uCA: { value: .0015 }, uGrain: { value: .04 }, uVig: { value: .35 } },
+const LensShader = { uniforms: { tDiffuse: { value: null }, uT: { value: 0 }, uCA: { value: .0015 }, uGrain: { value: .055 }, uVig: { value: .45 } },
   vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }',
   fragmentShader: `uniform sampler2D tDiffuse; uniform float uT,uCA,uGrain,uVig; varying vec2 vUv; float h(vec2 p){return fract(sin(dot(p,vec2(12.9898,78.233))+uT)*43758.5453);}
   void main(){ vec2 d=vUv-.5; float r2=dot(d,d); vec2 o=d*uCA*(1.+r2*4.); vec3 c=vec3(texture2D(tDiffuse,vUv+o).r,texture2D(tDiffuse,vUv).g,texture2D(tDiffuse,vUv-o).b);
-  c*=1.-uVig*smoothstep(.1,.75,r2*2.2); c+=(h(vUv*1000.)-.5)*uGrain; gl_FragColor=vec4(c,1.); }` };
+  float l=dot(c,vec3(.2126,.7152,.0722)); c=mix(vec3(l),c,.74); c=mix(c*vec3(.88,.97,1.06),c*vec3(1.07,1.0,.9),smoothstep(.15,.7,l)); c=(c-.5)*1.1+.5; c=max(c,vec3(.012,.016,.02));
+  c*=1.-uVig*smoothstep(.1,.75,r2*2.2); c+=(h(vUv*1000.)-.5)*uGrain*(1.2-l*.6); gl_FragColor=vec4(c,1.); }` };
 export const LIGHTING = {
   night:    { sun: [-.4, .7, -.5], col: 0x9fc3e2, I: 1.25, hemi: .65, exp: 1.0, fog: 0x15242b, fogK: 2, bg: .015, env: .15 },
   day:      { sun: [-.55, .62, -.56], col: 0xfff0dc, I: 3.2, hemi: .35, exp: .9, fog: 0xb4c2cc, fogK: 1, bg: .9, env: .7 },
@@ -87,7 +88,7 @@ export function createGraphics(qname) {
     const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: Qp.msaa });
     composer = new EffectComposer(renderer, rt); composer.addPass(new RenderPass(scene, camera));
     if (Qp.ao) { aoPass = new GTAOPass(scene, camera, innerWidth, innerHeight); aoPass.updateGtaoMaterial({ radius: .6, distanceExponent: 1.5, thickness: 1, scale: 1.1, samples: qname === 'ultra' ? 16 : 10 }); aoPass.blendIntensity = .9; composer.addPass(aoPass); }
-    if (Qp.bloom) composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), .18, .4, .95));
+    if (Qp.bloom) composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), .12, .35, .97));
     composer.addPass(new OutputPass()); lens = new ShaderPass(LensShader); composer.addPass(lens);
     if (Qp.fxaa) { fxaa = new ShaderPass(FXAAShader); composer.addPass(fxaa); }
   }

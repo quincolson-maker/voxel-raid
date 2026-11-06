@@ -75,3 +75,12 @@ The first tests round transitions/scaling/actor caps, shops, ammo, gate, box, pe
 - **2-player co-op** (peer-to-peer WebRTC via vendored PeerJS + free public broker; no game server): menu → **Host 2-Player Co-op** shows a room code and `?join=CODE` link; teammate enters the code (or opens the link) and taps **Join Co-op**. Host is authoritative for zombies, rounds, drops, purchases and per-player points; builds, positions, firing and rockets are synced. Downed players can be revived by holding **E / USE** for 3 s; game over when both are down. If a player disconnects the other continues solo (a joiner whose host leaves takes over the simulation).
 - **Rocket launcher** secondary (all modes): 1/2, wheel, Q (outside building) or SWAP on phone. Splash damage with knockback, light self-damage, 1-round mag, limited reserve refilled by Max Ammo / Ammo Cache.
 - Test: `node tests/coop.cjs http://localhost:8767` (two tabs over a `?loopnet=1` BroadcastChannel transport using the same protocol — this box's managed Chrome blocks non-proxied WebRTC UDP, so the real PeerJS/WebRTC path is not exercised by CI).
+
+## GHOSTLINE tactical overhaul (original art direction)
+- Cinematic grade (desaturated, cool shadows / warm highlights, contrast, stronger grain + vignette), subtler bloom.
+- Tactical HUD: top compass bar with heading (teammate dot; enemy pins during Recon Drone), weapon/ammo bottom-right, killfeed, damage-direction indicators, pulsing red low-health screen, minimal crosshair, DMR scope overlay.
+- Dark menu with operator / loadout panel (cosmetic operator choice saved locally).
+- Movement/feel: sprint (gun lowered), double-tap Shift or held full stick = tactical sprint (4 s stamina), C/Ctrl or SLIDE button = slide, Space at a 2-block ledge = mantle, I = inspect, per-burst recoil pattern, much subtler muzzle flash (smaller, ~1 frame, dimmer light, hidden while ADS).
+- Killstreaks (Attack/Defend): 3 Recon Drone, 5 Precision Strike, 7 Sentry Gun. Zombies: Precision Strike and Recon Drone drops.
+- RPG-7 secondary: tube with wooden heat guard, side optic, two grips; finned warhead on the muzzle when loaded, gone after firing, inserted during reload; warhead projectile with booster flame + smoke.
+- `node tests/mw-shots.cjs` regenerates `shot-mw-*.png`.

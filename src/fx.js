@@ -69,7 +69,7 @@ export class FX {
       this.deb.setColorAt(i, c.clone().multiplyScalar(.75 + Math.random() * .4)); }
     this.deb.instanceColor.needsUpdate = true;
     const cc = new THREE.Color(color); for (let k = 0; k < 7; k++) this.smoke.emit(x + Math.random(), y + Math.random(), z + Math.random(), (Math.random() - .5) * 2.5, Math.random() * 1.2, (Math.random() - .5) * 2.5, cc.r * .5 + .3, cc.g * .5 + .28, cc.b * .5 + .25, 1.2, 2.2 + Math.random() * 1.5, 2.6, -.05, .6); }
-  muzzle(p, col = [.5, .85, 1]) { for (let k = 0; k < 3; k++) this.add.emit(p.x, p.y, p.z, (Math.random() - .5), (Math.random() - .5), (Math.random() - .5), ...col, .5, .06, 2); if (this.light) { this.light.color.setRGB(...col); this.light.position.copy(p); this.light.intensity = 6; this.lightT = .05; } }
+  muzzle(p, col = [.5, .85, 1], k = 1) { this.add.emit(p.x, p.y, p.z, (Math.random() - .5) * .4, (Math.random() - .5) * .4, (Math.random() - .5) * .4, col[0] * .45, col[1] * .45, col[2] * .45, .22 * k, .03, 1); if (this.light) { this.light.color.setRGB(...col); this.light.position.copy(p); this.light.intensity = 1.4 * k; this.lightT = .025; } }
   impact(p, col = [1, .85, .5]) { for (let k = 0; k < 6; k++) this.add.emit(p.x, p.y, p.z, (Math.random() - .5) * 6, Math.random() * 5, (Math.random() - .5) * 6, ...col, .12, .3, 0, 14); }
   explosion(p, r) { for (let k = 0; k < 26; k++) { const a = Math.random() * 6.28, u = Math.random() * 2 - 1, s = (2 + Math.random() * 6) * r / 2;
       this.add.emit(p.x, p.y, p.z, Math.cos(a) * Math.sqrt(1 - u * u) * s, Math.abs(u) * s + 2, Math.sin(a) * Math.sqrt(1 - u * u) * s, 1, .55 + Math.random() * .3, .15, .9 + Math.random() * .8, .45 + Math.random() * .3, 2, 4); }
