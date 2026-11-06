@@ -317,7 +317,7 @@ function updatePlayer(dt) { if (P.dead > 0) { P.dead -= dt; if (P.dead <= 0) { P
   const fv = 75 + (WP().fov - 75) * P.adsT; if (Math.abs(camera.fov - fv) > .05) { camera.fov = fv; camera.updateProjectionMatrix(); }
   const ob = P.bob; P.bob += dt * Math.hypot(P.vel.x, P.vel.z) * 1.6; if (P.onGround && Math.floor(ob / Math.PI) != Math.floor(P.bob / Math.PI)) { const t = get(Math.floor(P.pos.x), Math.floor(P.pos.y - .1), Math.floor(P.pos.z)); sfx.step(t > 1); } P.recoil = Math.max(0, P.recoil - dt * 6); }
 function updateViewmodel(dt) { const b = Math.sin(P.bob), b2 = Math.abs(Math.cos(P.bob)); const rm = P.reloadMax || 1.6; const rl = P.reload > 0 ? Math.sin(Math.min(1, (rm - P.reload) / rm) * Math.PI) : 0; const a = P.adsT, h = 1 - a;
-  const sw = P.swap > 0 ? Math.sin(P.swap / .35 * Math.PI) : 0; const sy = (vm.userData.sightY || .07) * .55;
+  const sw = P.swap > 0 ? Math.sin(P.swap / .35 * Math.PI) : 0; const sy = ((vm.userData.gun && vm.userData.gun.userData.sightY) || vm.userData.sightY || .07) * .55;
   vm.position.set(.1 * h + b * .006 * h, (-.095 * h - sy * a) - b2 * .008 * h - rl * .12 - sw * .15, -.2 * h - .14 * a + P.recoil * .025);
   P.swX = (P.swX || 0) * Math.max(0, 1 - dt * 10); P.swY = (P.swY || 0) * Math.max(0, 1 - dt * 10); const kx = Math.max(-.08, Math.min(.08, P.swX * .6)), ky = Math.max(-.08, Math.min(.08, P.swY * .6));
   vm.position.x += kx * .25 * (h + .2); vm.position.y += ky * .2 * (h + .2);

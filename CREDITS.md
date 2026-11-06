@@ -32,3 +32,12 @@ Downloadable CC0/CC-BY gun models were reviewed on Poly Pizza (e.g. Quaternius C
 All new effects (bullet-hole/scorch decals, debris/rubble, dust, rain, shell casings, lens shader, height fog, reverb impulse, footsteps) are procedural original code — no new third-party assets. No CC0/CC-BY rigged human met license requirements (Mixamo is not CC), so soldiers remain original procedural models.
 
 - PeerJS 1.5.4 (MIT) — vendored at `vendor/peerjs.min.js` for co-op WebRTC data channels; signaling via the free public PeerJS broker.
+
+## Weapon models (CC0 / public domain)
+All from **Quaternius — "Ultimate Guns Pack"** (https://quaternius.itch.io/50-lowpoly-guns, GLB mirror https://poly.pizza/bundle/Ultimate-Guns-Pack-cpgUfI4t2F), license **CC0 1.0**. Re-exported with glTF-Transform (quantized) to `assets/guns/`.
+- M4A1 (`carbine.glb`) ← "Assault Rifle" https://poly.pizza/m/Bgvuu4CUMV
+- MP9 (`smg9.glb`) ← "Submachine Gun" https://poly.pizza/m/7ehatxr7FY
+- M870 (`shotgun.glb`) ← "Shotgun" https://poly.pizza/m/DcNE0HVdW8
+- SR-25 (`dmr.glb`) ← "Sniper Rifle" https://poly.pizza/m/XCIC2Ae4Rb
+- M17 (`pistol.glb`) ← "Pistol" https://poly.pizza/m/Jyn9qex4ba
+- M249 and RPG-7 remain original procedural models (no suitable CC0 model found).

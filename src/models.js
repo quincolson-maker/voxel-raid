@@ -91,15 +91,34 @@ export function makeRoof(kind, s) {
 }
 // ------------- Weapons: detailed original procedural models (generic, no trademarks) -------------
 export const WEAPONS = {
-  carbine: { name: 'Carbine', dmg: 26, rpm: 750, mag: 30, reload: 2.1, recoil: .9, spread: .012, ads: .002, range: 120, auto: true, fov: 52, snd: [2600, 150, .55] },
-  smg9:    { name: 'SMG-9', dmg: 18, rpm: 850, mag: 30, reload: 1.8, recoil: .5, spread: .02, ads: .006, range: 60, auto: true, fov: 58, snd: [3400, 220, .4] },
-  shotgun: { name: 'Shotgun', dmg: 14, pellets: 8, rpm: 70, mag: 7, reload: 3.0, recoil: 2.6, spread: .07, ads: .05, range: 30, auto: false, fov: 60, snd: [1200, 80, .9] },
-  dmr:     { name: 'DMR', dmg: 62, rpm: 200, mag: 10, reload: 2.6, recoil: 2, spread: .01, ads: .0004, range: 220, auto: false, fov: 30, scope: true, snd: [1900, 110, .8] },
-  lmg:     { name: 'LMG', dmg: 24, rpm: 700, mag: 100, reload: 4.5, recoil: 1.1, spread: .03, ads: .012, range: 130, auto: true, fov: 55, snd: [2100, 120, .65] },
+  carbine: { name: 'M4A1', dmg: 26, rpm: 750, mag: 30, reload: 2.1, recoil: .9, spread: .012, ads: .002, range: 120, auto: true, fov: 52, snd: [2600, 150, .55] },
+  smg9:    { name: 'MP9', dmg: 18, rpm: 850, mag: 30, reload: 1.8, recoil: .5, spread: .02, ads: .006, range: 60, auto: true, fov: 58, snd: [3400, 220, .4] },
+  shotgun: { name: 'M870', dmg: 14, pellets: 8, rpm: 70, mag: 7, reload: 3.0, recoil: 2.6, spread: .07, ads: .05, range: 30, auto: false, fov: 60, snd: [1200, 80, .9] },
+  dmr:     { name: 'SR-25', dmg: 62, rpm: 200, mag: 10, reload: 2.6, recoil: 2, spread: .01, ads: .0004, range: 220, auto: false, fov: 30, scope: true, snd: [1900, 110, .8] },
+  lmg:     { name: 'M249', dmg: 24, rpm: 700, mag: 100, reload: 4.5, recoil: 1.1, spread: .03, ads: .012, range: 130, auto: true, fov: 55, snd: [2100, 120, .65] },
   rpg:     { name: 'RPG-7', dmg: 0, rpm: 55, mag: 1, reload: 2.6, recoil: 3.2, spread: .004, ads: .001, range: 200, auto: false, fov: 55, snd: [700, 55, 1], rocket: true },
-  pistol:  { name: 'Pistol', dmg: 30, rpm: 300, mag: 15, reload: 1.5, recoil: 1.2, spread: .015, ads: .006, range: 50, auto: false, fov: 62, snd: [3000, 200, .45] },
+  pistol:  { name: 'M17', dmg: 30, rpm: 300, mag: 15, reload: 1.5, recoil: 1.2, spread: .015, ads: .006, range: 50, auto: false, fov: 62, snd: [3000, 200, .45] },
 };
-export function makeGun(kind) {
+// Real-world-style CC0 gun models (Quaternius "Ultimate Guns Pack", see CREDITS.md), lazy-loaded; the procedural model stays as fallback.
+const GLB = { carbine: 'carbine', smg9: 'smg9', shotgun: 'shotgun', dmr: 'dmr', pistol: 'pistol' };
+const glbCache = {}; let gltfL = null;
+function loadGLB(kind) { if (!glbCache[kind]) { gltfL ||= new GLTFLoader(); glbCache[kind] = gltfL.loadAsync('./assets/guns/' + GLB[kind] + '.glb').then(g => g.scene).catch(() => null); } return glbCache[kind]; }
+function fitGLB(g, kind, scene) {
+  const len = { carbine: .82, smg9: .52, shotgun: .9, dmr: 1.0, pistol: .26 }[kind];
+  const m = scene.clone(true); m.rotation.y = Math.PI / 2; const wrap = new THREE.Group(); wrap.add(m); wrap.updateMatrixWorld(true);
+  let b = new THREE.Box3().setFromObject(wrap); const sz = b.getSize(new THREE.Vector3()); const sc = len / sz.z; wrap.scale.setScalar(sc); wrap.updateMatrixWorld(true); b = new THREE.Box3().setFromObject(wrap);
+  const ud = g.userData; const front = ud.muzzleAt.z; const top = ud.sightY - .03; wrap.position.x = 0;
+  wrap.position.set(-(b.min.x + b.max.x) / 2, top - b.max.y, front - b.min.z); wrap.updateMatrixWorld(true);
+  // muzzle height = mean y of vertices in the front 4% of the gun
+  let sy = 0, n = 0; const v = new THREE.Vector3(), zc = front + len * .04;
+  wrap.traverse(o => { if (!o.isMesh) return; o.castShadow = false; o.renderOrder = 10; const pa = o.geometry.attributes.position; for (let i = 0; i < pa.count; i++) { v.fromBufferAttribute(pa, i).applyMatrix4(o.matrixWorld); if (v.z < zc) { sy += v.y; n++; } } });
+  const keep = g.children.filter(c => c.isMesh && c.material && c.material.blending === THREE.AdditiveBlending); ud.flash = keep[0] || null;
+  for (const c of [...g.children]) if (!keep.includes(c)) g.remove(c);
+  wrap.position.y += .025; g.add(wrap); if (n) ud.muzzleAt.y = sy / n + .025; ud.magM = null; ud.real = true; ud.sightY += .1;
+  if (ud.flash) ud.flash.position.copy(ud.muzzleAt).add(new THREE.Vector3(0, 0, -.03));
+}
+export function makeGun(kind) { const g = makeGunProc(kind); if (GLB[kind] && !new URLSearchParams(location.search).has('procguns')) loadGLB(kind).then(sc => { if (sc) fitGLB(g, kind, sc); }); return g; }
+function makeGunProc(kind) {
   const g = new THREE.Group(); const wm = (color, r, m, ns) => new THREE.MeshStandardMaterial({ color, roughness: r, metalness: m, ...(PBR ? { normalMap: PBR.steel.normalMap, normalScale: new THREE.Vector2(ns, ns), roughnessMap: PBR.steel.arm } : {}) });
   const blk = wm(0x1b1c1e, .7, .55, .25), stl = wm(0x34363a, .55, .95, .35), fde = wm(0x8a7a5c, .85, .05, .15), poly = wm(0x232427, .9, 0, .12), glass = new THREE.MeshPhysicalMaterial({ color: 0x0a1018, roughness: .02, metalness: .2, clearcoat: 1 });
   const rail = (x, y, z, L) => { M(box(.022, .012, L), stl, x, y, z, g); for (let i = 0; i < L / .012 / 2; i++) M(box(.026, .006, .005), stl, x, y + .008, z - L / 2 + i * .024, g); };
