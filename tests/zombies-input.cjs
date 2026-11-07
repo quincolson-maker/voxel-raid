@@ -1,6 +1,6 @@
 const puppeteer=require('puppeteer-core');const assert=require('node:assert/strict');
 (async()=>{const b=await puppeteer.launch({executablePath:process.env.CHROME_PATH||'/usr/bin/google-chrome',headless:true,args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});try{for(const mobile of [false,true]){
- const p=await b.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));p.on('console',m=>{if(m.type()==='error')errors.push(m.text());});await p.setViewport(mobile?{width:844,height:390,isMobile:true,hasTouch:true}:{width:1280,height:720});await p.goto((process.argv[2]||'http://localhost:8767')+'/?auto=zombies&zbuild=0&dev=1&q=low'+(mobile?'&touch=1':''),{waitUntil:'networkidle0'});
+ const p=await b.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));p.on('console',m=>{if(m.type()==='error')errors.push(m.text());});await p.setViewport(mobile?{width:844,height:390,isMobile:true,hasTouch:true}:{width:1280,height:720});await p.goto((process.argv[2]||'http://localhost:8767')+'/?auto=zombies&zmap=night&zbuild=0&dev=1&q=low'+(mobile?'&touch=1':''),{waitUntil:'networkidle0'});
  if(!mobile){await p.click('canvas');await p.waitForFunction(()=>document.pointerLockElement);}
  await p.evaluate(()=>{__sim(8);const u=__G.units.find(u=>u.hp>0);for(const o of __G.units)if(o!==u){o.pos.set(30,1,30);o.d.spd=0;}u.pos.set(40,1,48);u.d.spd=0;u.hp=50;__P.pos.set(40,1,52);__P.yaw=0;__P.pitch=0;__P.cd=0;__P.swap=0;__P.reload=0;__zombies.state.lastHurt=__G.t;});
  await new Promise(r=>setTimeout(r,250));

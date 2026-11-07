@@ -84,3 +84,16 @@ The first tests round transitions/scaling/actor caps, shops, ammo, gate, box, pe
 - Killstreaks (Attack/Defend): 3 Recon Drone, 5 Precision Strike, 7 Sentry Gun. Zombies: Precision Strike and Recon Drone drops.
 - RPG-7 secondary: tube with wooden heat guard, side optic, two grips; finned warhead on the muzzle when loaded, gone after firing, inserted during reload; warhead projectile with booster flame + smoke.
 - `node tests/mw-shots.cjs` regenerates `shot-mw-*.png`.
+
+## Zombies-only squad mode (Daybreak — Firebase)
+- The menu now offers only **Play Solo**, **Host Co-op (up to 4)** and **Join Co-op**. Everything runs on one large daytime map, **Daybreak — Firebase** (Citadel Ring layout, `LAYOUTS[0]`, built by `buildDay()`, so the layout can be swapped later). Attack/Defend and the night arena are hidden, but their code is still there (`?zmap=night`, `?auto=attack`).
+- Placements on the 96×96 map (C=48):
+  - M4A1 wall-buy at (35,53)
+  - M870 at (61,43)
+  - Ammo Cache at (53,61)
+  - Iron Heart at (43,35)
+  - Quick Hands at (61,54)
+  - **Open Command Post** door at (48,40), cost 1000. The **Mystery Box** sits behind it at (48,43.4).
+  - Spawns: P1 at (45.5,57.5), with the others next to P1. Zombies spawn 20–32 m from a random living player.
+- **Squad:** a host-authoritative PeerJS star for up to 4 players (P1 is the host; a 5th joiner gets "room full"). Positions are relayed through the host. Zombie count scales ×(1+0.5·(n−1)) and HP scales ×(1+0.3·(n−1)). Any teammate can revive a downed player (hold E for 3 s), and it's game over ("SQUAD WIPED") when everyone is down. Press Tab to show the scoreboard with kills and points for each player. The 7:00 build phase can be skipped by the host, or by a vote from half the squad (rounded up). Best round is saved separately per map.
+- Tests: `tests/squad.cjs` (host plus 3 joiners, plus a rejected 5th) and `tests/dayz.cjs`. Both use the `?loopnet=1` stand-in transport, so real WebRTC is not exercised here.

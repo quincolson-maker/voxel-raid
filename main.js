@@ -225,7 +225,7 @@ const pieces = () => G.mode == 'attack' || G.mode == 'zombies' ? PIECES_ATT : PI
 const building = () => G.phase == 'build' || G.phase == 'zbuild';
 const act = { slide() { if ((P.sprintK || 0) > .3 && P.onGround) { P.slideT = .75; sfx.step(true); } else input.jump = false; }, piece() { P.piece = (P.piece + 1) % pieces().length; sfx.ui(); hotbar(); }, mat() { P.mat = (P.mat + 1) % 3; sfx.ui(); hotbar(); },
   reload() { if (P.ammo < P.mag && P.reload <= 0 && (G.mode !== 'zombies' || P.reserve[P.slots[P.w]] > 0)) { P.reload = WP().reload * (G.mode === 'zombies' && zombies.state.perks.reload ? .6 : 1); P.reloadMax = P.reload; sfx.reload(); } }, swap() { equip(1 - P.w); }, ads() { input.ads = !input.ads; }, skip() { if (G.mode === 'zombies') { zombies.skip(); return; } if (G.phase == 'build') G.timer = 0; else if (G.phase == 'raid' && Q.get('dev')) G.timer = 0; }, build: () => G.mode === 'zombies' ? (G.phase == 'zbuild' && !nearZStation() ? place() : zombies.use()) : place() };
-const nearZStation = () => zombies.state.stations.some(s => !s.used && Math.hypot(P.pos.x - s.x, P.pos.z - s.z) < 3.4) || (zombies.state.remote && zombies.state.remote.down && zombies.state.remote.pos.distanceTo(P.pos) < 2.4);
+const nearZStation = () => zombies.state.stations.some(s => !s.used && Math.hypot(P.pos.x - s.x, P.pos.z - s.z) < 3.4) || !!zombies.reviveTarget();
 let lastShift = 0;
 function onKey(c) { if (G.phase == 'menu' || G.over) return; if (c == 'ShiftLeft') { const n = performance.now(); if (n - lastShift < 320) P.tacReq = true; lastShift = n; } if ((c == 'KeyC' || c == 'ControlLeft') && (P.sprintK || 0) > .5 && P.onGround) { P.slideT = .75; sfx.step(true); } if (c == 'KeyI' && P.reload <= 0) P.inspect = 2.2; if (c == 'KeyE' && G.mode === 'zombies') zombies.use(); if (c == 'KeyQ') { if (building()) act.piece(); else act.swap(); } if (c == 'KeyZ') act.mat(); if (c == 'KeyR') act.reload(); if (c == 'KeyG') act.skip(); if (c == 'Digit1') equip(0); if (c == 'Digit2') equip(1); }
 addEventListener('wheel', e => { if (G.phase != 'menu' && !G.over) equip(1 - P.w); }, { passive: true });
@@ -333,7 +333,7 @@ function updateViewmodel(dt) { const b = Math.sin(P.bob), b2 = Math.abs(Math.cos
 // ---------------- Match flow ----------------
 function applyAtmos() { const L = Q.get('light') || $('lightsel').value, rain = (Q.get('rain') || ($('rainchk').checked ? '1' : '')) == '1' && (QNAME == 'high' || QNAME == 'ultra' || Q.get('rain') == '1');
   GX.setLighting(L, rain); fx.setRain(rain); sfx.rainLoop(rain); GX.setLens(Q.has('lens') ? Q.get('lens') == '1' : $('lenschk').checked); }
-const zombies = createZombies({ G, P, scene, GX, sfx, fx, setB, get, solid, buildChunk, dirty, astar, rebuildGrid, costD, hurt, msg, equip, PBRS, mobile: IS_TOUCH, damageBlock, held: heldUse, hotbar, launchRocket, feed, onKill, precisionStrike, explodeFx: (c) => { fx.explosion(c, 3); sfx.at(c, () => sfx.boom(1), .8); } });
+const zombies = createZombies({ G, P, scene, GX, sfx, fx, setB, get, solid, buildChunk, dirty, astar, rebuildGrid, costD, hurt, msg, equip, PBRS, mobile: IS_TOUCH, damageBlock, buildDay: () => { G.mode = 'zombies'; buildWorld(LAYOUTS[0]); G.traps.forEach(t => scene.remove(t.m)); G.traps = []; }, held: heldUse, hotbar, launchRocket, feed, onKill, precisionStrike, explodeFx: (c) => { fx.explosion(c, 3); sfx.at(c, () => sfx.boom(1), .8); } });
 function start(mode, opts) { sfx.init(); if (mode === 'zombies') { G.mode = mode; $('menu').style.display = 'none'; $('hud').style.display = ''; zombies.init(opts); return; } P.slots = [Q.get('gun') || $('primary').value || 'carbine', 'rpg']; P.ammoOf = {}; P.w = -1; equip(0); G.mode = mode; G.layout = +$('layout').value; G.buildT = Math.max(0, +$('buildT').value || 300); $('menu').style.display = 'none'; $('hud').style.display = '';
   P.team = mode == 'attack' ? 'att' : 'def'; const L = LAYOUTS[G.layout]; buildWorld(L); G.shield = true;
   if (mode == 'attack') { P.spawn.set(CX + .5, 1, 3); P.yaw = Math.PI; G.mat = { 2: 300, 3: 200, 4: 80 };
@@ -368,7 +368,7 @@ function hotbar() { const ps = pieces(); $('hotbar').innerHTML = ps.map((p, i) =
 const CMP = (() => { let h = ''; for (let d = -360; d <= 720; d += 15) { const n = ((d % 360) + 360) % 360; const lab = { 0: 'N', 45: 'NE', 90: 'E', 135: 'SE', 180: 'S', 225: 'SW', 270: 'W', 315: 'NW' }[n]; h += `<span class="${lab ? 'c' : ''}">${lab || n}</span>`; } return h; })();
 function compass() { const el = $('cstrip'); if (!el) return; if (!el.innerHTML) el.innerHTML = CMP; const hd = ((-P.yaw * 180 / Math.PI) % 360 + 360) % 360; el.style.transform = `translateX(${-(hd + 360) / 15 * 40 - 20}px)`; $('chead').textContent = Math.round(hd);
   const pins = $('cpins'); let ph = ''; const uav = (G.uavT || 0) > 0 || zombies.state.uavT > 0; if (uav) for (const u of G.units) { if (u.hp <= 0 || u.team == P.team) continue; let a = Math.atan2(u.pos.x - P.pos.x, -(u.pos.z - P.pos.z)) * 180 / Math.PI - hd; a = ((a + 540) % 360) - 180; if (Math.abs(a) < 75) ph += `<i style="left:${50 + a / 75 * 50}%"></i>`; }
-  const R = zombies.state.remote; if (R && zombies.linked()) { let a = Math.atan2(R.pos.x - P.pos.x, -(R.pos.z - P.pos.z)) * 180 / Math.PI - hd; a = ((a + 540) % 360) - 180; if (Math.abs(a) < 75) ph += `<b style="left:${50 + a / 75 * 50}%"></b>`; } pins.innerHTML = ph; }
+  for (const R of zombies.liveRemotes()) { let a = Math.atan2(R.pos.x - P.pos.x, -(R.pos.z - P.pos.z)) * 180 / Math.PI - hd; a = ((a + 540) % 360) - 180; if (Math.abs(a) < 75) ph += `<b style="left:${50 + a / 75 * 50}%"></b>`; } pins.innerHTML = ph; }
 function hud(dt) { compass(); document.body.classList.toggle('lowhp', P.hp > 0 && P.hp < 35 && !P.downed); hurtFlash = Math.max(0, hurtFlash - dt * 1.5); $('vign').style.opacity = Math.max(hurtFlash, P.dead > 0 ? .8 : P.hp < 30 ? .35 : 0);
   hitT -= dt; $('hitm').style.opacity = hitT > 0 ? 1 : 0;
   hudT -= dt; if (hudT > 0) return; hudT = .1; if (G.mode === 'zombies') { zombies.hud(); return; } const mm = Math.max(0, G.timer) | 0; const ts = `${mm / 60 | 0}:${String(mm % 60).padStart(2, '0')}`;
@@ -401,10 +401,11 @@ const standalone = navigator.standalone || matchMedia('(display-mode: fullscreen
 if (isIOS && !standalone && !document.documentElement.requestFullscreen && !localStorage.getItem('vr_ioshint')) $('ioshint').classList.add('show');
 $('ioshintx').onclick = () => { localStorage.setItem('vr_ioshint', '1'); $('ioshint').classList.remove('show'); };
 $('queue').onclick = () => { msg('Queue matched!'); start(Math.random() < .5 ? 'attack' : 'defend'); lockIfDesktop(); };
-$('zombies').onclick = () => { start('zombies'); lockIfDesktop(); };
-$('zHost').onclick = () => { start('zombies', { role: 'host' }); lockIfDesktop(); };
+const zmapSel = () => Q.get('zmap') || 'day';
+$('zombies').onclick = () => { start('zombies', { map: zmapSel() }); lockIfDesktop(); };
+$('zHost').onclick = () => { start('zombies', { role: 'host', map: zmapSel() }); lockIfDesktop(); };
 $('zJoin').onclick = () => { const code = zombies.cleanCode($('zCode').value); if (code.length < 4) { $('zJoinMsg').textContent = 'Enter the room code from the host'; return; } $('zJoinMsg').textContent = 'Connecting to room ' + code + '…'; $('zJoin').disabled = true; sfx.init();
-  zombies.net.join(code).then(() => { start('zombies', { role: 'client' }); lockIfDesktop(); }).catch(e => { $('zJoinMsg').textContent = (e && e.message) || 'Could not connect'; $('zJoin').disabled = false; }); };
+  zombies.net.join(code).then(() => zombies.waitMap()).then(map => { if (!map) throw new Error('That room is full (4 players)'); start('zombies', { role: 'client', map }); lockIfDesktop(); }).catch(e => { $('zJoinMsg').textContent = (e && e.message) || 'Could not connect'; $('zJoin').disabled = false; }); };
 if (Q.get('join')) { $('zCode').value = zombies.cleanCode(Q.get('join')); $('zJoinMsg').textContent = 'Tap JOIN CO-OP to join room ' + $('zCode').value; $('zJoin').classList.add('gold'); }
 $('operator').value = localStorage.getItem('vr_op') || 'WRAITH-6'; $('operator').onchange = e => localStorage.setItem('vr_op', e.target.value);
 $('att').onclick = () => { start('attack'); lockIfDesktop(); }; $('def').onclick = () => { start('defend'); lockIfDesktop(); };

@@ -20,17 +20,17 @@ async function page(browser, mobile, errors, tag) {
 async function pair(opts = {}) {
   const errors = [], br = await launch();
   const h = await page(br, false, errors, 'host'); let c;
-  await h.goto(base + '/?dev=1&loopnet=1&q=low' + (opts.zbuild != null ? '&zbuild=' + opts.zbuild : ''), { waitUntil: 'networkidle0' });
+  await h.goto(base + '/?dev=1&loopnet=1&zmap=night&q=low' + (opts.zbuild != null ? '&zbuild=' + opts.zbuild : ''), { waitUntil: 'networkidle0' });
   await h.click('#zHost');
   await until(h, () => window.__zombies && __zombies.state.code);
   const code = await h.evaluate(() => __zombies.state.code);
   c = await page(br, true, errors, 'client');
   const hb = { close: () => h.close({ runBeforeUnload: true }) }, cb = { close: () => c.close({ runBeforeUnload: true }) };
-  await c.goto(base + '/?dev=1&loopnet=1&q=low&touch=1&join=' + code, { waitUntil: 'networkidle0' });
+  await c.goto(base + '/?dev=1&loopnet=1&zmap=night&q=low&touch=1&join=' + code, { waitUntil: 'networkidle0' });
   assert.equal(await c.$eval('#zCode', e => e.value), code);
   await c.evaluate(() => document.getElementById('zJoin').click());
-  await until(c, () => __zombies.state.remote && __zombies.state.role === 'client').catch(async e => { console.log('join state', await c.evaluate(() => [document.getElementById('zJoinMsg').textContent, __zombies.state.role, __zombies.net.open])); throw e; });
-  await until(h, () => __zombies.state.remote && __zombies.linked());
+  await until(c, () => [...__zombies.state.remotes.values()][0] && __zombies.state.role === 'client').catch(async e => { console.log('join state', await c.evaluate(() => [document.getElementById('zJoinMsg').textContent, __zombies.state.role, __zombies.net.open])); throw e; });
+  await until(h, () => [...__zombies.state.remotes.values()][0] && __zombies.linked());
   return { h, c, hb, cb, br, code, errors };
 }
 (async () => {
@@ -43,8 +43,8 @@ async function pair(opts = {}) {
   // position sync both ways
   await h.evaluate(() => { __P.pos.set(34, 1, 42); __P.yaw = 1; });
   await c.evaluate(() => { __P.pos.set(44, 1, 58); });
-  await until(c, () => __zombies.state.remote.pos.distanceTo(new __P.pos.constructor(34, 1, 42)) < .3);
-  await until(h, () => __zombies.state.remote.pos.distanceTo(new __P.pos.constructor(44, 1, 58)) < .3);
+  await until(c, () => [...__zombies.state.remotes.values()][0].pos.distanceTo(new __P.pos.constructor(34, 1, 42)) < .3);
+  await until(h, () => [...__zombies.state.remotes.values()][0].pos.distanceTo(new __P.pos.constructor(44, 1, 58)) < .3);
   R.positionSync = true;
   // build sync both ways using the real place() (aim at the floor)
   await h.evaluate(() => { __P.pos.set(40, 1, 50); __P.yaw = 0; __P.pitch = -.5; __coop.syncCamera(0); __coop.place(); });
@@ -75,10 +75,10 @@ async function pair(opts = {}) {
   assert.ok(ci.filter(x => hi.includes(x)).length >= Math.min(hi.length, ci.length) - 2, 'zombie id sync');
   R.round = await c.evaluate(() => __zombies.state.round);
   // client hit kills on host and credits client points
-  const before = await h.evaluate(() => __zombies.state.rpoints);
+  const before = await h.evaluate(() => (__zombies.state.pts.P2 || 0));
   const zid = await c.evaluate(() => { const u = __G.units.find(u => u.hp > 0); __zombies.damage(u, 1e6, true); return u.id; });
   await until(h, id => { const u = __G.units.find(u => u.id === id); return !u || u.hp <= 0; }, zid);
-  R.clientHitCredit = (await h.evaluate(() => __zombies.state.rpoints)) - before; assert.ok(R.clientHitCredit >= 110);
+  R.clientHitCredit = (await h.evaluate(() => (__zombies.state.pts.P2 || 0))) - before; assert.ok(R.clientHitCredit >= 110);
   await until(c, p => __zombies.state.points >= p, before + 110);
   // rockets: client swaps to launcher and fires -> host sees the rocket; host splash kills zombies with credit
   await c.evaluate(() => { __coop.act.swap(); });
@@ -112,7 +112,7 @@ async function pair(opts = {}) {
   await h.evaluate(() => { for (const u of __G.units) if (u.hp > 0) __zombies.kill(u, false, false); __zombies.state.pending = 0; __zombies.state.breakT = 999; __G.phase = 'zbreak'; });
   await c.evaluate(() => { __zombies.state.maxHP = 100; __P.hp = 0; __zombies.onZeroHP(); __P.pos.set(40, 1, 50); });
   R.clientDowned = await c.evaluate(() => __P.downed);
-  await until(h, () => __zombies.state.remote.down && __zombies.state.remote.pos.distanceTo(new __P.pos.constructor(40, 1, 50)) < .3);
+  await until(h, () => [...__zombies.state.remotes.values()][0].down && [...__zombies.state.remotes.values()][0].pos.distanceTo(new __P.pos.constructor(40, 1, 50)) < .3);
   await h.evaluate(() => { __P.pos.set(41.2, 1, 50); __P.yaw = Math.PI / 2; __P.pitch = -.35; });
   await sleep(300); await h.screenshot({ path: 'shot-coop-revive-prompt.png' });
   await h.keyboard.down('KeyE'); await sleep(1600); await h.screenshot({ path: 'shot-coop-reviving.png' });
@@ -120,7 +120,7 @@ async function pair(opts = {}) {
   R.revived = true; R.hostStillAlive = !(await h.evaluate(() => __G.over));
   // disconnect: joiner closes -> host continues solo
   await A.cb.close();
-  await until(h, () => !__zombies.state.remote, null, 15000);
+  await until(h, () => ![...__zombies.state.remotes.values()][0], null, 15000);
   R.hostContinuesSoloAfterP2Leaves = await h.evaluate(() => !__G.over && __zombies.state.role === 'host');
   R.errorsA = A.errors; await A.hb.close(); await A.br.close();
   // ---------- Pair B: host leaves -> client continues solo as authority ----------
@@ -136,7 +136,7 @@ async function pair(opts = {}) {
   // ---------- Pair C: both downed -> game over on both ----------
   let C = await pair({ zbuild: 0 });
   await C.c.evaluate(() => { __P.hp = 0; __zombies.onZeroHP(); });
-  await until(C.h, () => __zombies.state.remote.down);
+  await until(C.h, () => [...__zombies.state.remotes.values()][0].down);
   R.hostNotOverWhileTeammateUp = !(await C.h.evaluate(() => __G.over));
   await C.h.evaluate(() => { __P.hp = 0; __zombies.onZeroHP(); });
   await until(C.h, () => __G.over); await until(C.c, () => __G.over);

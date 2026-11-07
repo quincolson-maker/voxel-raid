@@ -1,9 +1,10 @@
-// Two-player co-op transport: PeerJS (vendored, MIT) WebRTC data channel, free public PeerJS broker for signaling only.
-// Gameplay traffic is peer-to-peer; no game server or paid hosting is involved.
+// Co-op transport (up to 4 players): PeerJS (vendored, MIT) WebRTC data channels in a host-authoritative star.
+// The free public PeerJS broker is used for signaling only; gameplay traffic is peer-to-peer. No game server.
 const ALPH = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const pid = c => 'voxelraid-deadsignal-' + c;
+export const MAX_PLAYERS = 4;
 export const cleanCode = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
-// Test-only loopback (?loopnet=1): two tabs in one browser talk over BroadcastChannel with the same message flow.
+// Test-only loopback (?loopnet=1): tabs in one browser talk over BroadcastChannel with the same message flow.
 // Used because the CI/box Chrome policy disables non-proxied WebRTC UDP; real players always use WebRTC.
 function loopPeer(id) {
   const h = {}, P = { destroyed: false, on: (e, f) => (h[e] = f), destroy() {}, reconnect() {} };
@@ -19,14 +20,16 @@ function loopPeer(id) {
 }
 const LOOP = new URLSearchParams(location.search).get('loopnet') === '1';
 const mkPeer = (id, o) => LOOP ? loopPeer(id) : id ? new window.Peer(id, o) : new window.Peer(o);
+// onMsg(msg, fromPeerId); onStatus('open'|'closed'|'error', peerId)
 export function createNet(onMsg, onStatus) {
-  const N = { role: 'solo', conn: null, peer: null, code: null, open: false, lastRx: 0 };
+  const N = { role: 'solo', peer: null, code: null, conns: new Map(), open: false };
   const now = () => performance.now();
+  const refresh = () => { N.open = [...N.conns.values()].some(c => c.ok); };
   function wire(c) {
-    N.conn = c;
-    c.on('open', () => { N.open = true; N.lastRx = now(); onStatus('open'); });
-    c.on('data', d => { N.lastRx = now(); if (d && d.t !== 'hb') onMsg(d); });
-    const closed = () => { if (N.conn === c) { N.open = false; N.conn = null; onStatus('closed'); } };
+    const id = c.peer; c.ok = false; c.lastRx = now(); N.conns.set(id, c);
+    c.on('open', () => { c.ok = true; c.lastRx = now(); refresh(); onStatus('open', id); });
+    c.on('data', d => { c.lastRx = now(); if (d && d.t !== 'hb') onMsg(d, id); });
+    const closed = () => { if (N.conns.get(id) === c) { N.conns.delete(id); refresh(); onStatus('closed', id); } };
     c.on('close', closed); c.on('error', closed);
   }
   N.host = () => new Promise((res, rej) => {
@@ -37,7 +40,7 @@ export function createNet(onMsg, onStatus) {
       const peer = mkPeer(pid(code), { debug: 0 }); N.peer = peer;
       peer.on('open', () => { N.role = 'host'; N.code = code; res(code); });
       peer.on('connection', c => {
-        if (N.conn && N.open) { c.on('open', () => { c.send({ t: 'full' }); setTimeout(() => c.close(), 400); }); return; }
+        if (N.conns.size >= MAX_PLAYERS - 1) { c.on('open', () => { c.send({ t: 'full' }); setTimeout(() => c.close(), 400); }); return; }
         wire(c);
       });
       peer.on('disconnected', () => { try { if (!peer.destroyed) peer.reconnect(); } catch (_) {} });
@@ -55,8 +58,8 @@ export function createNet(onMsg, onStatus) {
     });
     peer.on('error', e => { if (!done) { done = true; clearTimeout(t); rej(new Error(e.type === 'peer-unavailable' ? 'Room ' + code + ' not found' : e.type)); } else onStatus('error', e.type); });
   });
-  N.send = m => { if (N.open && N.conn) try { N.conn.send(m); } catch (_) {} };
-  // Heartbeat so a backgrounded/closed phone is detected even if the data channel never fires 'close'.
-  setInterval(() => { if (!N.open) return; N.send({ t: 'hb' }); if (now() - N.lastRx > 9000) { try { N.conn.close(); } catch (_) {} N.open = false; N.conn = null; onStatus('closed'); } }, 1500);
+  // send(msg) broadcasts (host) / goes to host (client); send(msg, peerId) targets one; except skips one peer.
+  N.send = (m, to, except) => { for (const [id, c] of N.conns) { if (!c.ok || (to && id !== to) || id === except) continue; try { c.send(m); } catch (_) {} } };
+  setInterval(() => { for (const [id, c] of N.conns) { if (!c.ok) continue; try { c.send({ t: 'hb' }); } catch (_) {} if (now() - c.lastRx > 9000) { try { c.close(); } catch (_) {} if (N.conns.get(id) === c) { N.conns.delete(id); refresh(); onStatus('closed', id); } } } }, 1500);
   return N;
 }
