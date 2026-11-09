@@ -125,6 +125,15 @@ select,input{border-radius:1px;background:#11161a;border:1px solid #fff2}
 .touch #zRound{bottom:auto;top:calc(max(8px,env(safe-area-inset-top)) + 6.2em);left:max(10px,env(safe-area-inset-left));font-size:32px;letter-spacing:-5px}
 .touch #zUse{bottom:auto;top:62%}.touch #feed{display:none}
 @media (orientation:portrait){.touch #hotbar{top:calc(max(8px,env(safe-area-inset-top)) + 9.6em)}.touch #top{top:calc(max(8px,env(safe-area-inset-top)) + 4.4em);width:60vw}.touch #tBuildBar{top:auto;bottom:53%;right:3%}.touch #tAct{bottom:40%!important;right:6%!important}}
+
+/* voice + open lobbies */
+#lobbies{width:min(100%,22em);display:flex;flex-direction:column;gap:4px}#lobbyHead{font-size:10px;letter-spacing:.18em;opacity:.7}#lobbyHead::after{content:' · ' attr(data-s);opacity:.8;letter-spacing:.05em;text-transform:none}
+#lobbies[hidden]{display:none}#lobbyList{display:flex;flex-direction:column;gap:4px;max-height:11.5em;overflow:auto}#lobbyList:empty{display:none}
+.lob{display:flex!important;align-items:center;gap:.7em;width:100%;min-width:0;padding:.45em .8em;font-size:.82em;background:rgba(111,214,255,.1)!important;border-left:3px solid #6fd6ff!important}.lob b{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}.lob span{opacity:.7;font-size:.85em}.lob i{font-style:normal;color:#9dff7a;font-weight:700}
+#vMute{position:fixed;z-index:8;left:max(14px,env(safe-area-inset-left));top:max(14px,env(safe-area-inset-top));min-width:0;display:flex;align-items:center;gap:.45em;padding:.35em .7em .35em .5em;font-size:11px;letter-spacing:.1em;border-radius:20px;border:2px solid #9dff7a!important;background:rgba(10,30,12,.7)!important;color:#c8ffb0;pointer-events:auto;touch-action:manipulation}#vMute[hidden]{display:none}
+#vMute.v-muted{border-color:#ff6a5a!important;color:#ffb3a8;background:rgba(40,8,6,.72)!important}#vMute.v-unavailable,#vMute.v-starting{border-color:#8a9096!important;color:#b8bec4;background:rgba(20,22,24,.7)!important}
+@media (orientation:portrait){.touch #msg{top:34%;font-size:1.3em;padding:0 4vw;box-sizing:border-box}}
+.touch #vMute{top:calc(max(8px,env(safe-area-inset-top)) + 64px);left:max(8px,env(safe-area-inset-left));padding:.5em .8em .5em .6em}
 </style>
 </head><body>
 <div id="hud" style="display:none">
@@ -153,6 +162,7 @@ select,input{border-radius:1px;background:#11161a;border:1px solid #fff2}
  <button id="zombies" class="gold">☣ PLAY SOLO</button>
  <button id="zHost">👥 HOST CO-OP</button>
  <button id="zJoinOpen">🔗 JOIN CO-OP</button>
+ <div id="lobbies"><div id="lobbyHead" data-s="checking…">OPEN LOBBIES</div><div id="lobbyList"></div></div>
  <div class="row2" id="joinBox" hidden><input id="zCode" placeholder="ROOM CODE" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false"><button id="zJoin">Connect</button></div><div class="help" id="zJoinMsg"></div>
  <div id="settings" hidden>
  <div id="loadout"><div><b>OPERATOR</b><select id="operator"><option>WRAITH-6</option><option>KESTREL</option><option>ATLAS</option><option>NOMAD</option></select></div><div><b>START</b>M17 + RPG-7</div><div><b>WALL-BUYS</b>M4A1 · M870 · Mystery Box</div></div>
@@ -165,8 +175,9 @@ select,input{border-radius:1px;background:#11161a;border:1px solid #fff2}
  <div id="classic" hidden><button id="queue">Queue</button><button id="att">Attack</button><button id="def">Defend</button><select id="layout"></select><input id="buildT" type="number" value="300"><select id="primary"><option value="carbine">M4A1</option><option value="smg9">MP9</option><option value="shotgun">M870</option><option value="dmr">SR-25</option><option value="lmg">M249</option></select></div>
 </div>
 <div id="end" class="panel" style="display:none"><h1 id="endT"></h1><div id="endS" style="font-size:1.2em;white-space:pre;text-align:center"></div><button class="gold" onclick="location.href=location.pathname">Main Menu</button></div>
+<button id="vMute" hidden aria-pressed="false"></button>
 <div id="rot"><div class="ph"></div><p>Rotate your phone to landscape</p><button id="rotskip">Play anyway</button></div>
 <div id="ioshint" class="pill">For true fullscreen on iPhone: tap Share → <b>Add to Home Screen</b>, then launch Voxel Raid from your home screen. <button id="ioshintx" style="padding:.2em .6em">OK</button></div>
 <script src="./vendor/peerjs.min.js"></script>
-<script type="module" src="./game.min.js?v=15-declutter"></script>
+<script type="module" src="./game.min.js?v=16-voice"></script>
 </body></html>

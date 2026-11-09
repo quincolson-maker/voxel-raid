@@ -2,6 +2,8 @@
 import * as THREE from 'three';
 import { mat, makeGun, WEAPONS, makeTroop, animateTroop } from './models.js';
 import { createNet, cleanCode } from './coop.js';
+import { createVoice } from './voice.js';
+import { createAdvert } from './lobby.js';
 const $ = id => document.getElementById(id);
 const geo = new THREE.BoxGeometry(1, 1, 1);
 function cube(parent, size, pos, material) { const m = new THREE.Mesh(geo, material); m.scale.set(...size); m.position.set(...pos); parent.add(m); m.castShadow = true; m.receiveShadow = true; return m; }
@@ -44,17 +46,34 @@ export function createZombies(ctx) {
   let mapWait = null;
   const net = createNet((m, from) => {
     if (m.t === 'full') { Z.full = true; const el = $('zJoinMsg'); if (el) el.textContent = 'That room is full (4 players)'; msg('That room is full (4 players)', 4); if (mapWait) { mapWait(null); mapWait = null; } return; }
+    if (m.t === 'vs') { routeVoice(m, from); return; }
     if (m.t === 'map') { Z.netMap = m.m; Z.me = m.me || 'P2'; if (mapWait) { mapWait(m.m); mapWait = null; } return; }
     if (!Z.ready) Z.queue.push([m, from]); else onMsg(m, from);
   }, onStatus);
+  // ---------------- voice (always on in co-op) + open-lobby advert ----------------
+  const voice = createVoice({ me: () => Z.me, onChange: voiceUI,
+    send: m => { if (isHost()) { const p = peerOf(m.to); if (p) net.send({ ...m, f: 'P1' }, p); } else if (isClient()) net.send({ ...m, f: Z.me }); } });
+  function routeVoice(m, from) {
+    if (isHost()) { const fid = Z.peers.get(from); if (!fid) return; m.f = fid; if (m.to === 'P1') voice.signal(m); else { const p = peerOf(m.to); if (p) net.send(m, p); } }
+    else if (m.to === Z.me) voice.signal(m);
+  }
+  const SPK = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M3 9v6h4l5 4V5L7 9H3z"/>';
+  const ICONS = { live: SPK + '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>',
+    off: SPK + '<path stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M15 9l6 6M21 9l-6 6"/></svg>' };
+  function voiceUI(V) { const b = $('vMute'); if (!b) return; b.hidden = !V.on; if (!V.on) return;
+    const st = V.state, n = V.connected(); b.className = 'v-' + st; b.innerHTML = (st === 'live' ? ICONS.live : ICONS.off) + '<span>' + (st === 'live' ? 'MIC ON' : st === 'muted' ? 'MUTED' : st === 'starting' ? 'MIC…' : 'NO MIC') + (n ? ' · ' + n : '') + '</span>';
+    b.title = st === 'live' ? 'Voice on — tap to mute (V)' : st === 'muted' ? 'Muted — tap to talk (V)' : st === 'starting' ? 'Waiting for microphone permission' : (V.err || 'Mic unavailable') + ' — tap to retry. You can still hear your squad.';
+    b.setAttribute('aria-label', b.title); b.setAttribute('aria-pressed', st === 'live' ? 'false' : 'true'); }
+  const advert = createAdvert();
+  const advertise = () => { if (isHost() && Z.code && !G.over) advert.update({ code: Z.code, host: ($('operator') && $('operator').value) || 'Squad', players: players(), max: 4, map: Z.map }); };
   function waitMap() { return new Promise(res => { if (Z.netMap) return res(Z.netMap); mapWait = res; setTimeout(() => { if (mapWait) { mapWait = null; res('day'); } }, 5000); }); }
   const bestKey = () => Z.map === 'day' ? 'vr_zombies_best_day' : 'vr_zombies_best';
   function setStatus(s) { Z.status = s; const el = $('zCoop'); if (el) { el.hidden = !s; el.innerHTML = s; } }
   function shareURL(code) { return location.origin + location.pathname + '?join=' + code; }
-  function hostStatus() { if (Z.code) setStatus(`CO-OP HOST · Room <b>${Z.code}</b> · ${players()}/4 players` + (players() < 4 ? `<br><small>${shareURL(Z.code)}</small>` : '')); }
+  function hostStatus() { advertise(); if (Z.code) setStatus(`CO-OP HOST · Room <b>${Z.code}</b> · ${players()}/4 players` + (players() < 4 ? `<br><small>${shareURL(Z.code)}</small>` : '')); }
   function hostRoom() {
     Z.role = 'host'; Z.me = 'P1'; setStatus('Creating co-op room…');
-    net.host().then(code => { Z.code = code; hostStatus(); })
+    net.host().then(code => { Z.code = code; hostStatus(); voice.start([...Z.remotes.keys()]); })
       .catch(e => { Z.role = 'solo'; setStatus(''); msg('Co-op unavailable (' + (e.type || e.message) + ') — playing solo', 4); });
   }
   function onStatus(s, peer) {
@@ -71,16 +90,16 @@ export function createZombies(ctx) {
   }
   function hostLeft() {
     for (const id of [...Z.remotes.keys()]) removeRemote(id);
-    Z.role = 'solo'; Z.nextId = 1 + Math.max(0, ...G.units.map(u => u.id || 0), ...Z.drops.map(d => d.id || 0)); for (const u of G.units) if (u.hp > 0) prepUnit(u, u.kind, u.hp);
+    voice.stop(); Z.role = 'solo'; Z.nextId = 1 + Math.max(0, ...G.units.map(u => u.id || 0), ...Z.drops.map(d => d.id || 0)); for (const u of G.units) if (u.hp > 0) prepUnit(u, u.kind, u.hp);
     setStatus('SOLO · host left'); msg('Host disconnected — continuing solo', 4); if (P.downed) { P.downed = false; over(); }
   }
   function addRemote(id) {
     if (Z.remotes.has(id) || id === Z.me) return Z.remotes.get(id); const g = makeTroop('skirm'); g.scale.setScalar(1.05); scene.add(g);
     const name = id + (id === 'P1' ? ' · HOST' : ''); const tag = label(g, name, COLORS[id] || '#fff', 2.45, 2.6); tag.material.depthTest = false; tag.renderOrder = 9;
     const R = { id, g, pos: P.spawn.clone(), tx: P.spawn.clone(), yaw: 0, pitch: 0, down: false, hp: 100, shots: 0, fireT: 0, name };
-    g.position.copy(R.pos); Z.remotes.set(id, R); return R;
+    g.position.copy(R.pos); Z.remotes.set(id, R); voice.peer(id); return R;
   }
-  function removeRemote(id) { const R = Z.remotes.get(id); if (!R) return; scene.remove(R.g); Z.remotes.delete(id); Z.reviveT = 0; }
+  function removeRemote(id) { voice.drop(id); const R = Z.remotes.get(id); if (!R) return; scene.remove(R.g); Z.remotes.delete(id); Z.reviveT = 0; }
   function sendBlocks(cells, except) { net.send({ t: 'blk', c: cells }, null, except); }
   function applyBlocks(cells, broke) {
     for (const [x, y, z, t] of cells) { if (!t && get(x, y, z) && broke) fx.debris(x, y, z, 0x8a7a68, 4); setB(x, y, z, t); if (t) Z.built.set(key(x, y, z), t); else Z.built.delete(key(x, y, z)); }
@@ -187,7 +206,7 @@ export function createZombies(ctx) {
     if (G.phase === 'zbuild') { msg(document.body.classList.contains('touch') ? 'BUILD PHASE — barricade the outpost! PLACE builds · SKIP starts round 1' : 'BUILD PHASE — barricade the outpost! RMB places · G starts round 1', 6); hotbar(); }
     else msg((Z.map === 'day' ? 'DAYBREAK — FIREBASE' : 'DEAD SIGNAL') + ' — survive. E / USE to buy supplies.', 5);
     if (Z.role === 'host') hostRoom();
-    if (Z.role === 'client') setStatus(`CO-OP · Room <b>${net.code}</b> · syncing…`);
+    if (Z.role === 'client') { setStatus(`CO-OP · Room <b>${net.code}</b> · syncing…`); voice.start([...Z.remotes.keys()]); }
     Z.ready = true; const q = Z.queue.splice(0); q.forEach(([m, f]) => onMsg(m, f));
   }
   // ---------------- build phase ----------------
@@ -278,7 +297,7 @@ export function createZombies(ctx) {
     if (isClient() && linked()) { P.downed = true; P.hp = 0; return; } // host decides game over
     over();
   }
-  function over(fromNet) {
+  function over(fromNet) { advert.stop();
     if (G.over) return;
     if (isHost() && !fromNet) net.send({ t: 'over' });
     G.over = true; G.phase = 'over'; P.dead = 999; if (document.pointerLockElement) document.exitPointerLock();
@@ -416,6 +435,6 @@ export function createZombies(ctx) {
   }
   function strikeAt(c) { ctx.explodeFx(c); if (isClient()) return; for (const u of active()) if (u.pos.distanceTo(c) < 4.5) damage(u, 400, false); }
   function rocket(o, d) { net.send({ t: 'rk', o: [o.x, o.y, o.z].map(v => +v.toFixed(2)), v: [d.x, d.y, d.z].map(v => +v.toFixed(3)) }); }
-  const api = { nearest, reviveTarget, liveRemotes, waitMap, strikeAt, rocket, state: Z, net, init, tick, hud, damage, buy, use, over, refill, power, dropPower, kill, nextRound, skip, endBuild, canBuild, onPlace, onZeroHP, hostBuy, snap, cleanCode, linked };
+  const api = { voice, advert, nearest, reviveTarget, liveRemotes, waitMap, strikeAt, rocket, state: Z, net, init, tick, hud, damage, buy, use, over, refill, power, dropPower, kill, nextRound, skip, endBuild, canBuild, onPlace, onZeroHP, hostBuy, snap, cleanCode, linked };
   return api;
 }

@@ -5,6 +5,7 @@ import { makeTroop, animateTroop, makeDefense, makeKeepDecor, makeRoof, makeView
 import { FX, SFX } from './src/fx.js';
 import { initTouch } from './src/touch.js';
 import { createZombies } from './src/zombies.js';
+import { watchLobbies } from './src/lobby.js';
 const $ = id => document.getElementById(id);
 const Q = new URLSearchParams(location.search);
 if (IS_TOUCH) document.body.classList.add('touch');
@@ -229,7 +230,7 @@ const act = { slide() { if ((P.sprintK || 0) > .3 && P.onGround) { P.slideT = .7
   quit() { if (confirm('Quit to the main menu?')) location.href = location.pathname; } };
 const nearZStation = () => !!(zombies.nearest() || zombies.reviveTarget());
 let lastShift = 0;
-function onKey(c) { if (G.phase == 'menu' || G.over) return; if (c == 'ShiftLeft') { const n = performance.now(); if (n - lastShift < 320) P.tacReq = true; lastShift = n; } if ((c == 'KeyC' || c == 'ControlLeft') && (P.sprintK || 0) > .5 && P.onGround) { P.slideT = .75; sfx.step(true); } if (c == 'KeyI' && P.reload <= 0) P.inspect = 2.2; if (c == 'KeyE' && G.mode === 'zombies') zombies.use(); if (c == 'KeyQ') { if (building()) act.piece(); else act.swap(); } if (c == 'KeyZ') act.mat(); if (c == 'KeyR') act.reload(); if (c == 'KeyG') act.skip(); if (c == 'KeyH') act.help(); if (c == 'Digit1') equip(0); if (c == 'Digit2') equip(1); }
+function onKey(c) { if (G.phase == 'menu' || G.over) return; if (c == 'ShiftLeft') { const n = performance.now(); if (n - lastShift < 320) P.tacReq = true; lastShift = n; } if ((c == 'KeyC' || c == 'ControlLeft') && (P.sprintK || 0) > .5 && P.onGround) { P.slideT = .75; sfx.step(true); } if (c == 'KeyI' && P.reload <= 0) P.inspect = 2.2; if (c == 'KeyE' && G.mode === 'zombies') zombies.use(); if (c == 'KeyQ') { if (building()) act.piece(); else act.swap(); } if (c == 'KeyZ') act.mat(); if (c == 'KeyR') act.reload(); if (c == 'KeyG') act.skip(); if (c == 'KeyH') act.help(); if (c == 'KeyV' && G.mode === 'zombies') zombies.voice.toggle(); if (c == 'Digit1') equip(0); if (c == 'Digit2') equip(1); }
 addEventListener('wheel', e => { if (G.phase != 'menu' && !G.over) equip(1 - P.w); }, { passive: true });
 const input = { mx: 0, mz: 0, fire: false, jump: false, ads: false };
 if (IS_TOUCH) initTouch(input, look, act, () => sfx.init());
@@ -410,9 +411,20 @@ $('ioshintx').onclick = () => { localStorage.setItem('vr_ioshint', '1'); $('iosh
 $('queue').onclick = () => { msg('Queue matched!'); start(Math.random() < .5 ? 'attack' : 'defend'); lockIfDesktop(); };
 const zmapSel = () => Q.get('zmap') || 'day';
 $('zombies').onclick = () => { start('zombies', { map: zmapSel() }); lockIfDesktop(); };
-$('zHost').onclick = () => { start('zombies', { role: 'host', map: zmapSel() }); lockIfDesktop(); };
-$('zJoin').onclick = () => { const code = zombies.cleanCode($('zCode').value); if (code.length < 4) { $('zJoinMsg').textContent = 'Enter the room code from the host'; return; } $('zJoinMsg').textContent = 'Connecting to room ' + code + '…'; $('zJoin').disabled = true; sfx.init();
-  zombies.net.join(code).then(() => zombies.waitMap()).then(map => { if (!map) throw new Error('That room is full (4 players)'); start('zombies', { role: 'client', map }); lockIfDesktop(); }).catch(e => { $('zJoinMsg').textContent = (e && e.message) || 'Could not connect'; $('zJoin').disabled = false; }); };
+$('zHost').onclick = () => { zombies.voice.prime(); start('zombies', { role: 'host', map: zmapSel() }); lockIfDesktop(); };
+let joining = false;
+function joinRoom(code) { if (joining) return; if (code.length < 4) { $('zJoinMsg').textContent = 'Enter the room code from the host'; return; } joining = true; $('zJoinMsg').textContent = 'Connecting to room ' + code + '…'; $('zJoin').disabled = true; sfx.init(); zombies.voice.prime();
+  zombies.net.join(code).then(() => zombies.waitMap()).then(map => { if (!map) throw new Error('That room is full (4 players)'); lobbies.stop(); start('zombies', { role: 'client', map }); lockIfDesktop(); }).catch(e => { joining = false; $('zJoinMsg').textContent = (e && e.message) || 'Could not connect'; $('zJoin').disabled = false; lobbies.refresh(); }); }
+$('zJoin').onclick = () => joinRoom(zombies.cleanCode($('zCode').value));
+// Open lobbies on the main menu (hosts heartbeat to the lobby directory; stale rooms drop after ~45 s)
+const esc = t => String(t).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
+const lobbies = watchLobbies(list => { const el = $('lobbyList'), hd = $('lobbyHead'); if (!el) return;
+  if (list === null) { if (!el.children.length) hd.dataset.s = 'checking…'; return; }
+  hd.dataset.s = list.length ? list.length + ' open' : 'none right now — host one!';
+  const html = list.slice(0, 5).map(l => `<button class="lob" data-code="${esc(l.code)}"><b>${esc(l.host)}</b><span>${esc(l.code)} · ${l.map === 'night' ? 'NIGHT' : 'DAY'}</span><i>${l.players}/${l.max}</i></button>`).join(''); if (el.dataset.h !== html) { el.dataset.h = html; el.innerHTML = html; } }, () => G.phase == 'menu' && $('menu').style.display !== 'none');
+$('lobbyList').onclick = e => { const b = e.target.closest('.lob'); if (b) { $('zCode').value = b.dataset.code; joinRoom(b.dataset.code); } };
+$('vMute').onclick = e => { e.preventDefault(); zombies.voice.toggle(); };
+$('vMute').addEventListener('pointerdown', e => e.stopPropagation());
 $('zJoinOpen').onclick = () => { $('joinBox').hidden = false; $('zJoinOpen').hidden = true; $('zCode').focus(); };
 $('gear').onclick = () => { $('settings').hidden = !$('settings').hidden; $('gear').classList.toggle('on', !$('settings').hidden); };
 const showFps = v => { $('fps').hidden = !v; $('fpschk').checked = v; }; showFps(localStorage.getItem('vr_fps') === '1' || Q.get('fps') === '1'); $('fpschk').onchange = e => { localStorage.setItem('vr_fps', e.target.checked ? '1' : ''); showFps(e.target.checked); };
@@ -420,7 +432,7 @@ if (Q.get('join')) { $('joinBox').hidden = false; $('zJoinOpen').hidden = true; 
 $('operator').value = localStorage.getItem('vr_op') || 'WRAITH-6'; $('operator').onchange = e => localStorage.setItem('vr_op', e.target.value);
 $('att').onclick = () => { start('attack'); lockIfDesktop(); }; $('def').onclick = () => { start('defend'); lockIfDesktop(); };
 const KEYS = IS_TOUCH ? 'CONTROLS\nLeft side: move · right side: look · FIRE (drag to aim)\nADS · RELOAD · JUMP · SWAP cycles weapons\nACTION appears near a wall-buy, door, box or downed teammate (hold to revive)\nBuild phase: PLACE · PIECE · MAT · SKIP (co-op clients: VOTE SKIP)\n⋯ menu: slide, inspect, scoreboard, controls, fullscreen, quit\nTap here to close'
-  : 'CONTROLS\nWASD move · mouse look · LMB fire · RMB aim · Space jump / mantle · Shift sprint (double-tap: tactical)\nC slide · 1/2, Q or wheel switch weapon · R reload · I inspect · E buy / open / hold to revive\nBuild phase: RMB place · Q piece · Z material · G skip (co-op: vote)\nHold Tab: scoreboard · H: this help · Esc: release mouse';
+  : 'CONTROLS\nWASD move · mouse look · LMB fire · RMB aim · Space jump / mantle · Shift sprint (double-tap: tactical)\nC slide · 1/2, Q or wheel switch weapon · R reload · I inspect · E buy / open / hold to revive\nBuild phase: RMB place · Q piece · Z material · G skip (co-op: vote)\nHold Tab: scoreboard · V: mute/unmute voice (co-op) · H: this help · Esc: release mouse';
 if (IS_TOUCH) $('zBuildHint').innerHTML = 'Tap <b>SKIP</b> to start round 1 now';
 $('help').textContent = KEYS.replace(/\n/g, ' · ').replace(' · Tap here to close', ''); $('keys').textContent = KEYS; $('keys').onclick = () => { $('keys').hidden = true; };
 $('fsb').onclick = () => act.fs();
