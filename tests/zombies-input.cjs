@@ -15,6 +15,6 @@ const puppeteer=require('puppeteer-core');const assert=require('node:assert/stri
  const drop=await p.evaluate(()=>{__zombies.dropPower(__P.pos.clone(),'ammo');__P.reserve.pistol=0;__sim(.1);return __P.reserve.pistol;});assert(drop>0);
  // Actual keyboard/USE purchase, not just calling economy directly.
  await p.evaluate(()=>{__P.pos.set(30,1,48);__zombies.state.points=500;});
- if(mobile)await p.tap('#tBuild');else await p.keyboard.press('KeyE');
+ if(mobile)await p.tap('#tAct');else await p.keyboard.press('KeyE');
  const buy=await p.evaluate(()=>({points:__zombies.state.points,gun:__P.slots[__P.w]}));assert.equal(buy.points,0);assert.equal(buy.gun,'carbine');assert.deepEqual(errors,[]);console.log({mobile,before,shot,reload,health,drop,buy,errors});await p.close();
 }}finally{await b.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

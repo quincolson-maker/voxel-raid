@@ -61,7 +61,7 @@ async function pair(opts = {}) {
   await c.evaluate(() => { __P.pos.set(40, 1, 44); __P.yaw = 0.1; __P.pitch = -.1; });
   await sleep(800);
   await c.screenshot({ path: 'shot-coop-client-mobile-build.png' });
-  R.skipVisibleOnPhone = await c.$eval('#tSkip', e => getComputedStyle(e).display !== 'none');
+  R.skipVisibleOnPhone = await c.evaluate(() => !document.getElementById('tBuildBar').hidden && getComputedStyle(document.getElementById('tSkip')).display !== 'none');
   // client skips -> both leave build phase
   await c.evaluate(() => __coop.act.skip());
   await until(h, () => __G.phase !== 'zbuild'); await until(c, () => __G.phase !== 'zbuild');

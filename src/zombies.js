@@ -184,7 +184,7 @@ export function createZombies(ctx) {
     scene.userData.zombieNight = true;
     }
     for (let a = 0; a < 6; a++) for (let b = 0; b < 6; b++) buildChunk(a, b); dirty.clear(); rebuildGrid();
-    if (G.phase === 'zbuild') { msg('BUILD PHASE — barricade the outpost! RMB / BUILD places walls · G / SKIP starts round 1', 6); hotbar(); }
+    if (G.phase === 'zbuild') { msg(document.body.classList.contains('touch') ? 'BUILD PHASE — barricade the outpost! PLACE builds · SKIP starts round 1' : 'BUILD PHASE — barricade the outpost! RMB places · G starts round 1', 6); hotbar(); }
     else msg((Z.map === 'day' ? 'DAYBREAK — FIREBASE' : 'DEAD SIGNAL') + ' — survive. E / USE to buy supplies.', 5);
     if (Z.role === 'host') hostRoom();
     if (Z.role === 'client') setStatus(`CO-OP · Room <b>${net.code}</b> · syncing…`);
@@ -405,20 +405,17 @@ export function createZombies(ctx) {
     $('ammo').textContent = WEAPONS[P.slots[P.w]].name + '  ' + (P.reload > 0 ? 'Reloading…' : `${P.ammo} / ${P.reserve[P.slots[P.w]] || 0}`);
     $('res').textContent = P.downed ? 'DOWNED — wait for revive' : `${Math.ceil(P.hp)} HP · ${Z.perks.health ? 'IRON HEART · ' : ''}${Z.perks.reload ? 'QUICK HANDS' : ''}`;
     $('right').textContent = `${Z.points} POINTS\nBest: ${Z.best} rounds`;
-    const sb = $('zScore'); if (sb) { sb.hidden = !linked(); if (linked()) { const ids = ['P1', 'P2', 'P3', 'P4'].filter(id => id === Z.me || Z.remotes.has(id));
+    const sb = $('zScore'); if (sb) { sb.hidden = !linked() || !Z.showScore; if (linked()) { const ids = ['P1', 'P2', 'P3', 'P4'].filter(id => id === Z.me || Z.remotes.has(id));
       sb.innerHTML = '<div class="sh"><span>SQUAD</span><span>KILLS</span><span>PTS</span></div>' + ids.map(id => { const R = Z.remotes.get(id), me = id === Z.me, down = me ? P.downed : R.down, hp = me ? Math.ceil(P.hp) : R.hp;
         const pts = me ? Z.points : isHost() ? Z.pts[id] ?? 0 : Z.pts[id] ?? '—'; return `<div style="color:${COLORS[id]}${me ? ';font-weight:bold' : ''}"><span>${id}${me ? ' (you)' : ''} ${down ? '✚ DOWN' : hp + 'HP'}</span><span>${Z.pk[id] || 0}</span><span>${pts}</span></div>`; }).join(''); } }
     if (!build) $('hotbar').textContent = '';
     $('zRound').textContent = build ? '' : Z.round <= 4 ? 'Ⅰ'.repeat(Z.round) || '—' : Z.round;
     $('zPowers').textContent = Object.entries(Z.timers).filter(([, v]) => v > 0).map(([k, v]) => powerNames[k] + ' ' + Math.ceil(v) + 's').join(' · ');
     const s = nearest(), rt = reviveTarget();
-    $('zUse').textContent = P.downed ? 'YOU ARE DOWN — hold on!' : rt ? (Z.reviveT > 0 ? `REVIVING… ${Math.round(Z.reviveT / 3 * 100)}%` : '[HOLD E / USE] Revive teammate') : build ? 'RMB / BUILD place · Q piece · Z material · G / SKIP start round 1' : s ? `[E / USE] ${s.name} — ${s.cost} pts` : 'E / USE: buy at glowing stations';
-    const tb = $('tBuild'), want = build ? 'BUILD' : 'USE'; if (tb.textContent !== want) tb.textContent = want;
-    $('tPiece').style.display = $('tMat').style.display = build ? '' : 'none';
-    $('tSkip').style.display = build ? '' : 'none';
+    $('zUse').textContent = P.downed ? 'YOU ARE DOWN — hold on!' : rt ? (Z.reviveT > 0 ? `REVIVING… ${Math.round(Z.reviveT / 3 * 100)}%` : (document.body.classList.contains('touch') ? 'Hold REVIVE' : '[HOLD E] Revive teammate')) : s ? (document.body.classList.contains('touch') ? `${s.name} — ${s.cost} pts` : `[E] ${s.name} — ${s.cost} pts`) : '';
   }
   function strikeAt(c) { ctx.explodeFx(c); if (isClient()) return; for (const u of active()) if (u.pos.distanceTo(c) < 4.5) damage(u, 400, false); }
   function rocket(o, d) { net.send({ t: 'rk', o: [o.x, o.y, o.z].map(v => +v.toFixed(2)), v: [d.x, d.y, d.z].map(v => +v.toFixed(3)) }); }
-  const api = { reviveTarget, liveRemotes, waitMap, strikeAt, rocket, state: Z, net, init, tick, hud, damage, buy, use, over, refill, power, dropPower, kill, nextRound, skip, endBuild, canBuild, onPlace, onZeroHP, hostBuy, snap, cleanCode, linked };
+  const api = { nearest, reviveTarget, liveRemotes, waitMap, strikeAt, rocket, state: Z, net, init, tick, hud, damage, buy, use, over, refill, power, dropPower, kill, nextRound, skip, endBuild, canBuild, onPlace, onZeroHP, hostBuy, snap, cleanCode, linked };
   return api;
 }

@@ -34,7 +34,7 @@ const base = process.argv[2] || 'http://localhost:8767'; const sleep = ms => new
   R.hpScaled = await h.evaluate(() => Math.max(...__G.units.filter(u => u.hp > 0 && u.kind === 'walker').map(u => u.hp)));
   // per-player points + scoreboard
   await h.evaluate(() => { const s = __zombies.state; s.pending = Math.max(s.pending, 4); }); await h.waitForFunction(() => __G.units.filter(u => u.hp > 0).length >= 3, { polling: 100, timeout: 30000 }); await sleep(600);
-  for (const [i, c] of cs.entries()) await c.evaluate(i => { const u = __G.units.filter(u => u.hp > 0)[i]; if (u) __zombies.damage(u, 1e7, true); }, i);
+  for (const [i, c] of cs.entries()) { await c.waitForFunction(i => __G.units.filter(u => u.hp > 0).length > i, { polling: 100, timeout: 15000 }, i); await c.evaluate(i => { const u = __G.units.filter(u => u.hp > 0)[i]; if (u) __zombies.damage(u, 1e7, true); }, i); }
   await sleep(1500);
   R.pts = await h.evaluate(() => ({ ...__zombies.state.pts })); R.pk = await h.evaluate(() => ({ ...__zombies.state.pk }));
   await h.evaluate(() => { __zombies.state.maxHP = 1e7; __P.hp = 1e7; __P.pos.set(48, 1, 66); __P.yaw = Math.PI; __P.pitch = -.08; });

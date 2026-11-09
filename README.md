@@ -97,3 +97,13 @@ The first tests round transitions/scaling/actor caps, shops, ammo, gate, box, pe
   - Spawns: P1 at (45.5,57.5), with the others next to P1. Zombies spawn 20–32 m from a random living player.
 - **Squad:** a host-authoritative PeerJS star for up to 4 players (P1 is the host; a 5th joiner gets "room full"). Positions are relayed through the host. Zombie count scales ×(1+0.5·(n−1)) and HP scales ×(1+0.3·(n−1)). Any teammate can revive a downed player (hold E for 3 s), and it's game over ("SQUAD WIPED") when everyone is down. Press Tab to show the scoreboard with kills and points for each player. The 7:00 build phase can be skipped by the host, or by a vote from half the squad (rounded up). Best round is saved separately per map.
 - Tests: `tests/squad.cjs` (host plus 3 joiners, plus a rejected 5th) and `tests/dayz.cjs`. Both use the `?loopnet=1` stand-in transport, so real WebRTC is not exercised here.
+
+## Decluttered UI
+- **Menu:** Play Solo · Host Co-op · Join Co-op. The room-code box only appears after you tap Join, or straight away with a `?join=` link. Everything else (operator, graphics, lighting, rain, lens FX, FPS counter, fullscreen, controls, credits) sits behind the ⚙ gear.
+- **Phone:** always on screen are the move stick, look area, FIRE, ADS, RELOAD, JUMP and SWAP (cycles your two weapons, e.g. the M17/primary and the RPG-7).
+  - The amber **ACTION** button appears only near a wall-buy, perk, ammo cache, door or Mystery Box (BUY / OPEN / BOX with the cost), or next to a downed teammate (REVIVE). In the build phase it becomes PLACE.
+  - PIECE / MAT / SKIP (VOTE SKIP for co-op clients) appear only during the build phase.
+  - The small **⋯** button holds Slide, Inspect, Scoreboard, Controls, Fullscreen and Quit.
+- **Desktop:** no on-screen buttons. There is one faint "H · controls" hint; H toggles the key list. Hold Tab for the co-op scoreboard. The FPS counter is opt-in from settings or `?fps=1`.
+- Killstreaks in Zombies are drop pickups that fire on their own, so they don't need a button.
+- Test: `node tests/ui-shots.cjs [base] after` (writes shot-ui-after-*.png). `before` shots of the previous UI are committed for comparison.
