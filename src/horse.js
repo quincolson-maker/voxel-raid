@@ -90,8 +90,12 @@ function skinHorseGeometry(geo) { // per-vertex bone weights from body regions (
 function makeBones() { const bones = HB.map(([nm]) => { const b = new THREE.Bone(); b.name = nm; return b; });
   HB.forEach(([, par, x, y, z], i) => { if (par < 0) bones[i].position.set(x, y, z); else { const q = HB[par]; bones[i].position.set(x - q[2], y - q[3], z - q[4]); bones[par].add(bones[i]); } }); return bones; }
 // coat recolouring of the bay texture: keep its shading detail, remap coat and points/mane to the target colours
-function coatMaterial(base, coat) {
-  const m = base.clone(); m.metalness = 0; m.roughness = .78; m.envMapIntensity = .8;
+function coatMaterial(base, coat, hq) {
+  let m = base.clone(); m.metalness = 0; m.roughness = .72; m.envMapIntensity = .85;
+  if (hq && base.map) { // velvet-like coat sheen on capable devices
+    const pm = new THREE.MeshPhysicalMaterial({ map: base.map, normalMap: base.normalMap, roughnessMap: base.metalnessMap || base.roughnessMap, roughness: .72, metalness: 0, envMapIntensity: .85, side: base.side,
+      sheen: .45, sheenRoughness: .55, sheenColor: new THREE.Color(coat.c ? coat.c : 0xb07040).multiplyScalar(.9) });
+    if (base.normalMap) pm.normalScale.copy(base.normalScale); m = pm; }
   if (!coat.c) return m;
   const uC = { value: new THREE.Color(coat.c) }, uM = { value: new THREE.Color(coat.m) };
   m.onBeforeCompile = sh => { sh.uniforms.uCoat = uC; sh.uniforms.uMane = uM;
@@ -163,20 +167,35 @@ function mergeStatic(root) {
 }
 function lerpAng(a, b, t) { return a + (b - a) * t; }
 // procedural gaits for the rigged horse
-const OFFS = { walk: [.25, .75, 0, .5], gallop: [.58, .48, .08, 0] };
+// procedural gaits for the rigged horse: walk (4-beat), trot (diagonal), canter (3-beat), gallop (4-beat transverse),
+// blended by speed. Each leg runs a stance/swing cycle (hoof planted then lifted + folded) with gait-specific duty factor.
+const GAITS = [ // v: speed centre (m/s); off: footfall phase per leg [FL, FR, HL, HR]; duty: stance share; stride: metres per cycle
+  { v: 1.6, off: [.25, .75, 0, .5], duty: .63, stride: 1.75, A: .27, bob: .012, bn: 2, pitch: 0, nod: .07, nn: 2 },
+  { v: 5, off: [0, .5, .5, 0], duty: .45, stride: 2.7, A: .34, bob: .032, bn: 2, pitch: .012, nod: .035, nn: 2 },
+  { v: 10, off: [.33, .66, 0, .33], duty: .4, stride: 3.4, A: .43, bob: .05, bn: 1, pitch: .05, nod: .09, nn: 1 },
+  { v: 17, off: [.42, .52, 0, .1], duty: .32, stride: 4.7, A: .54, bob: .06, bn: 1, pitch: .065, nod: .07, nn: 1 }];
+function gaitMix(sp) { if (sp <= GAITS[0].v) return GAITS[0]; for (let i = 0; i < GAITS.length - 1; i++) { const a = GAITS[i], b = GAITS[i + 1]; if (sp <= b.v) { const t = sstep(a.v + (b.v - a.v) * .35, b.v - (b.v - a.v) * .15, sp), o = {};
+  for (const k in a) o[k] = Array.isArray(a[k]) ? a[k].map((x, j) => x + (b[k][j] - x) * t) : a[k] + (b[k] - a[k]) * t; o.bn = t < .5 ? a.bn : b.bn; o.nn = t < .5 ? a.nn : b.nn; return o; } } return GAITS[GAITS.length - 1]; }
 function realAnim(hz, dt, speed, graze, t) {
-  const u = hz.userData, B = u.bones, sp = Math.abs(speed), k = sstep(.05, 1.2, sp), gal = sstep(5, 10, sp);
-  const stride = 1.6 + sstep(3, 9, sp) * 1.4 + sstep(10, 18, sp) * 1.6; u.phase = (u.phase + dt * (sp > .05 ? sp / stride : 0)) % 1;
-  const A = (.3 + .22 * gal) * k;
-  LEGS.forEach((b, i) => { const off = lerpAng(OFFS.walk[i], OFFS.gallop[i], gal), th = (u.phase + off) * Math.PI * 2, s = Math.sin(th), lift = Math.max(0, Math.cos(th));
-    const hind = i > 1; B[b].rotation.x = -s * A * (hind ? .9 : 1); B[b + 1].rotation.x = lift * k * (hind ? .5 + .4 * gal : .8 + .6 * gal); B[b + 2].rotation.x = lift * k * (.5 + .3 * gal) - (hind ? lift * k * .2 : 0); });
-  const th = u.phase * Math.PI * 2;
-  B[1].position.y = u.bodyY + (gal > .5 ? Math.sin(th) * .055 : Math.abs(Math.sin(th * 2)) * .018) * k + Math.sin(t * 1.6 + u.seed) * .004;
-  B[1].rotation.x = Math.sin(th + .6) * .045 * gal * k;
-  const nx = graze ? 1.05 : (-.06 * gal + Math.sin(th * (gal > .5 ? 1 : 2) + 1) * .05 * k), hx = graze ? .42 : .06 * gal;
-  B[2].rotation.x += (nx - B[2].rotation.x) * Math.min(1, dt * 2.5); B[3].rotation.x += (hx - B[3].rotation.x) * Math.min(1, dt * 2.5);
-  B[2].rotation.y = graze ? Math.sin(t * .35 + u.seed) * .12 : Math.sin(t * .5 + u.seed) * .06 * (1 - k);
-  B[4].rotation.x = .08 + .45 * gal * k + Math.sin(th) * .06 * k; B[4].rotation.z = Math.sin(t * 1.3 + u.seed) * .09 + Math.sin(th) * .05 * k;
+  const u = hz.userData, B = u.bones, sp = Math.abs(speed), k = sstep(.05, 1.1, sp), G = gaitMix(sp), gal = sstep(8, 15, sp), TAU = Math.PI * 2;
+  u.phase = (u.phase + dt * (sp > .05 ? sp / G.stride : 0)) % 1; const ph = u.phase;
+  LEGS.forEach((b, i) => { const hind = i > 1; let c = (ph + G.off[i]) % 1; if (c < 0) c += 1; let ang, lift;
+    if (c < G.duty) { const s = c / G.duty; ang = G.A * (1 - 2 * s); lift = 0; } else { const s = (c - G.duty) / (1 - G.duty), e = s * s * (3 - 2 * s); ang = -G.A + 2 * G.A * e; lift = Math.sin(Math.PI * s); }
+    const A = ang * k * (hind ? .92 : 1), L = lift * k;
+    B[b].rotation.x = -A + (hind ? .03 : -.02) * k;
+    if (hind) { B[b + 1].rotation.x = -L * (.55 + .35 * gal) + Math.max(0, -A) * .25; B[b + 2].rotation.x = L * (.9 + .4 * gal) - Math.max(0, A) * .15; }
+    else { B[b + 1].rotation.x = L * (1.0 + .7 * gal); B[b + 2].rotation.x = L * (.75 + .45 * gal) - Math.max(0, -A) * .2; } });
+  // trunk: bounce + pitch, a slow breath when standing
+  const bobT = G.bn === 2 ? Math.abs(Math.cos(ph * TAU)) : (Math.sin(ph * TAU) * .5 + .5), breath = Math.sin(t * 1.4 + u.seed) * .004 * (1 - k);
+  B[1].position.y = u.bodyY - G.bob * k * (1 - bobT) + breath; B[1].rotation.x = Math.sin(ph * TAU + .9) * G.pitch * k; B[1].rotation.z = Math.sin(ph * TAU) * .015 * k * (1 - gal);
+  // neck / head: nod in time with the gait, stretch forward in the gallop; graze with the head down; idle looks around
+  u.look = u.look ?? 0; u.lookT = (u.lookT ?? 2) - dt; if (u.lookT <= 0) { u.lookT = 2.5 + Math.random() * 5; u.look = (Math.random() - .5) * .5; }
+  const nod = Math.sin(ph * TAU * G.nn + 1.2) * G.nod * k;
+  const nx = graze ? 1.05 : (-.1 * gal + nod + (1 - k) * .03), hx = graze ? .42 : .05 + .08 * gal - nod * .4, ny = graze ? Math.sin(t * .35 + u.seed) * .12 : u.look * (1 - k);
+  const r = Math.min(1, dt * 3); B[2].rotation.x += (nx - B[2].rotation.x) * r; B[3].rotation.x += (hx - B[3].rotation.x) * r; B[2].rotation.y += (ny - B[2].rotation.y) * Math.min(1, dt * 1.5); B[3].rotation.y = B[2].rotation.y * .6;
+  // tail: carried higher with speed, swings with the stride, occasional swish at rest
+  u.swT = (u.swT ?? 3) - dt; if (u.swT <= 0) { u.swT = 2 + Math.random() * 6; u.sw = 1; } u.sw = Math.max(0, (u.sw || 0) - dt * 1.3);
+  B[4].rotation.x = .06 + .5 * gal * k + .12 * k + Math.sin(ph * TAU * G.bn) * .05 * k; B[4].rotation.z = Math.sin(t * 1.1 + u.seed) * .05 + Math.sin(ph * TAU) * .06 * k + Math.sin(u.sw * 9) * u.sw * .45;
 }
 // ---- world props ----
 function vn2(x, z) { return Math.sin(x * 1.7 + z * .3) * .5 + Math.sin(z * 2.3 - x * .7) * .3 + Math.sin(x * 4.1 + z * 3.7) * .2; }
@@ -224,23 +243,23 @@ diffuseColor.rgb*=col;`); };
 }
 const COATS = [{ n: 'Bay' }, { n: 'Chestnut', c: 0xa04a1c, m: 0x6a2c10 }, { n: 'Grey', c: 0xd8d2c8, m: 0x8e8882 }, { n: 'Black', c: 0x2e2826, m: 0x161312 }, { n: 'Palomino', c: 0xd9a656, m: 0xf1e3c2 }];
 const PROC_COATS = [[0x6b4226, 0x241812, 0x4a2c18], [0xa04a1c, 0x6a2c10, 0x3a2a1c], [0xd8d2c8, 0x8e8882, 0x7a4a24], [0x2a2220, 0x111111, 0x7a4a24], [0xd9a656, 0xf0e2c0, 0x4a2c18]];
-const MODEL_URL = { horse: 'assets/horses/horse.glb', far: 'assets/horses/horse_far.glb', rider: 'assets/horses/rider.glb' };
+const MODEL_URL = { horse: 'assets/horses/horse.glb', mid: 'assets/horses/horse_mid.glb', far: 'assets/horses/horse_far.glb', rider: 'assets/horses/rider.glb' };
 let ASSETS = null;
 function deq(src) { // quantized (KHR_mesh_quantization) attributes -> float32 so the node transform can be baked in
   const g = new THREE.BufferGeometry(); g.setIndex(src.index);
   for (const [k, a] of Object.entries(src.attributes)) { const n = a.count, s = a.itemSize, f = new Float32Array(n * s), get = ['getX', 'getY', 'getZ', 'getW'];
     for (let i = 0; i < n; i++) for (let c = 0; c < s; c++) f[i * s + c] = a[get[c]](i); g.setAttribute(k, new THREE.BufferAttribute(f, s)); }
   return g; }
-function loadAssets() {
+function loadAssets(hq) {
   if (ASSETS) return ASSETS; if (new URLSearchParams(location.search).has('prochorse')) return (ASSETS = Promise.reject(new Error('procedural horses requested')));
   const L = new GLTFLoader(); const mesh = sc => { let m = null; sc.traverse(o => { if (o.isMesh && !m) m = o; }); return m; };
-  return (ASSETS = Promise.all([L.loadAsync(MODEL_URL.horse), L.loadAsync(MODEL_URL.far), L.loadAsync(MODEL_URL.rider)]).then(([h, f, r]) => {
+  return (ASSETS = Promise.all([L.loadAsync(hq ? MODEL_URL.horse : MODEL_URL.mid), L.loadAsync(MODEL_URL.far), L.loadAsync(MODEL_URL.rider)]).then(([h, f, r]) => {
     const near = mesh(h.scene), far = mesh(f.scene); near.updateWorldMatrix(true, false); far.updateWorldMatrix(true, false);
     const gN = deq(near.geometry).applyMatrix4(near.matrixWorld), gF = deq(far.geometry).applyMatrix4(far.matrixWorld);
     for (const g of [gN, gF]) { skinHorseGeometry(g); g.computeBoundingSphere(); }
     const farMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .8, metalness: 0 });
     const riderSrc = cloneSkinned(r.scene), clips = r.animations.map(c => { const k = c.clone(); k.tracks = k.tracks.filter(t => !/\.position$/.test(t.name)); return k; }); // no root motion
-    return { riderSrc, clips, gN, gF, matN: COATS.map(c => coatMaterial(near.material, c)), matF: COATS.map(c => coatMaterial(farMat, c)), rider: r.scene };
+    return { riderSrc, clips, gN, gF, matN: COATS.map(c => coatMaterial(near.material, c, hq)), matF: COATS.map(c => coatMaterial(farMat, c)), rider: r.scene };
   }));
 }
 
@@ -428,7 +447,7 @@ export function createHorseRider(ctx) {
     H.on = true; P.spawn.set(SPAWN.x, hAt(SPAWN.x, SPAWN.z), SPAWN.z); P.pos.copy(P.spawn); buildWorld(); spawnHorses();
     P.yaw = Math.atan2(SPAWN.x - PEN.x, SPAWN.z - PEN.z); P.pitch = -.05; P.hp = 100;
     GX.setLighting('day', false); scene.fog.density = .0026; GX.followSun(P.pos);
-    loadAssets().then(dress).catch(e => { H.models = 'proc'; if (!/requested/.test(e && e.message)) console.warn('horse models failed, using procedural horses', e); });
+    loadAssets(!mobile && Q.shadow > 0).then(dress).catch(e => { H.models = 'proc'; if (!/requested/.test(e && e.message)) console.warn('horse models failed, using procedural horses', e); });
     msg(mobile ? 'HORSE RIDER — walk to the pen, tap RIDE next to a horse' : 'HORSE RIDER — walk to the pen and press E next to a horse', 5);
   }
   const anim = (o, dt, sp, graze) => o.g.userData.kind === 'real' ? realAnim(o.g, dt, sp, graze, H.t) : procAnim(o.g, dt, sp, graze);
