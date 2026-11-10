@@ -250,7 +250,7 @@ diffuseColor.rgb*=col;`).replace('#include <normal_fragment_maps>', '#include <n
     const n = Math.round(L / 3); const posts = new THREE.InstancedMesh(cyl(.04, .04, fH + .1, 6), post, n + 1); for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, z = z0 + (z1 - z0) * i / n; m4.makeTranslation(x, hAt(x, z) + fH / 2, z); posts.setMatrixAt(i, m4); } posts.castShadow = true; scene.add(posts); }
   return { hAt };
 }
-function conifer() { const parts = []; for (let i = 0; i < 10; i++) { const r = 2.7 - i * .25, y = 3.2 + i * .95; const g = new THREE.ConeGeometry(r, 1.8, 14, 3, true); const p = g.attributes.position;
+export function conifer() { const parts = []; for (let i = 0; i < 10; i++) { const r = 2.7 - i * .25, y = 3.2 + i * .95; const g = new THREE.ConeGeometry(r, 1.8, 14, 3, true); const p = g.attributes.position;
     for (let k = 0; k < p.count; k++) { const a = Math.atan2(p.getZ(k), p.getX(k)); const d = Math.hypot(p.getX(k), p.getZ(k)); const j = 1 + Math.sin(a * 11 + i * 2.3) * .18 + Math.sin(a * 23 + i) * .08; p.setXYZ(k, p.getX(k) * j, p.getY(k) - d * d * .12 + Math.sin(a * 7 + i) * .12, p.getZ(k) * j); }
     g.translate(0, y, 0); parts.push(g); }
   const g = mergeGeos(parts); const col = []; const p = g.attributes.position; for (let i = 0; i < p.count; i++) { const k = .65 + Math.min(.5, Math.hypot(p.getX(i), p.getZ(i)) * .2); col.push(k, k, k); } g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.computeVertexNormals(); return g; }
