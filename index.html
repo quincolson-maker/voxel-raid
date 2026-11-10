@@ -111,7 +111,7 @@ select,input{border-radius:1px;background:#11161a;border:1px solid #fff2}
 
 /* decluttered UI */
 #gear{position:absolute;top:max(14px,env(safe-area-inset-top));left:calc(max(5vw,env(safe-area-inset-left)) + min(22em,80vw));min-width:0;width:2.4em;height:2.4em;padding:0;font-size:1.2em;border:1px solid #fff3!important;border-left:1px solid #fff3!important;background:rgba(255,255,255,.06)!important;display:flex;align-items:center;justify-content:center}
-#menu>#zombies,#menu>#zHost,#menu>#zJoinOpen{width:min(100%,22em);text-align:left}#zJoinOpen{background:rgba(70,140,180,.25)!important;border-left:3px solid #58c8ff!important}
+#menu>#horseBtn,#menu>#zombies,#menu>#zHost,#menu>#zJoinOpen{width:min(100%,22em);text-align:left}#zJoinOpen{background:rgba(70,140,180,.25)!important;border-left:3px solid #58c8ff!important}
 #zJoinMsg:empty{display:none}#settings{display:flex;flex-direction:column;gap:.6em;border-top:1px solid #fff2;padding-top:.6em}#settings[hidden]{display:none}#fsb{position:static;padding:.3em .7em;font-size:.85em}
 .touch #touch{display:none}.touch.ingame #touch{display:block}
 #tAct[hidden],#tBuildBar[hidden],#uiMore[hidden]{display:none!important}
@@ -134,12 +134,18 @@ select,input{border-radius:1px;background:#11161a;border:1px solid #fff2}
 #vMute.v-muted{border-color:#ff6a5a!important;color:#ffb3a8;background:rgba(40,8,6,.72)!important}#vMute.v-unavailable,#vMute.v-starting{border-color:#8a9096!important;color:#b8bec4;background:rgba(20,22,24,.7)!important}
 @media (orientation:portrait){.touch #msg{top:34%;font-size:1.3em;padding:0 4vw;box-sizing:border-box}}
 .touch #vMute{top:calc(max(8px,env(safe-area-inset-top)) + 64px);left:max(8px,env(safe-area-inset-left));padding:.5em .8em .5em .6em}
+
+/* horse rider */
+#horseBtn{background:rgba(150,110,50,.28)!important;border-left:3px solid #e0b060!important}
+#hrPrompt{position:absolute;left:50%;top:62%;transform:translateX(-50%);padding:.45em 1em;font-weight:700;letter-spacing:.08em;color:#ffe6b0;background:rgba(20,14,6,.6);border-left:3px solid #e0b060;text-shadow:0 2px 0 #000a}#hrPrompt[hidden]{display:none}#hrPrompt.riding{top:auto;bottom:9%;opacity:.8;font-size:.85em}.touch.horse-mode #hrPrompt.riding{display:none}
+.horse-mode #vitals,.horse-mode #hotbar,.horse-mode #right,.horse-mode #cross,.horse-mode #zHud,.horse-mode #feed,.horse-mode #scope,.horse-mode #dbar{display:none!important}.horse-mode .bar{display:none}
+.horse-mode #tFire,.horse-mode #tAds,.horse-mode #tReload,.horse-mode #tSwap{display:none!important}.touch.horse-mode #hrPrompt{top:auto;bottom:40%}
 </style>
 </head><body>
 <div id="hud" style="display:none">
  <div id="zHud" hidden><div id="zRound"></div><div id="zUse"></div><div id="zPowers"></div><div id="zBuild" hidden><div class="zbt">BUILD YOUR DEFENSES</div><div id="zBuildT">7:00</div><div class="zbs" id="zBuildHint">Press <b>G</b> to start round 1 now</div></div><div id="zCoop" class="pill" hidden></div><div id="zScore" class="pill" hidden></div></div><div id="vign"></div><div id="nums"></div>
  <div id="top" class="pill"><div class="row"><span id="mode"></span><span id="timer"></span><span id="stars"></span></div><div id="sub" style="font-size:.8em;opacity:.85"></div><div class="bar"><i id="dbar"></i></div></div>
- <div id="compass"><div id="cstrip"></div><div id="cpins"></div><div id="chead"></div></div><div id="feed"></div><div id="scope"></div><div id="cross"></div><div id="hitm">✕</div><div id="msg"></div>
+ <div id="compass"><div id="cstrip"></div><div id="cpins"></div><div id="chead"></div></div><div id="feed"></div><div id="scope"></div><div id="cross"></div><div id="hitm">✕</div><div id="msg"></div><div id="hrPrompt" hidden></div>
  <div id="vitals" class="pill"><div class="bar" id="hpbar"><i id="hp"></i></div><div id="ammo"></div><div id="res"></div></div>
  <div id="hotbar"></div><div id="right" class="pill"></div><div id="fps" hidden></div><div id="keyhint">H · controls</div><div id="keys" class="pill" hidden></div>
 </div>
@@ -159,7 +165,8 @@ select,input{border-radius:1px;background:#11161a;border:1px solid #fff2}
 <button id="gear" title="Settings" aria-label="Settings">⚙</button>
  <h1>VOXEL RAID<br><span style="font-size:.45em">GHOSTLINE · ZOMBIES</span></h1>
  <div class="help">Endless zombies on <b>Daybreak — Firebase</b> · solo or up to 4-player co-op</div>
- <button id="zombies" class="gold">☣ PLAY SOLO</button>
+ <button id="zombies" class="gold">☣ ZOMBIES SOLO</button>
+ <button id="horseBtn">🐎 HORSE RIDER</button>
  <button id="zHost">👥 HOST CO-OP</button>
  <button id="zJoinOpen">🔗 JOIN CO-OP</button>
  <div id="lobbies"><div id="lobbyHead" data-s="checking…">OPEN LOBBIES</div><div id="lobbyList"></div></div>
@@ -179,5 +186,5 @@ select,input{border-radius:1px;background:#11161a;border:1px solid #fff2}
 <div id="rot"><div class="ph"></div><p>Rotate your phone to landscape</p><button id="rotskip">Play anyway</button></div>
 <div id="ioshint" class="pill">For true fullscreen on iPhone: tap Share → <b>Add to Home Screen</b>, then launch Voxel Raid from your home screen. <button id="ioshintx" style="padding:.2em .6em">OK</button></div>
 <script src="./vendor/peerjs.min.js"></script>
-<script type="module" src="./game.min.js?v=16-voice"></script>
+<script type="module" src="./game.min.js?v=17-horse"></script>
 </body></html>

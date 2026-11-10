@@ -6,6 +6,7 @@ import { FX, SFX } from './src/fx.js';
 import { initTouch } from './src/touch.js';
 import { createZombies } from './src/zombies.js';
 import { watchLobbies } from './src/lobby.js';
+import { createHorseRider } from './src/horse.js';
 const $ = id => document.getElementById(id);
 const Q = new URLSearchParams(location.search);
 if (IS_TOUCH) document.body.classList.add('touch');
@@ -225,12 +226,12 @@ addEventListener('mouseup', e => { if (e.button == 0) mouseL = false; if (e.butt
 const pieces = () => G.mode == 'attack' || G.mode == 'zombies' ? PIECES_ATT : PIECES_DEF;
 const building = () => G.phase == 'build' || G.phase == 'zbuild';
 const act = { slide() { if ((P.sprintK || 0) > .3 && P.onGround) { P.slideT = .75; sfx.step(true); } else input.jump = false; }, piece() { P.piece = (P.piece + 1) % pieces().length; sfx.ui(); hotbar(); }, mat() { P.mat = (P.mat + 1) % 3; sfx.ui(); hotbar(); },
-  reload() { if (P.ammo < P.mag && P.reload <= 0 && (G.mode !== 'zombies' || P.reserve[P.slots[P.w]] > 0)) { P.reload = WP().reload * (G.mode === 'zombies' && zombies.state.perks.reload ? .6 : 1); P.reloadMax = P.reload; sfx.reload(); } }, swap() { equip(1 - P.w); }, ads() { input.ads = !input.ads; }, skip() { if (G.mode === 'zombies') { zombies.skip(); return; } if (G.phase == 'build') G.timer = 0; else if (G.phase == 'raid' && Q.get('dev')) G.timer = 0; }, build: () => G.mode === 'zombies' ? (G.phase == 'zbuild' && !nearZStation() ? place() : zombies.use()) : place(),
+  reload() { if (P.ammo < P.mag && P.reload <= 0 && (G.mode !== 'zombies' || P.reserve[P.slots[P.w]] > 0)) { P.reload = WP().reload * (G.mode === 'zombies' && zombies.state.perks.reload ? .6 : 1); P.reloadMax = P.reload; sfx.reload(); } }, swap() { equip(1 - P.w); }, ads() { input.ads = !input.ads; }, skip() { if (G.mode === 'zombies') { zombies.skip(); return; } if (G.phase == 'build') G.timer = 0; else if (G.phase == 'raid' && Q.get('dev')) G.timer = 0; }, build: () => G.mode === 'horse' ? horse.use() : G.mode === 'zombies' ? (G.phase == 'zbuild' && !nearZStation() ? place() : zombies.use()) : place(),
   inspect() { if (P.reload <= 0) P.inspect = 2.2; }, score() { G.scoreOn = !G.scoreOn; }, help() { const k = $('keys'); k.hidden = !k.hidden; }, fs() { if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document); else goFullscreen(); },
   quit() { if (confirm('Quit to the main menu?')) location.href = location.pathname; } };
 const nearZStation = () => !!(zombies.nearest() || zombies.reviveTarget());
 let lastShift = 0;
-function onKey(c) { if (G.phase == 'menu' || G.over) return; if (c == 'ShiftLeft') { const n = performance.now(); if (n - lastShift < 320) P.tacReq = true; lastShift = n; } if ((c == 'KeyC' || c == 'ControlLeft') && (P.sprintK || 0) > .5 && P.onGround) { P.slideT = .75; sfx.step(true); } if (c == 'KeyI' && P.reload <= 0) P.inspect = 2.2; if (c == 'KeyE' && G.mode === 'zombies') zombies.use(); if (c == 'KeyQ') { if (building()) act.piece(); else act.swap(); } if (c == 'KeyZ') act.mat(); if (c == 'KeyR') act.reload(); if (c == 'KeyG') act.skip(); if (c == 'KeyH') act.help(); if (c == 'KeyV' && G.mode === 'zombies') zombies.voice.toggle(); if (c == 'Digit1') equip(0); if (c == 'Digit2') equip(1); }
+function onKey(c) { if (G.phase == 'menu' || G.over) return; if (G.mode === 'horse') { if (c == 'KeyE') horse.use(); if (c == 'KeyH') act.help(); return; } if (c == 'ShiftLeft') { const n = performance.now(); if (n - lastShift < 320) P.tacReq = true; lastShift = n; } if ((c == 'KeyC' || c == 'ControlLeft') && (P.sprintK || 0) > .5 && P.onGround) { P.slideT = .75; sfx.step(true); } if (c == 'KeyI' && P.reload <= 0) P.inspect = 2.2; if (c == 'KeyE' && G.mode === 'zombies') zombies.use(); if (c == 'KeyQ') { if (building()) act.piece(); else act.swap(); } if (c == 'KeyZ') act.mat(); if (c == 'KeyR') act.reload(); if (c == 'KeyG') act.skip(); if (c == 'KeyH') act.help(); if (c == 'KeyV' && G.mode === 'zombies') zombies.voice.toggle(); if (c == 'Digit1') equip(0); if (c == 'Digit2') equip(1); }
 addEventListener('wheel', e => { if (G.phase != 'menu' && !G.over) equip(1 - P.w); }, { passive: true });
 const input = { mx: 0, mz: 0, fire: false, jump: false, ads: false };
 if (IS_TOUCH) initTouch(input, look, act, () => sfx.init());
@@ -244,7 +245,7 @@ function pieceCells(h) { const name = pieces()[P.piece]; const f = fwd(); const 
   if (name == 'Floor') for (let i = -1; i <= 1; i++) for (let k = 0; k < 3; k++) cells.push([X + i * rx + k * fx_, Y, Z + i * rz + k * fz]);
   if (name == 'Ramp') for (let i = -1; i <= 1; i++) for (let k = 0; k < 3; k++) cells.push([X + i * rx + k * fx_, Y + k, Z + i * rz + k * fz]);
   if (COST[name]) cells.push([X, Y, Z]); return cells; }
-function place() { if (P.dead > 0 || P.downed || G.phase == 'menu' || G.over) return; if (G.mode == 'zombies' && G.phase != 'zbuild') { msg('Building is only allowed in the build phase', 1); return; } const h = rayVox(camera.position, fwd(), 8); if (!h) { msg('Aim at a surface (within 8 blocks)', 1); return; }
+function place() { if (G.mode === 'horse' || P.dead > 0 || P.downed || G.phase == 'menu' || G.over) return; if (G.mode == 'zombies' && G.phase != 'zbuild') { msg('Building is only allowed in the build phase', 1); return; } const h = rayVox(camera.position, fwd(), 8); if (!h) { msg('Aim at a surface (within 8 blocks)', 1); return; }
   const name = pieces()[P.piece];
   if (COST[name]) { if (G.gears < COST[name]) { msg('Not enough Gears', 1); return; } if (G.phase != 'build') { msg('Defenses can only be placed during prep', 1); return; }
     const x = h.px, y = h.py, z = h.pz; G.gears -= COST[name]; if (name == 'AT Mine') addTrap(x, y, z); else { placeStructure(name == 'MG Nest' ? 'turret' : 'mortar', x + 1, z + 1, y); stats.baseTotal = stats.base; stats.coreTotal = stats.core; } sfx.place(); hotbar(); return; }
@@ -337,7 +338,8 @@ function updateViewmodel(dt) { const b = Math.sin(P.bob), b2 = Math.abs(Math.cos
 function applyAtmos() { const L = Q.get('light') || $('lightsel').value, rain = (Q.get('rain') || ($('rainchk').checked ? '1' : '')) == '1' && (QNAME == 'high' || QNAME == 'ultra' || Q.get('rain') == '1');
   GX.setLighting(L, rain); fx.setRain(rain); sfx.rainLoop(rain); GX.setLens(Q.has('lens') ? Q.get('lens') == '1' : $('lenschk').checked); }
 const zombies = createZombies({ G, P, scene, GX, sfx, fx, setB, get, solid, buildChunk, dirty, astar, rebuildGrid, costD, hurt, msg, equip, PBRS, mobile: IS_TOUCH, damageBlock, buildDay: () => { G.mode = 'zombies'; buildWorld(LAYOUTS[0]); G.traps.forEach(t => scene.remove(t.m)); G.traps = []; }, held: heldUse, hotbar, launchRocket, feed, onKill, precisionStrike, explodeFx: (c) => { fx.explosion(c, 3); sfx.at(c, () => sfx.boom(1), .8); } });
-function start(mode, opts) { sfx.init(); document.body.classList.add('ingame'); if (mode === 'zombies') { G.mode = mode; $('menu').style.display = 'none'; $('hud').style.display = ''; zombies.init(opts); return; } P.slots = [Q.get('gun') || $('primary').value || 'carbine', 'rpg']; P.ammoOf = {}; P.w = -1; equip(0); G.mode = mode; G.layout = +$('layout').value; G.buildT = Math.max(0, +$('buildT').value || 300); $('menu').style.display = 'none'; $('hud').style.display = '';
+const horse = createHorseRider({ scene, GX, P, keys, input, camera, sfx, msg, PBRS, mobile: IS_TOUCH });
+function start(mode, opts) { sfx.init(); document.body.classList.add('ingame'); if (mode === 'horse') { G.mode = mode; G.phase = 'ride'; $('menu').style.display = 'none'; $('hud').style.display = ''; document.body.classList.add('horse-mode'); vm.visible = false; horse.init(); return; } if (mode === 'zombies') { G.mode = mode; $('menu').style.display = 'none'; $('hud').style.display = ''; zombies.init(opts); return; } P.slots = [Q.get('gun') || $('primary').value || 'carbine', 'rpg']; P.ammoOf = {}; P.w = -1; equip(0); G.mode = mode; G.layout = +$('layout').value; G.buildT = Math.max(0, +$('buildT').value || 300); $('menu').style.display = 'none'; $('hud').style.display = '';
   P.team = mode == 'attack' ? 'att' : 'def'; const L = LAYOUTS[G.layout]; buildWorld(L); G.shield = true;
   if (mode == 'attack') { P.spawn.set(CX + .5, 1, 3); P.yaw = Math.PI; G.mat = { 2: 300, 3: 200, 4: 80 };
     const roster = ['skirm', 'breaker', 'skirm', 'bulwark', 'skirm', 'breaker', 'skirm', 'skirm', 'breaker', 'bulwark', 'skirm', 'breaker'];
@@ -356,6 +358,7 @@ function end(why) { G.over = true; G.phase = 'over'; document.exitPointerLock &&
   $('endT').textContent = win ? 'VICTORY' : 'DEFEAT'; $('endS').textContent = `${why}\nDestruction: ${pct()}%   CP: ${coreDown() ? 'TOPPLED' : 'standing'}\nAttacker Crests: ${'★'.repeat(s)}${'☆'.repeat(3 - s)}`; }
 function update(dt) { if (G.phase == 'menu' || G.over) return; G.t += dt; G.timer -= dt;
   if (G.phase == 'build' && G.timer <= 0) startRaid();
+  if (G.mode === 'horse') { horse.tick(dt); if (msgT > 0) { msgT -= dt; if (msgT <= 0) $('msg').textContent = ''; } return; }
   if (G.mode === 'zombies') { updatePlayer(dt); updateRockets(dt); updateSentries(dt); zombies.tick(dt); if (msgT > 0) { msgT -= dt; if (msgT <= 0) $('msg').textContent = ''; } return; }
   G.uavT = Math.max(0, (G.uavT || 0) - dt); updatePlayer(dt); updateRockets(dt); updateSentries(dt); G.units = G.units.filter(u => updateUnit(u, dt)); updateStructures(dt); updateTraps();
   if (G.phase == 'raid') { const atts = G.units.filter(u => u.team == 'att' && u.hp > 0);
@@ -363,7 +366,7 @@ function update(dt) { if (G.phase == 'menu' || G.over) return; G.t += dt; G.time
     else { if (coreDown()) end('The Command Post fell'); else if (!atts.length) { if (G.wave >= 3) end('All waves repelled!'); else nextWave(); } else if (G.timer <= 0) { if (G.wave >= 3) end('Survived the siege'); else nextWave(); } } }
   for (const t of G.traps) if (t.armed) t.m.rotation.y += dt * .5;
   if (msgT > 0) { msgT -= dt; if (msgT <= 0) $('msg').textContent = ''; } }
-function syncCamera(dt) { shake = Math.max(0, shake - dt * 1.5); const sx = (Math.random() - .5) * shake * .15;
+function syncCamera(dt) { if (G.mode === 'horse') return horse.syncCamera(dt); shake = Math.max(0, shake - dt * 1.5); const sx = (Math.random() - .5) * shake * .15;
   camera.position.set(P.pos.x, P.pos.y + (P.downed ? .55 : P.slideT > 0 ? 1.0 : 1.6) + (P.onGround ? Math.abs(Math.cos(P.bob)) * .04 : 0), P.pos.z); camera.rotation.set(P.pitch + P.recoil * .015 + sx, P.yaw + sx, 0); }
 // ---------------- HUD ----------------
 let hudT = 0;
@@ -374,7 +377,7 @@ function compass() { const el = $('cstrip'); if (!el) return; if (!el.innerHTML)
   for (const R of zombies.liveRemotes()) { let a = Math.atan2(R.pos.x - P.pos.x, -(R.pos.z - P.pos.z)) * 180 / Math.PI - hd; a = ((a + 540) % 360) - 180; if (Math.abs(a) < 75) ph += `<b style="left:${50 + a / 75 * 50}%"></b>`; } pins.innerHTML = ph; }
 function hud(dt) { compass(); document.body.classList.toggle('lowhp', P.hp > 0 && P.hp < 35 && !P.downed); hurtFlash = Math.max(0, hurtFlash - dt * 1.5); $('vign').style.opacity = Math.max(hurtFlash, P.dead > 0 ? .8 : P.hp < 30 ? .35 : 0);
   hitT -= dt; $('hitm').style.opacity = hitT > 0 ? 1 : 0;
-  hudT -= dt; if (hudT > 0) return; hudT = .1; uiSync(); if (G.mode === 'zombies') { zombies.state.showScore = !!(keys.Tab || G.scoreOn); zombies.hud(); return; } const mm = Math.max(0, G.timer) | 0; const ts = `${mm / 60 | 0}:${String(mm % 60).padStart(2, '0')}`;
+  hudT -= dt; if (hudT > 0) return; hudT = .1; uiSync(); if (G.mode === 'horse') { horse.hud(); return; } if (G.mode === 'zombies') { zombies.state.showScore = !!(keys.Tab || G.scoreOn); zombies.hud(); return; } const mm = Math.max(0, G.timer) | 0; const ts = `${mm / 60 | 0}:${String(mm % 60).padStart(2, '0')}`;
   $('mode').textContent = (G.mode == 'attack' ? '⚔ ATTACK' : '🛡 DEFEND'); $('timer').textContent = ts; $('stars').textContent = '★'.repeat(crests()) + '☆'.repeat(3 - crests());
   $('sub').textContent = `${LAYOUTS[G.layout].name} · ${G.phase == 'build' ? (G.mode == 'attack' ? 'BUILD PHASE' : 'PREP PHASE') : 'RAID' + (G.mode == 'defend' ? ' · wave ' + G.wave + '/3' : '')} · ${pct()}% destroyed · CP ${coreDown() ? 'TOPPLED' : Math.round(100 * stats.core / Math.max(1, stats.coreTotal)) + '%'}`;
   $('dbar').style.width = pct() + '%'; $('hp').style.width = Math.max(0, P.hp) + '%';
@@ -384,7 +387,7 @@ function hud(dt) { compass(); document.body.classList.toggle('lowhp', P.hp > 0 &
   $('right').textContent = `Raiders ${a} · Wardens ${d}\nDefenses ${G.structures.filter(s => s.d.range && s.mesh).length}`;
   hotbarSync(); }
 // context-sensitive touch controls: ACTION only near a buy/door/revive (or PLACE in build phase); build tools only in build phase
-function uiSync() { if (!IS_TOUCH) return; const b = building(), z = G.mode === 'zombies', rt = z && zombies.reviveTarget(), s = z && zombies.nearest();
+function uiSync() { if (!IS_TOUCH) return; if (G.mode === 'horse') { const a = $('tAct'), lab = horse.touchLabel(); a.hidden = !lab; if (lab && a.innerHTML !== lab) a.innerHTML = lab; $('tBuildBar').hidden = true; return; } const b = building(), z = G.mode === 'zombies', rt = z && zombies.reviveTarget(), s = z && zombies.nearest();
   let lab = ''; if (P.downed) lab = ''; else if (rt) lab = 'REVIVE'; else if (s) lab = (/^OPEN/.test(s.name) ? 'OPEN' : /MYSTERY/.test(s.name) ? 'BOX' : 'BUY') + `<small>${s.cost}</small>`; else if (b) lab = 'PLACE';
   const a = $('tAct'); a.hidden = !lab; if (lab && a.innerHTML !== lab) a.innerHTML = lab; $('tBuildBar').hidden = !b;
   const sk = z && zombies.state.role === 'client' ? 'VOTE SKIP' : 'SKIP'; if ($('tSkip').textContent !== sk) $('tSkip').textContent = sk; }
@@ -410,6 +413,7 @@ if (isIOS && !standalone && !document.documentElement.requestFullscreen && !loca
 $('ioshintx').onclick = () => { localStorage.setItem('vr_ioshint', '1'); $('ioshint').classList.remove('show'); };
 $('queue').onclick = () => { msg('Queue matched!'); start(Math.random() < .5 ? 'attack' : 'defend'); lockIfDesktop(); };
 const zmapSel = () => Q.get('zmap') || 'day';
+$('horseBtn').onclick = () => { start('horse'); lockIfDesktop(); };
 $('zombies').onclick = () => { start('zombies', { map: zmapSel() }); lockIfDesktop(); };
 $('zHost').onclick = () => { zombies.voice.prime(); start('zombies', { role: 'host', map: zmapSel() }); lockIfDesktop(); };
 let joining = false;
@@ -440,8 +444,8 @@ if (!(document.documentElement.requestFullscreen || document.documentElement.web
 // test hooks
 window.__sim = secs => { for (let i = 0; i < secs * 20 && !G.over; i++) update(.05); return [pct(), coreDown()]; };
 window.__boom = (x, y, z, r) => explode(new THREE.Vector3(x, y, z), r, 300, 'att');
-if (Q.get('dev') === '1') { window.__zombies = zombies; window.__coop = { place, act, syncCamera, keys, input, setB, get, rockets, rocketBoom, launchRocket }; }
-window.__G = G; window.__P = P; window.__stats = stats; window.__pct = pct; window.__Q = QNAME;
+if (Q.get('dev') === '1') { window.__zombies = zombies; window.__horse = horse; window.__coop = { place, act, syncCamera, keys, input, setB, get, rockets, rocketBoom, launchRocket }; }
+window.__cam = camera; window.__G = G; window.__P = P; window.__stats = stats; window.__pct = pct; window.__Q = QNAME;
 if (Q.get('auto')) { if (Q.get('layout')) $('layout').value = Q.get('layout'); if (Q.get('build')) $('buildT').value = Q.get('build'); start(Q.get('auto')); if (Q.get('pitch')) P.pitch = +Q.get('pitch'); if (Q.get('yaw')) P.yaw = +Q.get('yaw');
   if (Q.get('px')) P.pos.set(+Q.get('px'), +(Q.get('py') || 1), +Q.get('pz')); }
 // ---------------- Loop with adaptive resolution ----------------
@@ -449,7 +453,7 @@ const NORENDER = Q.has('norender'); const TSCALE = +(Q.get('ts') || 1); let last
 function loop(t) { requestAnimationFrame(loop); const rdt = Math.max(0, Math.min(.1, (t - last) / 1000)); last = t; const dt = Math.min(.05, rdt);
   try {
   for (let k = 0; k < TSCALE; k++) update(dt);
-  if (G.phase != 'menu') { syncCamera(dt); sfx.listen(camera); updateViewmodel(dt); updateGhost(); hud(dt); }
+  if (G.phase != 'menu') { syncCamera(dt); sfx.listen(camera); if (G.mode !== 'horse') updateViewmodel(dt); updateGhost(); hud(dt); }
   const lp = GX.lens(); if (lp) lp.uniforms.uT.value = (t % 1000);
   const gmat = scene.userData.grassMat; if (gmat && gmat.userData.sh) gmat.userData.sh.uniforms.uT.value = performance.now() / 1000;
   if (!NORENDER) { flushChunks(); fx.update(dt); GX.followSun(P.pos); GX.render(); }
