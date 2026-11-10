@@ -2,8 +2,9 @@
 // a timber post-and-rail pen with a run-in shed, trough and hay. Horses and rider are realistic CC0 GLB models
 // (assets/horses, see CREDITS.md): the static horse mesh is rigged at runtime (17-bone skeleton, weights by region)
 // and animated procedurally (walk / canter / gallop / idle / graze); the rigged rider is posed seated on the saddle.
-// Walk up to a horse, E / RIDE to mount, same action to dismount. Ridden horses use a third-person chase camera; on
-// foot is first-person. If the models fail to load (or ?prochorse=1) the older procedural horse/rider are used.
+// Walk up to a horse, E / RIDE to mount (animated), same action reins in and steps down. RDR-style riding: four gaits with
+// weighty acceleration, stamina, camera-relative steering, free look, lean into turns, obstacle avoidance, hoof dust.
+// On foot the same rigged person is shown in third person (idle / walk / run blend; C toggles first person). If the models fail to load (or ?prochorse=1) the older procedural horse/rider are used.
 import * as THREE from 'three';
 import { GLTFLoader } from '../addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from '../addons/utils/BufferGeometryUtils.js';
@@ -155,6 +156,62 @@ function poseRider(root) {
   aim('Spine02', 'Spine01', [0, 1, .08]); aim('neck', 'Head', [0, 1, .12]);
   root.updateMatrixWorld(true);
 }
+// ---- rider / on-foot person: rest pose, procedural seated + mounting pose, idle clip, walker ----
+const TAU = Math.PI * 2, RV1 = new THREE.Vector3(), RV2 = new THREE.Vector3(), RV3 = new THREE.Vector3(), RQ1 = new THREE.Quaternion(), RQ2 = new THREE.Quaternion(), RQ3 = new THREE.Quaternion();
+const mix3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+function saveRest(root) { const B = {}; root.traverse(o => { if (o.isBone) { o.userData.rest = o.quaternion.clone(); B[o.name] = o; } }); root.userData.B = B; return root; }
+function aimBone(root, b, c, d) { if (!b || !c) return; root.updateMatrixWorld(true);
+  const cur = c.getWorldPosition(RV2).sub(b.getWorldPosition(RV1)).normalize(), want = RV3.set(d[0], d[1], d[2]).normalize().transformDirection(root.matrixWorld);
+  RQ3.setFromUnitVectors(cur, want); b.getWorldQuaternion(RQ1); b.parent.getWorldQuaternion(RQ2); b.quaternion.copy(RQ2.invert().multiply(RQ3.multiply(RQ1))); }
+function twistBone(root, b, ang) { if (!b || !ang) return; root.updateMatrixWorld(true); RV3.set(0, 1, 0).transformDirection(root.matrixWorld); RQ3.setFromAxisAngle(RV3, ang);
+  b.getWorldQuaternion(RQ1); b.parent.getWorldQuaternion(RQ2); b.quaternion.copy(RQ2.invert().multiply(RQ3.multiply(RQ1))); }
+// o: sit 0..1 (standing -> seated), side (+1 mounts from the horse's left), swing 0..1 (far leg over the saddle), k (gait amount),
+// ph (horse stride phase), trot / gal weights, lean (forward), roll (into turns), look (head yaw), rein (hands lift)
+function riderPose(root, o) {
+  const B = root.userData.B; if (!B) return; for (const n in B) B[n].quaternion.copy(B[n].userData.rest);
+  const sit = o.sit ?? 1, ms = o.side || 1, gal = o.gal || 0, k = o.k || 0, ph = (o.ph || 0) * TAU, lean = o.lean || 0, roll = o.roll || 0;
+  aimBone(root, B.Spine02, B.Spine01, [roll * .7, 1, .08 * sit + lean]); aimBone(root, B.neck, B.Head, [roll * .3, 1, .12 + .05 * sit - lean * .6]);
+  for (const [s, L] of [[1, 'Left'], [-1, 'Right']]) {
+    const far = s === -ms, sw = far ? Math.sin(Math.PI * Math.min(1, Math.max(0, o.swing ?? 0))) : 0, kick = Math.sin(ph + (s > 0 ? 0 : Math.PI)) * .07 * k;
+    let up = mix3([s * .07, -1, .03], [s * (.55 - .07 * gal), -.63 - .14 * gal, .55 - .12 * gal + kick * .4], sit); if (sw) up = mix3(up, [s * 1.1, -.05, -.45], sw);
+    aimBone(root, B[L + 'UpLeg'], B[L + 'Leg'], up);
+    aimBone(root, B[L + 'Leg'], B[L + 'Foot'], mix3([s * .02, -1, -.03], [s * .09, -.98, -.1 - .08 * gal + kick], sit));
+    aimBone(root, B[L + 'Foot'], B[L + 'ToeBase'], mix3([s * .05, -.2, 1], [s * .14, -.3, 1], sit));
+    const reach = sit * (1 - (o.grab || 0)); // while mounting the hands go to the saddle horn
+    aimBone(root, B[L + 'Arm'], B[L + 'ForeArm'], mix3([s * .16, -1, .02], [s * .2, -.88 + .12 * gal, .3 + .3 * gal + (o.rein || 0) * .4], Math.max(reach, o.grab || 0)));
+    aimBone(root, B[L + 'ForeArm'], B[L + 'Hand'], mix3([s * .06, -1, .12], [s * -.1, -.22 + (o.rein || 0) + .1 * gal, 1], Math.max(reach, o.grab || 0)));
+  }
+  twistBone(root, B.Head, o.look || 0); twistBone(root, B.neck, (o.look || 0) * .5);
+}
+const STAND = [['LeftArm', 'LeftForeArm', [.16, -1, .02]], ['LeftForeArm', 'LeftHand', [.06, -1, .12]], ['RightArm', 'RightForeArm', [-.16, -1, .02]], ['RightForeArm', 'RightHand', [-.06, -1, .12]]];
+// an idle clip built from the model's own rest pose: arms relaxed at the sides, slow breathing and a gentle weight shift
+function makeIdleClip(root) {
+  const B = root.userData.B, names = Object.keys(B), keys = [];
+  const pose = (breath, shift) => { for (const n of names) B[n].quaternion.copy(B[n].userData.rest);
+    aimBone(root, B.Spine02, B.Spine01, [shift * .03, 1, .02 + breath * .025]); aimBone(root, B.neck, B.Head, [-shift * .02, 1, .1 - breath * .02]);
+    for (const [s, L] of [[1, 'Left'], [-1, 'Right']]) { aimBone(root, B[L + 'Arm'], B[L + 'ForeArm'], [s * (.16 + breath * .02), -1, .02 + breath * .03]); aimBone(root, B[L + 'ForeArm'], B[L + 'Hand'], [s * .06, -1, .14 + breath * .04]);
+      aimBone(root, B[L + 'UpLeg'], B[L + 'Leg'], [s * .07 + shift * .03, -1, .02]); aimBone(root, B[L + 'Leg'], B[L + 'Foot'], [s * .02 + shift * .02, -1, -.02]); }
+    return names.map(n => B[n].quaternion.toArray()); };
+  const T = [0, 1.6, 3.2, 4.8, 6.4], P = [pose(0, 0), pose(1, .5), pose(0, 1), pose(1, .5), pose(0, 0)];
+  for (const n of names) B[n].quaternion.copy(B[n].userData.rest);
+  const tracks = names.map((n, i) => new THREE.QuaternionKeyframeTrack(n + '.quaternion', T, P.flatMap(f => f[i])));
+  return new THREE.AnimationClip('idle', T[T.length - 1], tracks);
+}
+// a walking person: idle / walk / run blended by ground speed with shared stride timing (no foot sliding at matched speeds)
+const WALK_V = 1.55, RUN_V = 3.9;
+function makeWalker(src, clips) {
+  const m = saveRest(cloneSkinned(src)); m.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+  const mixer = new THREE.AnimationMixer(m), clip = n => clips.find(c => new RegExp(n, 'i').test(c.name));
+  const A = { idle: mixer.clipAction(makeIdleClip(m)), walk: clip('walk') && mixer.clipAction(clip('walk')), run: clip('run') && mixer.clipAction(clip('run')) };
+  const W = { m, mixer, A, v: 0, on: false,
+    start() { if (W.on) return; W.on = true; for (const a of Object.values(A)) if (a) { a.reset(); a.play(); a.setEffectiveWeight(0); } A.idle.setEffectiveWeight(1); A.idle.time = Math.random() * 6; },
+    stop() { if (!W.on) return; W.on = false; mixer.stopAllAction(); },
+    update(dt, v) { W.start(); W.v += (v - W.v) * Math.min(1, dt * 8); const sp = W.v, wi = 1 - sstep(.12, 1.1, sp), rf = sstep(2.1, 3.8, sp);
+      if (A.walk) A.walk.setEffectiveWeight((1 - wi) * (A.run ? 1 - rf : 1)); if (A.run) A.run.setEffectiveWeight((1 - wi) * (A.walk ? rf : 1)); A.idle.setEffectiveWeight(Math.max(wi, A.walk || A.run ? 0 : 1));
+      const ts = Math.max(.35, sp / (WALK_V + (RUN_V - WALK_V) * rf)); for (const a of [A.walk, A.run]) if (a) a.setEffectiveTimeScale(ts); if (A.walk && A.run) A.run.time = A.walk.time % A.run.getClip().duration;
+      mixer.update(dt); } };
+  return W;
+}
 // merge the static meshes under a group into one mesh per material (fewer draw calls); keeps instanced/skinned meshes
 function mergeStatic(root) {
   root.updateMatrixWorld(true); const inv = new THREE.Matrix4().copy(root.matrixWorld).invert(), by = new Map(), drop = [];
@@ -190,9 +247,11 @@ function realAnim(hz, dt, speed, graze, t) {
   B[1].position.y = u.bodyY - G.bob * k * (1 - bobT) + breath; B[1].rotation.x = Math.sin(ph * TAU + .9) * G.pitch * k; B[1].rotation.z = Math.sin(ph * TAU) * .015 * k * (1 - gal);
   // neck / head: nod in time with the gait, stretch forward in the gallop; graze with the head down; idle looks around
   u.look = u.look ?? 0; u.lookT = (u.lookT ?? 2) - dt; if (u.lookT <= 0) { u.lookT = 2.5 + Math.random() * 5; u.look = (Math.random() - .5) * .5; }
-  const nod = Math.sin(ph * TAU * G.nn + 1.2) * G.nod * k;
-  const nx = graze ? 1.05 : (-.1 * gal + nod + (1 - k) * .03), hx = graze ? .42 : .05 + .08 * gal - nod * .4, ny = graze ? Math.sin(t * .35 + u.seed) * .12 : u.look * (1 - k);
-  const r = Math.min(1, dt * 3); B[2].rotation.x += (nx - B[2].rotation.x) * r; B[3].rotation.x += (hx - B[3].rotation.x) * r; B[2].rotation.y += (ny - B[2].rotation.y) * Math.min(1, dt * 1.5); B[3].rotation.y = B[2].rotation.y * .6;
+  u.tossT = (u.tossT ?? 6 + Math.random() * 10) - dt * (k < .2 ? 1 : 0); if (u.tossT <= 0) { u.tossT = 8 + Math.random() * 14; if (!graze) u.toss = 1; } // idle head toss now and then
+  const ts = u.toss > 0 ? Math.sin(Math.PI * (1 - u.toss)) : 0; if (u.toss > 0) u.toss = Math.max(0, u.toss - dt * 1.5);
+  const nod = Math.sin(ph * TAU * G.nn + 1.2) * G.nod * k - ts * .55;
+  const nx = graze ? 1.05 : (-.1 * gal + nod + (1 - k) * .03), hx = graze ? .42 : .05 + .08 * gal - nod * .4 + ts * .35, ny = graze ? Math.sin(t * .35 + u.seed) * .12 : u.look * (1 - k);
+  const r = Math.min(1, dt * (ts ? 7 : 3)); B[2].rotation.x += (nx - B[2].rotation.x) * r; B[3].rotation.x += (hx - B[3].rotation.x) * r; B[2].rotation.y += (ny - B[2].rotation.y) * Math.min(1, dt * 1.5); B[3].rotation.y = B[2].rotation.y * .6;
   // tail: carried higher with speed, swings with the stride, occasional swish at rest
   u.swT = (u.swT ?? 3) - dt; if (u.swT <= 0) { u.swT = 2 + Math.random() * 6; u.sw = 1; } u.sw = Math.max(0, (u.sw || 0) - dt * 1.3);
   B[4].rotation.x = .06 + .5 * gal * k + .12 * k + Math.sin(ph * TAU * G.bn) * .05 * k; B[4].rotation.z = Math.sin(t * 1.1 + u.seed) * .05 + Math.sin(ph * TAU) * .06 * k + Math.sin(u.sw * 9) * u.sw * .45;
@@ -243,7 +302,7 @@ diffuseColor.rgb*=col;`); };
 }
 const COATS = [{ n: 'Bay' }, { n: 'Chestnut', c: 0xa04a1c, m: 0x6a2c10 }, { n: 'Grey', c: 0xd8d2c8, m: 0x8e8882 }, { n: 'Black', c: 0x2e2826, m: 0x161312 }, { n: 'Palomino', c: 0xd9a656, m: 0xf1e3c2 }];
 const PROC_COATS = [[0x6b4226, 0x241812, 0x4a2c18], [0xa04a1c, 0x6a2c10, 0x3a2a1c], [0xd8d2c8, 0x8e8882, 0x7a4a24], [0x2a2220, 0x111111, 0x7a4a24], [0xd9a656, 0xf0e2c0, 0x4a2c18]];
-const MODEL_URL = { horse: 'assets/horses/horse.glb', mid: 'assets/horses/horse_mid.glb', far: 'assets/horses/horse_far.glb', rider: 'assets/horses/rider.glb' };
+const MODEL_URL = { horse: 'assets/horses/horse.glb', mid: 'assets/horses/horse_mid.glb', far: 'assets/horses/horse_far.glb', rider: 'assets/horses/rider.glb', riderHQ: 'assets/horses/rider_hq.glb' };
 let ASSETS = null;
 function deq(src) { // quantized (KHR_mesh_quantization) attributes -> float32 so the node transform can be baked in
   const g = new THREE.BufferGeometry(); g.setIndex(src.index);
@@ -253,11 +312,12 @@ function deq(src) { // quantized (KHR_mesh_quantization) attributes -> float32 s
 function loadAssets(hq) {
   if (ASSETS) return ASSETS; if (new URLSearchParams(location.search).has('prochorse')) return (ASSETS = Promise.reject(new Error('procedural horses requested')));
   const L = new GLTFLoader(); const mesh = sc => { let m = null; sc.traverse(o => { if (o.isMesh && !m) m = o; }); return m; };
-  return (ASSETS = Promise.all([L.loadAsync(hq ? MODEL_URL.horse : MODEL_URL.mid), L.loadAsync(MODEL_URL.far), L.loadAsync(MODEL_URL.rider)]).then(([h, f, r]) => {
+  return (ASSETS = Promise.all([L.loadAsync(hq ? MODEL_URL.horse : MODEL_URL.mid), L.loadAsync(MODEL_URL.far), L.loadAsync(hq ? MODEL_URL.riderHQ : MODEL_URL.rider)]).then(([h, f, r]) => {
     const near = mesh(h.scene), far = mesh(f.scene); near.updateWorldMatrix(true, false); far.updateWorldMatrix(true, false);
     const gN = deq(near.geometry).applyMatrix4(near.matrixWorld), gF = deq(far.geometry).applyMatrix4(far.matrixWorld);
     for (const g of [gN, gF]) { skinHorseGeometry(g); g.computeBoundingSphere(); }
     const farMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .8, metalness: 0 });
+    r.scene.traverse(o => { if (o.isMesh && o.material) { o.material.metalness = 0; o.material.envMapIntensity = .8; } });
     const riderSrc = cloneSkinned(r.scene), clips = r.animations.map(c => { const k = c.clone(); k.tracks = k.tracks.filter(t => !/\.position$/.test(t.name)); return k; }); // no root motion
     return { riderSrc, clips, gN, gF, matN: COATS.map(c => coatMaterial(near.material, c, hq)), matF: COATS.map(c => coatMaterial(farMat, c)), rider: r.scene };
   }));
@@ -265,7 +325,8 @@ function loadAssets(hq) {
 
 export function createHorseRider(ctx) {
   const { scene, GX, P, keys, input, camera, sfx, msg, PBRS } = ctx;
-  const H = { on: false, horses: [], mounted: null, cd: 0, prompt: '', obst: [], fence: [], speed: 0, t: 0, near: null, vy: 0, ground: true, riddenT: 0, mounts: 0, models: 'loading', trees: [], lodT: 0, ridden: new Map(), follow: false, online: '' };
+  const H = { on: false, horses: [], mounted: null, cd: 0, prompt: '', obst: [], fence: [], speed: 0, t: 0, near: null, vy: 0, ground: true, riddenT: 0, mounts: 0, models: 'loading', trees: [], lodT: 0, ridden: new Map(), follow: false, online: '',
+    stam: 100, winded: 0, cruise: 2, shiftT: 0, yawRate: 0, roll: 0, pitchK: 0, mountT: 0, dismT: 0, wantOff: false, side: 1, lookT: 9, recenter: false, shake: 0, fv: new THREE.Vector2(), bodyYaw: 0, fp: false, gait: 'Standing', zoom: 1 };
   const rnd = mulberry(42), Q = GX.Q, mobile = !!ctx.mobile;
   const LOD_HORSE = mobile ? 9 : 14, LOD_TREE = mobile ? 55 : 85;
   const up = new THREE.Vector3(0, 1, 0), m4 = new THREE.Matrix4(), qq = new THREE.Quaternion(), v3 = new THREE.Vector3(), sc3 = new THREE.Vector3(), col = new THREE.Color();
@@ -382,7 +443,7 @@ export function createHorseRider(ctx) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(2.6, .65), new THREE.MeshStandardMaterial({ map: t, roughness: .8 })); m.castShadow = true; return m; }
   // ---- horses ----
   function makeRealHorse(A, ci) {
-    const g = new THREE.Group(), mdl = new THREE.Group(); mdl.rotation.y = Math.PI; g.add(mdl); // model faces +z; game forward is -z
+    const g = new THREE.Group(), mdl = new THREE.Group(); g.rotation.order = 'YXZ'; mdl.rotation.y = Math.PI; g.add(mdl); // model faces +z; game forward is -z
     const bones = makeBones(); mdl.add(bones[0]); g.updateMatrixWorld(true);
     const sk = new THREE.Skeleton(bones), near = new THREE.SkinnedMesh(A.gN, A.matN[ci]), far = new THREE.SkinnedMesh(A.gF, A.matF[ci]);
     for (const m of [near, far]) { mdl.add(m); m.bind(sk); m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; }
@@ -392,29 +453,40 @@ export function createHorseRider(ctx) {
   }
   function spawnHorses() {
     PROC_COATS.forEach(([coat, mane, sad], i) => { const g = makeHorse(coat, mane, sad); const x = PEN.x - 8 + i * 4 + (rnd() - .5), z = PEN.z - 3 + (i % 2) * 5;
-      g.position.set(x, BASE, z); g.rotation.y = rnd() * 6.28; scene.add(g);
+      g.position.set(x, BASE, z); g.rotation.order = 'YXZ'; g.rotation.y = rnd() * 6.28; scene.add(g);
       H.horses.push({ id: i, g, pos: g.position, yaw: g.rotation.y, speed: 0, tgt: null, wait: rnd() * 3, graze: rnd() < .5, inPen: true, coat: COATS[i].n }); });
   }
-  let rider = makeProcRider(0x2c5d8a); rider.visible = false;
-  const reins = [];
+  let rider = makeProcRider(0x2c5d8a); rider.visible = false; // seated rider: the procedural stand-in until the rigged person loads
+  const reins = [], me = { W: null, body: new THREE.Group(), seat: new THREE.Vector3(0, .45, .04) }; me.body.visible = false; scene.add(me.body);
+  H.person = me;
   function dress(A) { // swap the procedural stand-ins for the realistic rigged models (keeps positions/state)
     for (const h of H.horses) { const ng = makeRealHorse(A, h.id); ng.position.copy(h.pos); ng.rotation.y = h.yaw; scene.remove(h.g); scene.add(ng); h.g = ng; h.pos = ng.position; }
-    const r = A.rider; r.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; if (o.material) { o.material.metalness = 0; o.material.envMapIntensity = .8; } } });
-    poseRider(r); const hips = r.getObjectByName('Hips'); const hp = hips ? hips.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3(0, 1, 0);
-    const wrap = new THREE.Group(); wrap.add(r); r.position.set(-hp.x, -hp.y, -hp.z); wrap.userData = { kind: 'real', model: r };
-    const was = H.mounted; if (was) detachRider(was); rider = wrap; rider.visible = false; if (was) attachRider(was);
-    const sp = saddleParts(PBRS); for (let i = 0; i < 2; i++) { const m = new THREE.Mesh(sp.rein, sp.dark); m.visible = false; m.castShadow = false; scene.add(m); reins.push(m); }
+    const was = H.mounted; if (was) detachRider(was);
+    const W = makeWalker(A.riderSrc, A.clips), m = W.m; m.updateMatrixWorld(true);
+    const hp = m.userData.B.Hips ? m.userData.B.Hips.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3(0, 1, 0);
+    me.seat.set(0, .45, .04).sub(hp); me.W = W; m.userData.kind = 'real'; rider = m;
+    if (was) attachRider(was); else toFoot();
+    const sp = saddleParts(PBRS); for (let i = 0; i < 2; i++) { const r = new THREE.Mesh(sp.rein, sp.dark); r.visible = false; r.castShadow = false; scene.add(r); reins.push(r); }
     H.models = 'real'; H.assets = A; for (const av of avatars) av.rebuild();
   }
+  const real = () => rider.userData.kind === 'real';
+  function toFoot() { if (!real()) return; me.body.add(rider); rider.position.set(0, 0, 0); rider.rotation.set(0, Math.PI, 0); rider.visible = true; me.body.visible = !H.fp; }
   function attachRider(h) { rider.visible = true;
-    if (h.g.userData.kind === 'real' && rider.userData.kind === 'real') { h.g.userData.bones[1].add(rider); rider.position.set(0, .45, .04); rider.rotation.set(0, 0, 0); }
+    if (h.g.userData.kind === 'real' && real()) { me.W.stop(); h.g.userData.bones[1].add(rider); rider.position.copy(me.seat); rider.rotation.set(0, 0, 0); me.body.visible = false; }
     else { h.g.add(rider); rider.position.set(0, h.g.userData.kind === 'real' ? 1.45 : 1.72, .08); } }
-  function detachRider() { if (rider.parent) rider.parent.remove(rider); rider.visible = false; for (const r of reins) r.visible = false; }
+  function detachRider() { if (rider.parent) rider.parent.remove(rider); for (const r of reins) r.visible = false; if (real()) toFoot(); else rider.visible = false; }
   const mouth = [new THREE.Vector3(-.075, -.2, .3), new THREE.Vector3(.075, -.2, .3)], wA = new THREE.Vector3(), wB = new THREE.Vector3();
-  function updateReins() { const h = H.mounted; if (!h || h.g.userData.kind !== 'real' || rider.userData.kind !== 'real' || !reins.length) return;
-    h.g.updateMatrixWorld(true); const head = h.g.userData.bones[3], md = rider.userData.model;
-    ['LeftHand', 'RightHand'].forEach((n, i) => { const hand = md.getObjectByName(n); if (!hand) return; wA.copy(mouth[i]).applyMatrix4(head.matrixWorld); hand.getWorldPosition(wB);
-      const r = reins[i], L = wB.distanceTo(wA); r.visible = L > .05 && L < 3; if (!r.visible) return; r.position.copy(wB); r.lookAt(wA); r.scale.set(1, 1, L); }); }
+  function updateReins() { const h = H.mounted; if (!h || h.g.userData.kind !== 'real' || !real() || !reins.length) return;
+    h.g.updateMatrixWorld(true); const head = h.g.userData.bones[3], Bn = rider.userData.B, grab = H.mountT > 0 || H.dismT > 0;
+    ['LeftHand', 'RightHand'].forEach((n, i) => { const hand = Bn[n], r = reins[i]; if (!hand || grab) { r.visible = false; return; } wA.copy(mouth[i]).applyMatrix4(head.matrixWorld); hand.getWorldPosition(wB);
+      const L = wB.distanceTo(wA); r.visible = L > .05 && L < 3; if (!r.visible) return; r.position.copy(wB); r.lookAt(wA); r.scale.set(1, 1, L); }); }
+  // mounting / dismounting: the rider steps into the stirrup on one side, swings the far leg over and settles (p: 0 standing -> 1 seated)
+  const MOUNT_T = .95, DISM_T = .7, mv0 = new THREE.Vector3(), mv1 = new THREE.Vector3();
+  function mountPose(h, p) { if (!real() || h.g.userData.kind !== 'real') return; const s = H.side, gy = -(h.g.userData.bodyY + .02);
+    const a = sstep(0, .3, p), b = sstep(.22, .85, p), c = sstep(.7, 1, p);
+    mv0.set(s * .85, gy, .05).lerp(mv1.set(s * .62, gy + .42, .02), a); mv0.lerp(me.seat, b); mv0.y += Math.sin(Math.PI * b) * .14;
+    rider.position.copy(mv0); rider.rotation.set(0, (s > 0 ? -Math.PI / 2 : Math.PI / 2) * (1 - b), 0);
+    riderPose(rider, { sit: Math.min(1, a * .3 + b * .55 + c * .15), side: s, swing: b, grab: a * (1 - c) }); }
   const inPen = (x, z, m = 0) => Math.abs(x - PEN.x) < PEN.hw - m && Math.abs(z - PEN.z) < PEN.hd - m;
   function segDist(px, pz, [ax, az, bx, bz]) { const dx = bx - ax, dz = bz - az, t = Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / (dx * dx + dz * dz))); return Math.hypot(px - ax - dx * t, pz - az - dz * t); }
   // blocked(x, z, r, skipHorse): fence/walls, trees/rocks/props, other horses, map edge
@@ -429,19 +501,22 @@ export function createHorseRider(ctx) {
   function nearestHorse() { let best = null, bd = MOUNT_R; for (const h of H.horses) { if (H.ridden.has(h)) continue; const d = Math.hypot(h.pos.x - P.pos.x, h.pos.z - P.pos.z); if (d < bd) { bd = d; best = h; } } return best; }
   function use() {
     if (!H.on || H.cd > 0) return false;
-    if (H.mounted) return dismount();
+    if (H.mounted) { if (H.mountT > 0 || H.dismT > 0) return false; H.wantOff = true; H.cd = COOLDOWN; return true; } // rein in, then step down
     const h = nearestHorse(); if (!h) { msg('Walk up to a horse to ride it', 1.5); return false; }
-    H.mounted = h; H.cd = COOLDOWN; H.speed = 0; h.speed = 0; h.tgt = null; h.graze = false; P.yaw = h.yaw; P.pitch = -.18; attachRider(h);
-    H.mounts++; sfx.ui && sfx.ui(); msg(mobile ? 'Riding! Push the stick to go · all the way to gallop' : 'Riding! W to go · Shift to gallop · E to get off', 2.5); return true;
+    const rx = Math.cos(h.yaw), rz = -Math.sin(h.yaw); H.side = (P.pos.x - h.pos.x) * rx + (P.pos.z - h.pos.z) * rz > 0 ? -1 : 1; // mount from the side you stand on (+1 = horse's left)
+    H.mounted = h; H.cd = COOLDOWN; H.speed = 0; H.yawRate = 0; H.roll = 0; H.wantOff = false; H.dismT = 0; H.mountT = real() && h.g.userData.kind === 'real' ? MOUNT_T : 0;
+    h.speed = 0; h.tgt = null; h.graze = false; P.yaw = h.yaw; P.pitch = -.15; H.lookT = 9; H.swLast = P.swX || 0; H.recenter = false; attachRider(h); if (H.mountT) mountPose(h, 0);
+    H.mounts++; sfx.ui && sfx.ui(); msg(mobile ? 'Riding! Push the stick to go · all the way to gallop' : 'Riding! W go · tap Shift to speed up a gait · hold Shift to gallop · C slow down · E get off', 3); return true;
   }
-  function dismount() {
-    const h = H.mounted; if (!h) return false; const fx = -Math.sin(h.yaw), fz = -Math.cos(h.yaw), rx = -fz, rz = fx;
-    const tries = [[-rx * 1.5, -rz * 1.5], [rx * 1.5, rz * 1.5], [-fx * 2.4, -fz * 2.4], [fx * 2.4, fz * 2.4], [-rx * 2.6, -rz * 2.6], [rx * 2.6, rz * 2.6]];
+  function dismount() { // immediate (net conflicts, tests); the E / GET OFF path animates first via H.wantOff
+    const h = H.mounted; if (!h) return false; const fx = -Math.sin(h.yaw), fz = -Math.cos(h.yaw), rx = -fz, rz = fx, sd = H.side || 1;
+    const tries = [[-rx * 1.5 * sd, -rz * 1.5 * sd], [rx * 1.5 * sd, rz * 1.5 * sd], [-fx * 2.4, -fz * 2.4], [fx * 2.4, fz * 2.4], [-rx * 2.6, -rz * 2.6], [rx * 2.6, rz * 2.6]];
     let spot = null; for (const [ox, oz] of tries) { const x = h.pos.x + ox, z = h.pos.z + oz; if (!blocked(x, z, .35, h) && !(Math.abs(x) > EDGE || Math.abs(z) > EDGE)) { spot = [x, z]; break; } }
     if (!spot) spot = [h.pos.x - rx * 1.5, h.pos.z - rz * 1.5];
-    P.pos.set(spot[0], hAt(spot[0], spot[1]), spot[1]); H.vy = 0; H.mounted = null; H.cd = COOLDOWN; h.speed = 0; h.wait = 4 + rnd() * 4; h.inPen = inPen(h.pos.x, h.pos.z, .5); h.graze = true;
+    P.pos.set(spot[0], hAt(spot[0], spot[1]), spot[1]); H.vy = 0; H.mounted = null; H.cd = COOLDOWN; H.wantOff = false; H.dismT = 0; H.mountT = 0; H.speed = 0; H.roll = 0;
+    h.speed = 0; h.wait = 4 + rnd() * 4; h.inPen = inPen(h.pos.x, h.pos.z, .5); h.graze = true; h.g.rotation.z = 0;
     if (H.follow) h.net = { x: h.pos.x, z: h.pos.z, yaw: h.yaw, sp: 0, gr: 1 };
-    detachRider(h); P.yaw = h.yaw; P.pitch = 0; sfx.ui && sfx.ui(); msg('Dismounted', 1.2); return true;
+    detachRider(h); H.bodyYaw = Math.atan2(h.pos.x - P.pos.x, h.pos.z - P.pos.z) + Math.PI; H.fv.set(0, 0); P.yaw = h.yaw; P.pitch = -.1; sfx.ui && sfx.ui(); msg('Dismounted', 1.2); return true;
   }
   function init() {
     H.on = true; P.spawn.set(SPAWN.x, hAt(SPAWN.x, SPAWN.z), SPAWN.z); P.pos.copy(P.spawn); buildWorld(); spawnHorses();
@@ -453,68 +528,163 @@ export function createHorseRider(ctx) {
   const anim = (o, dt, sp, graze) => o.g.userData.kind === 'real' ? realAnim(o.g, dt, sp, graze, H.t) : procAnim(o.g, dt, sp, graze);
   function lod(o) { const u = o.g.userData; if (u.kind !== 'real') return; const near = o === H.mounted || camera.position.distanceTo(o.pos) < LOD_HORSE; u.near.visible = near; u.far.visible = !near; }
   // ---------------- per-frame ----------------
-  const tmp = new THREE.Vector3();
+  const tmp = new THREE.Vector3(), lerp = (a, b, t) => a + (b - a) * t, wrapA = a => Math.atan2(Math.sin(a), Math.cos(a));
+  const GAIT_SP = [0, 1.7, 4.4, 9, 15.5], SPRINT = 18.5, GAIT_N = ['Standing', 'Walk', 'Trot', 'Canter', 'Gallop'];
+  const gaitName = sp => sp < -.2 ? 'Backing up' : sp < .3 ? 'Standing' : sp < 3 ? 'Walk' : sp < 6.6 ? 'Trot' : sp < 12.3 ? 'Canter' : 'Gallop';
+  function aheadBlocked(h, yaw, L) { const fx = -Math.sin(yaw), fz = -Math.cos(yaw); for (const t of [.5, 1]) if (blocked(h.pos.x + fx * L * t, h.pos.z + fz * L * t, .7, h)) return true; return false; }
+  // stick magnitude -> speed through the four gaits (analog in between)
+  function stickSpeed(m) { const K = [[.1, 0], [.3, GAIT_SP[1]], [.55, GAIT_SP[2]], [.8, GAIT_SP[3]], [.93, GAIT_SP[4]], [1, SPRINT]]; if (m <= K[0][0]) return 0;
+    for (let i = 1; i < K.length; i++) if (m <= K[i][0]) return lerp(K[i - 1][1], K[i][1], (m - K[i - 1][0]) / (K[i][0] - K[i - 1][0])); return SPRINT; }
+  function ride(h, dt, fwdIn, sideIn, stick, jump) {
+    const hu = h.g.userData; H.riddenT += dt;
+    const sw = P.swX || 0; if (sw !== H.swLast) { H.swLast = sw; if (H.riddenT > .2) { H.lookT = 0; H.recenter = true; } } else H.lookT += dt; // camera moved by mouse / drag => free look
+    const free = H.lookT < .9;
+    if (H.mountT > 0) { H.mountT = Math.max(0, H.mountT - dt); mountPose(h, 1 - H.mountT / MOUNT_T); }
+    const busy = H.mountT > 0 || H.dismT > 0 || H.wantOff;
+    // gait selection (keyboard): tap Shift = one gait up, hold Shift = gallop flat out (stamina), C = one gait down
+    if (keys.ShiftLeft || keys.ShiftRight) H.shiftT += dt; else H.shiftT = 0;
+    const ref = free || H.recenter ? h.yaw : P.yaw; // steering is camera-relative; while looking around it is relative to the horse
+    let target = 0, want = null, brake = false;
+    if (!busy) {
+      if (stick > .08) { target = stickSpeed(Math.min(1, stick)); want = ref - Math.atan2(input.mx, -input.mz); }
+      else if (fwdIn > 0) { target = H.shiftT >= .3 ? SPRINT : GAIT_SP[H.cruise]; want = ref - Math.atan2(sideIn, 1) ; }
+      else if (fwdIn < 0) { brake = true; target = Math.abs(H.speed) < .7 ? -1.7 : 0; }
+      else if (sideIn) { target = Math.max(GAIT_SP[1], Math.min(H.speed, GAIT_SP[H.cruise])); want = ref - Math.atan2(sideIn, .25); }
+      if (Math.abs(H.speed) < .3 && fwdIn <= 0 && stick <= .08) H.cruise = Math.min(H.cruise, 2);
+    } else brake = true;
+    if (want != null && Math.abs(wrapA(want - h.yaw)) > 2.2 && H.speed > 5) target = Math.min(target, GAIT_SP[2]); // swinging round: slow first
+    // stamina: galloping drains it; a winded horse drops to a canter until it recovers
+    if (target > 12.5 && H.speed > 11) { H.stam = Math.max(0, H.stam - dt * (target > 16 ? 7.5 : 4)); if (H.stam <= 0) { H.winded = 5; msg('Your horse is winded — ease off', 1.6); } }
+    else H.stam = Math.min(100, H.stam + dt * (H.speed < 9.5 ? 12 : 4));
+    if (H.winded > 0) { H.winded -= dt; target = Math.min(target, GAIT_SP[3]); if (H.cruise > 3) H.cruise = 3; }
+    // obstacle sense: look ahead along the heading, swing round trees / rocks / posts, refuse (rein in) at a wall of fence
+    let avoid = 0; if (H.speed > 1.2 && target > 0) { const L = 1.4 + H.speed * .45;
+      if (aheadBlocked(h, h.yaw, L)) { let best = null; const goal = want == null ? h.yaw : want;
+        for (const a of [.35, -.35, .7, -.7, 1.1, -1.1]) if (!aheadBlocked(h, h.yaw + a, L)) { const sc = Math.abs(wrapA(h.yaw + a - goal)); if (!best || sc < best[1]) best = [a, sc]; }
+        if (best) avoid = best[0]; else { target = 0; brake = true; if (H.speed > 7 && !(hu.toss > 0)) hu.toss = 1; } } }
+    // speed: weighty, linear acceleration per gait; firm but not instant braking
+    const acc = target > H.speed ? (H.speed < 0 ? 5 : H.speed < 4.5 ? 3.2 : H.speed < 9.5 ? 3.4 : 2.3) : brake ? (H.speed > 0 ? 9 : 4) : 4.4;
+    const prev = H.speed; H.speed += Math.sign(target - H.speed) * Math.min(Math.abs(target - H.speed), acc * dt);
+    const decel = (prev - H.speed) / Math.max(dt, 1e-3);
+    // turning: eased yaw rate that tightens at low speed; carving at a gallop scrubs a little speed
+    const maxR = Math.abs(H.speed) < .5 ? 1.5 : lerp(2.3, .95, sstep(2, 17, H.speed));
+    let wantR = 0; if (H.speed < -.1) wantR = -sideIn * .9; else if (avoid) wantR = Math.max(-maxR, Math.min(maxR, avoid * 3.2)); else if (want != null) wantR = Math.max(-maxR, Math.min(maxR, wrapA(want - h.yaw) * 2.6));
+    H.yawRate += (wantR - H.yawRate) * Math.min(1, dt * 5); h.yaw += H.yawRate * dt;
+    if (Math.abs(H.yawRate) > .8 && H.speed > 8) H.speed -= (Math.abs(H.yawRate) - .8) * dt * 2;
+    const fx = -Math.sin(h.yaw), fz = -Math.cos(h.yaw);
+    const hit = moveCircle(h.pos, fx * H.speed * dt, fz * H.speed * dt, .8, h); if (hit) { if (Math.abs(H.speed) > 5) { hu.toss = 1; H.shake = .6; sfx.step && sfx.step(true); } H.speed *= Math.abs(H.speed) > 5 ? .3 : .6; }
+    const g0 = hAt(h.pos.x, h.pos.z); if (jump && H.ground && !busy && H.speed > -.5) { H.vy = 6.2; H.ground = false; }
+    H.vy -= 22 * dt; h.pos.y += H.vy * dt; if (h.pos.y <= g0) { if (!H.ground && H.vy < -5) H.shake = Math.max(H.shake, .25); h.pos.y = g0; H.vy = 0; H.ground = true; }
+    // body: lean into turns, pitch with the slope, sit back on the haunches when braking hard
+    const lean = Math.max(-.2, Math.min(.2, H.yawRate * Math.max(0, H.speed) * .02)); H.roll += (lean - H.roll) * Math.min(1, dt * 4);
+    H.pitchK += ((decel > 4 && H.speed > 2 ? .07 : 0) - H.pitchK) * Math.min(1, dt * 5);
+    const ahead = hAt(h.pos.x + fx, h.pos.z + fz), behind = hAt(h.pos.x - fx, h.pos.z - fz);
+    h.g.rotation.set(Math.atan2(ahead - behind, 2) * .8 + H.pitchK, h.yaw, H.roll);
+    anim(h, dt, H.ground ? H.speed : 3, false); P.pos.set(h.pos.x, h.pos.y + 1.1, h.pos.z);
+    const ob = H.clop || 0; H.clop = ob + dt * Math.abs(H.speed) * .55; if (H.ground && Math.abs(H.speed) > 1 && Math.floor(ob) !== Math.floor(H.clop)) sfx.step && sfx.step(true);
+    // camera follow: swing back behind the horse unless the player is looking around
+    if (!free) { const d = wrapA(h.yaw - P.yaw); if (Math.abs(H.speed) > .4 || H.recenter) P.yaw += d * Math.min(1, dt * (H.recenter ? 2.6 : 1.2 + Math.abs(H.speed) * .1)); if (Math.abs(d) < .12) H.recenter = false;
+      if (Math.abs(H.speed) > .4) P.pitch += (-.1 - P.pitch) * Math.min(1, dt * 1.2); }
+    // rider: seated pose that posts the trot, stands in the stirrups at the gallop, leans into turns and looks where the camera looks
+    if (!H.mountT && !H.dismT && real() && hu.kind === 'real') { const sp = Math.max(0, H.speed), trot = sstep(2.6, 4, sp) * (1 - sstep(6.5, 8.5, sp)), gal = sstep(10, 15.5, sp), ph = hu.phase;
+      riderPose(rider, { sit: 1, side: H.side, k: sstep(.3, 2, sp), ph, gal, lean: .04 + .32 * gal + Math.max(0, decel) * -.004 + Math.min(0, decel) * -.01, roll: H.roll * 1.4, look: Math.max(-1.1, Math.min(1.1, wrapA(P.yaw - h.yaw))) * .55, rein: Math.sin(ph * TAU * (gal > .5 ? 1 : 2)) * .05 * sstep(.3, 2, sp) });
+      rider.position.set(me.seat.x, me.seat.y + trot * Math.abs(Math.sin(ph * TAU)) * .05 + gal * (.05 + Math.sin(ph * TAU) * .015), me.seat.z); rider.rotation.set(0, 0, 0); }
+    // E / GET OFF: rein in, then step down on the mounting side
+    if (H.wantOff && !H.dismT && Math.abs(H.speed) < 2.2) { H.dismT = real() && hu.kind === 'real' ? DISM_T : 1e-3; H.speed = Math.min(H.speed, 1); }
+    if (H.dismT > 0) { H.speed *= Math.max(0, 1 - dt * 6); H.dismT -= dt; mountPose(h, Math.max(0, H.dismT / DISM_T)); if (H.dismT <= 0) dismount(); }
+    dustEmit(h, dt);
+  }
+  function walk(dt, fwdIn, sideIn, stick, run, jump) {
+    const slow = !!keys.AltLeft, sp = stick > .05 ? (stick < .5 ? 1.8 * stick / .5 : run ? 7.2 : lerp(1.8, 4.6, Math.min(1, (stick - .5) / .4))) : run && fwdIn > 0 ? 7.2 : slow ? 1.8 : 4.6;
+    const f = tmp.set(-Math.sin(P.yaw), 0, -Math.cos(P.yaw)), rx = -f.z, rz = f.x;
+    let mx = f.x * fwdIn + rx * sideIn, mz = f.z * fwdIn + rz * sideIn; const l = Math.hypot(mx, mz); if (l > 0) { mx *= sp / l; mz *= sp / l; }
+    H.fv.x += (mx - H.fv.x) * Math.min(1, dt * 9); H.fv.y += (mz - H.fv.y) * Math.min(1, dt * 9); // momentum: ease into and out of a run
+    const v = H.fv.length(); moveCircle(P.pos, H.fv.x * dt, H.fv.y * dt, .35, null);
+    const g0 = hAt(P.pos.x, P.pos.z); if (jump && H.ground) { H.vy = 7; H.ground = false; }
+    H.vy -= 22 * dt; P.pos.y += H.vy * dt; if (P.pos.y <= g0) { P.pos.y = g0; H.vy = 0; H.ground = true; }
+    const ob = P.bob; P.bob += dt * v * 1.6; if (H.ground && v > .5 && Math.floor(ob / Math.PI) !== Math.floor(P.bob / Math.PI)) sfx.step && sfx.step(false);
+    if (v > .3) { const wy = Math.atan2(-H.fv.x, -H.fv.y); H.bodyYaw += wrapA(wy - H.bodyYaw) * Math.min(1, dt * 10); }
+    if (real()) { me.body.position.copy(P.pos); me.body.rotation.y = H.bodyYaw; me.body.visible = !H.fp; if (me.W) me.W.update(dt, H.ground ? v : Math.max(v, 1)); }
+  }
+  // discrete key presses (no auto-repeat): Shift = one gait up while riding, C = one gait down / on foot toggles first person
+  addEventListener('keydown', e => { if (!H.on || e.repeat || !document.body.classList.contains('horse-mode')) return;
+    if (H.mounted) { if (/^Shift/.test(e.code)) H.cruise = Math.min(4, H.cruise + 1); else if (e.code === 'KeyC') H.cruise = Math.max(1, H.cruise - 1); }
+    else if (e.code === 'KeyC') { H.fp = !H.fp; msg(H.fp ? 'First-person view (C to switch back)' : 'Third-person view', 1.2); } });
+  addEventListener('wheel', e => { if (!H.on || !document.body.classList.contains('horse-mode')) return; H.zoom = Math.max(.5, Math.min(1.5, H.zoom * (e.deltaY > 0 ? 1.08 : 1 / 1.08))); }, { passive: true }); // camera zoom
   function tick(dt) {
-    if (!H.on) return; H.t += dt; H.cd = Math.max(0, H.cd - dt);
+    if (!H.on) return; H.t += dt; H.cd = Math.max(0, H.cd - dt); H.shake = Math.max(0, H.shake - dt * 1.6);
     const h = H.mounted;
     let fwdIn = 0, sideIn = 0; if (keys.KeyW || keys.ArrowUp) fwdIn += 1; if (keys.KeyS || keys.ArrowDown) fwdIn -= 1; if (keys.KeyD || keys.ArrowRight) sideIn += 1; if (keys.KeyA || keys.ArrowLeft) sideIn -= 1;
     const stick = Math.min(1, Math.hypot(input.mx || 0, input.mz || 0)); if (stick > .05) { fwdIn = -input.mz; sideIn = input.mx; }
     const run = !!keys.ShiftLeft || !!keys.ShiftRight || (stick > .92 && fwdIn > .6);
     const jump = keys.Space || input.jump;
-    if (h) {
-      P.yaw -= sideIn * dt * 1.9 * (H.speed < 0 ? -1 : 1);
-      const target = fwdIn > 0 ? (run ? 18 : 10) * Math.min(1, fwdIn + .15) : fwdIn < 0 ? -2.5 : 0;
-      H.speed += (target - H.speed) * Math.min(1, dt * (target > H.speed ? 1.6 : 2.6));
-      let dy = P.yaw - h.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); h.yaw += dy * Math.min(1, dt * (Math.abs(H.speed) > .5 ? 4 : 1.2));
-      const fx = -Math.sin(h.yaw), fz = -Math.cos(h.yaw);
-      const hit = moveCircle(h.pos, fx * H.speed * dt, fz * H.speed * dt, .8, h); if (hit) H.speed *= .4;
-      const g0 = hAt(h.pos.x, h.pos.z); if (jump && H.ground) { H.vy = 6.2; H.ground = false; }
-      H.vy -= 22 * dt; h.pos.y += H.vy * dt; if (h.pos.y <= g0) { h.pos.y = g0; H.vy = 0; H.ground = true; }
-      h.g.rotation.y = h.yaw; const ahead = hAt(h.pos.x + fx, h.pos.z + fz), behind = hAt(h.pos.x - fx, h.pos.z - fz); h.g.rotation.x = Math.atan2(ahead - behind, 2) * .8;
-      anim(h, dt, H.ground ? H.speed : 3, false); P.pos.set(h.pos.x, h.pos.y + 1.1, h.pos.z); H.riddenT += dt;
-      const ob = H.clop || 0; H.clop = ob + dt * Math.abs(H.speed) * .55; if (H.ground && Math.abs(H.speed) > 1 && Math.floor(ob) !== Math.floor(H.clop)) sfx.step && sfx.step(true);
-    } else {
-      const sp = run && fwdIn > 0 ? 7.2 : 4.6, f = tmp.set(-Math.sin(P.yaw), 0, -Math.cos(P.yaw)), rx = -f.z, rz = f.x;
-      let mx = f.x * fwdIn + rx * sideIn, mz = f.z * fwdIn + rz * sideIn; const l = Math.hypot(mx, mz); if (l > 0) { const k = sp * (stick > .05 ? Math.min(1, stick) : 1) / l; mx *= k; mz *= k; }
-      moveCircle(P.pos, mx * dt, mz * dt, .35, null);
-      const g0 = hAt(P.pos.x, P.pos.z); if (jump && H.ground) { H.vy = 7; H.ground = false; }
-      H.vy -= 22 * dt; P.pos.y += H.vy * dt; if (P.pos.y <= g0) { P.pos.y = g0; H.vy = 0; H.ground = true; }
-      const ob = P.bob; P.bob += dt * l * (l ? sp / l : 0) * 1.6; if (H.ground && l && Math.floor(ob / Math.PI) !== Math.floor(P.bob / Math.PI)) sfx.step && sfx.step(false);
-    }
+    if (h) ride(h, dt, stick > .05 ? 0 : fwdIn, stick > .05 ? 0 : sideIn, stick, jump); else walk(dt, fwdIn, sideIn, stick, run, jump);
     for (const o of H.horses) { if (o === h) continue;
-      if (H.ridden.has(o) || (H.follow && o.net)) { netHorse(o, dt); continue; } // ridden by another player / herd mirrored from the host
+      if (H.ridden.has(o) || (H.follow && o.net)) { netHorse(o, dt); if (H.ridden.has(o)) dustEmit(o, dt); continue; } // ridden by another player / herd mirrored from the host
       if (o.tgt) { const dx = o.tgt[0] - o.pos.x, dz = o.tgt[1] - o.pos.z, d = Math.hypot(dx, dz);
         if (d < .4) { o.tgt = null; o.wait = 2 + rnd() * 5; o.graze = rnd() < .6; o.speed = 0; }
         else { const want = Math.atan2(-dx, -dz); let dy = want - o.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); o.yaw += dy * Math.min(1, dt * 2.5); o.speed += (1.3 - o.speed) * Math.min(1, dt * 2);
           if (moveCircle(o.pos, -Math.sin(o.yaw) * o.speed * dt, -Math.cos(o.yaw) * o.speed * dt, .8, o)) { o.tgt = null; o.wait = 1 + rnd() * 2; } } }
       else { o.speed *= Math.max(0, 1 - dt * 4); o.wait -= dt; if (o.wait <= 0) { if (o.inPen) o.tgt = [PEN.x + (rnd() - .5) * (PEN.hw * 2 - 4), PEN.z + (rnd() - .5) * (PEN.hd * 2 - 4)]; else { const a = rnd() * 6.28; o.tgt = [o.pos.x + Math.cos(a) * 3, o.pos.z + Math.sin(a) * 3]; } o.graze = false; } }
-      o.pos.y = hAt(o.pos.x, o.pos.z); o.g.rotation.y = o.yaw; o.g.rotation.x = 0; anim(o, dt, o.speed, o.graze); }
+      o.pos.y = hAt(o.pos.x, o.pos.z); o.g.rotation.set(0, o.yaw, 0); anim(o, dt, o.speed, o.graze); }
     for (const o of H.horses) lod(o);
+    dustTick(dt);
     if (H.grass && Math.hypot(P.pos.x - H.grassAt[0], P.pos.z - H.grassAt[1]) > H.grassR * .35) scatterGrass();
     updateTreeLOD(false);
-    H.near = h ? null : nearestHorse();
-    H.prompt = h ? (mobile ? 'Tap GET OFF to dismount' : '[E] Get off the horse') : H.near ? (mobile ? 'Tap RIDE to mount' : '[E] Ride horse') : '';
+    H.near = h ? null : nearestHorse(); H.gait = h ? gaitName(H.speed) : '';
+    H.prompt = h ? (H.mountT > 0 ? 'Mounting…' : H.wantOff || H.dismT > 0 ? 'Getting off…' : mobile ? 'Tap GET OFF to dismount' : '[E] Get off the horse') : H.near ? (mobile ? 'Tap RIDE to mount' : '[E] Ride horse') : '';
   }
-  // third-person chase camera when riding; first-person eye height on foot
-  const camPos = new THREE.Vector3(), look = new THREE.Vector3();
+  // hoof dust: a small pool of soft points kicked up behind the hooves at speed
+  const DN = mobile ? 40 : 90, dust = { p: new Float32Array(DN * 3), a: new Float32Array(DN), sz: new Float32Array(DN), v: new Float32Array(DN * 3), life: new Float32Array(DN), i: 0, acc: 0, pts: null };
+  function dustInit() { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(dust.p, 3)); g.setAttribute('aA', new THREE.BufferAttribute(dust.a, 1)); g.setAttribute('aS', new THREE.BufferAttribute(dust.sz, 1));
+    const m = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, uniforms: { uC: { value: new THREE.Color(0xa89878) }, uH: { value: 400 } },
+      vertexShader: 'attribute float aA; attribute float aS; varying float vA; uniform float uH; void main(){ vA=aA; vec4 mv=modelViewMatrix*vec4(position,1.); gl_PointSize=aS*uH/max(.5,-mv.z); gl_Position=projectionMatrix*mv; }',
+      fragmentShader: 'uniform vec3 uC; varying float vA; void main(){ vec2 d=gl_PointCoord-.5; float r=dot(d,d)*4.; if(r>1.) discard; gl_FragColor=vec4(uC, vA*(1.-r)*(1.-r)*.55); }' });
+    dust.pts = new THREE.Points(g, m); dust.pts.frustumCulled = false; dust.pts.renderOrder = 2; scene.add(dust.pts); }
+  function dustEmit(o, dt) { const sp = Math.abs(o === H.mounted ? H.speed : o.speed || 0); if (sp < 5.5 || (o === H.mounted && !H.ground)) return; if (!dust.pts) dustInit();
+    dust.acc += dt * sp * (mobile ? 1.6 : 3); const fx = -Math.sin(o.yaw), fz = -Math.cos(o.yaw), dirt = inPen(o.pos.x, o.pos.z) || segDist(o.pos.x, o.pos.z, PATH) < 2 ? 1.6 : 1;
+    while (dust.acc > 1) { dust.acc -= 1; const i = dust.i = (dust.i + 1) % DN, side = (rnd() - .5) * .7, back = .2 + rnd() * 1.1;
+      dust.p[i * 3] = o.pos.x - fx * back - fz * side; dust.p[i * 3 + 2] = o.pos.z - fz * back + fx * side; dust.p[i * 3 + 1] = hAt(dust.p[i * 3], dust.p[i * 3 + 2]) + .08;
+      dust.v[i * 3] = -fx * sp * .12 + (rnd() - .5) * .6; dust.v[i * 3 + 1] = .35 + rnd() * .7; dust.v[i * 3 + 2] = -fz * sp * .12 + (rnd() - .5) * .6; dust.life[i] = 1; dust.sz[i] = (.25 + rnd() * .2) * dirt; } }
+  function dustTick(dt) { if (!dust.pts) return; let any = false; dust.pts.material.uniforms.uH.value = GX.renderer.domElement.height * .5;
+    for (let i = 0; i < DN; i++) { if (dust.life[i] <= 0) { dust.a[i] = 0; continue; } any = true; dust.life[i] -= dt * .8; const l = Math.max(0, dust.life[i]);
+      for (let k = 0; k < 3; k++) { dust.p[i * 3 + k] += dust.v[i * 3 + k] * dt; dust.v[i * 3 + k] *= 1 - dt * 1.5; } dust.sz[i] += dt * .9; dust.a[i] = l * l * Math.min(1, (1 - l) * 8); }
+    const g = dust.pts.geometry; g.attributes.position.needsUpdate = g.attributes.aA.needsUpdate = g.attributes.aS.needsUpdate = true; dust.pts.visible = any; }
+  // cameras: over-the-shoulder third person on foot (C toggles first person), cinematic chase camera when riding
+  const camPos = new THREE.Vector3(), look = new THREE.Vector3(), want = new THREE.Vector3(), lookOff = new THREE.Vector3(), lastLook = new THREE.Vector3(); let lastMode = null;
+  function camClear(from, to) { // pull the camera in front of tree trunks / rocks between it and the subject
+    const dx = to.x - from.x, dz = to.z - from.z; for (let t = .3; t <= 1.001; t += .175) { const x = from.x + dx * t, z = from.z + dz * t;
+      for (const [ox, oz, or] of H.obst) if (Math.abs(ox - x) < or + .35 && Math.abs(oz - z) < or + .35 && Math.hypot(ox - x, oz - z) < or + .3) { to.x = from.x + dx * (t - .2); to.z = from.z + dz * (t - .2); to.y = from.y + (to.y - from.y) * (t - .2); return; } } }
   function syncCamera(dt) {
     const h = H.mounted;
-    if (!h) { if (camera.fov !== 75) { camera.fov = 75; camera.updateProjectionMatrix(); } camera.position.set(P.pos.x, P.pos.y + 1.62 + (H.ground ? Math.abs(Math.cos(P.bob)) * .04 : 0), P.pos.z); camera.rotation.set(P.pitch, P.yaw, 0, 'YXZ'); H.camInit = false; return; }
-    const sp = Math.abs(H.speed), pitch = Math.max(-.7, Math.min(.35, P.pitch)), dist = 4.3 + Math.min(1.4, sp * .075);
-    look.set(h.pos.x, h.pos.y + 2.05, h.pos.z);
-    const want = new THREE.Vector3(look.x + Math.sin(P.yaw) * Math.cos(pitch) * dist, look.y - Math.sin(pitch) * dist + .55, look.z + Math.cos(P.yaw) * Math.cos(pitch) * dist);
-    want.y = Math.max(want.y, hAt(want.x, want.z) + .6);
-    if (!H.camInit || !dt) { camPos.copy(want); H.camInit = true; } else camPos.lerp(want, Math.min(1, dt * 8));
-    camera.position.copy(camPos); camera.lookAt(look);
-    const fov = 72 + sstep(8, 18, sp) * 8; if (Math.abs(camera.fov - fov) > .05) { camera.fov += (fov - camera.fov) * Math.min(1, (dt || 1) * 3); camera.updateProjectionMatrix(); }
+    if (!h && (H.fp || !real())) { if (camera.fov !== 75) { camera.fov = 75; camera.updateProjectionMatrix(); } camera.position.set(P.pos.x, P.pos.y + 1.62 + (H.ground ? Math.abs(Math.cos(P.bob)) * .04 : 0), P.pos.z); camera.rotation.set(P.pitch, P.yaw, 0, 'YXZ'); H.camInit = false; return; }
+    let fov, k;
+    if (!h) { const pitch = Math.max(-.85, Math.min(.6, P.pitch)), dist = 2.75 * Math.min(1.3, H.zoom), rx = Math.cos(P.yaw), rz = -Math.sin(P.yaw), v = H.fv.length();
+      look.set(P.pos.x + rx * .5, P.pos.y + 1.58, P.pos.z + rz * .5);
+      want.set(look.x + Math.sin(P.yaw) * Math.cos(pitch) * dist, look.y - Math.sin(pitch) * dist + .12, look.z + Math.cos(P.yaw) * Math.cos(pitch) * dist);
+      fov = 68 + sstep(4.8, 7.2, v) * 5; k = 14; }
+    else { const sp = Math.abs(H.speed), pitch = Math.max(-.7, Math.min(.35, P.pitch)), dist = (4.2 + sstep(3, 18, sp) * .6) * H.zoom, ph = h.g.userData.phase || 0;
+      look.set(h.pos.x, h.pos.y + 2.05 + Math.sin(ph * TAU) * .03 * sstep(10, 16, sp), h.pos.z);
+      want.set(look.x + Math.sin(P.yaw) * Math.cos(pitch) * dist, look.y - Math.sin(pitch) * dist + .3, look.z + Math.cos(P.yaw) * Math.cos(pitch) * dist);
+      fov = 70 + sstep(8, 18, sp) * 5; k = 9; }
+    const mode = h ? 'ride' : 'foot'; if (H.camInit && lastMode && mode !== lastMode) lookOff.add(lastLook).sub(look); lastMode = mode; lookOff.multiplyScalar(1 - Math.min(1, (dt || 1) * 3.5));
+    look.add(lookOff); want.add(lookOff); lastLook.copy(look).sub(lookOff);
+    camClear(look, want); want.y = Math.max(want.y, hAt(want.x, want.z) + .5);
+    want.sub(look); if (!H.camInit || !dt) { camPos.copy(want); H.camInit = true; } else camPos.lerp(want, Math.min(1, dt * k)); // smooth the offset, not the position: no lag at a gallop
+    camera.position.copy(look).add(camPos); camera.position.y = Math.max(camera.position.y, hAt(camera.position.x, camera.position.z) + .4); if (H.shake > 0) camera.position.add(tmp.set((Math.random() - .5), (Math.random() - .5), (Math.random() - .5)).multiplyScalar(H.shake * .12)); camera.lookAt(look);
+    if (h) camera.rotateZ(H.roll * .3);
+    if (Math.abs(camera.fov - fov) > .05) { camera.fov += (fov - camera.fov) * Math.min(1, (dt || 1) * 3); camera.updateProjectionMatrix(); }
     updateReins();
   }
+  let stamEl = null;
   function hud() {
     const pr = $('hrPrompt'); if (pr) { pr.textContent = H.prompt; pr.hidden = !H.prompt; pr.classList.toggle('riding', !!H.mounted); }
     const d = Math.round(Math.hypot(P.pos.x - PEN.x, P.pos.z - PEN.z)), hz = H.mounted;
     $('mode').textContent = '🐎 HORSE RIDER'; $('timer').textContent = hz ? Math.round(Math.abs(H.speed) * 3.6) + ' km/h' : ''; $('stars').textContent = H.online || '';
-    $('sub').textContent = hz ? (Math.abs(H.speed) > 12 ? 'Galloping' : Math.abs(H.speed) > 1 ? 'Riding' : 'Mounted') + (hz.coat ? ' ' + hz.coat : '') + (mobile ? ' · push the stick all the way to gallop' : ' · W ride · Shift gallop · A/D turn · Space jump')
+    $('sub').textContent = hz ? H.gait + (hz.coat ? ' · ' + hz.coat : '') + (H.winded > 0 ? ' · winded' : '') + (mobile ? ' · push the stick further to speed up' : ' · W ride · tap Shift faster · hold Shift gallop · C slower · A/D steer')
       : H.models === 'loading' && d < 40 ? 'Horses arriving…' : d > 16 ? `Horse pen ${d} m away` : inPen(P.pos.x, P.pos.z) ? 'In the pen — walk up to a horse' : 'At the horse pen';
+    if (!stamEl) { stamEl = document.createElement('div'); stamEl.id = 'hrStam'; stamEl.innerHTML = '<i></i>'; document.body.appendChild(stamEl); }
+    const show = !!hz && (H.stam < 99 || Math.abs(H.speed) > 12); stamEl.style.opacity = show ? 1 : 0; stamEl.firstChild.style.width = H.stam.toFixed(0) + '%'; stamEl.classList.toggle('low', H.stam < 25 || H.winded > 0);
   }
   // ---- multiplayer hooks (src/horsenet.js): remote riders, herd mirroring ----
   function netHorse(o, dt) { const n = o.net; if (!n) { anim(o, dt, 0, false); return; } const k = Math.min(1, dt * 8);
@@ -524,35 +694,32 @@ export function createHorseRider(ctx) {
   const herd = () => H.horses.filter(o => o !== H.mounted && !H.ridden.has(o)).map(o => [o.id, +o.pos.x.toFixed(2), +o.pos.z.toFixed(2), +o.yaw.toFixed(3), +o.speed.toFixed(2), o.graze ? 1 : 0]);
   function applyHerd(arr) { H.follow = true; for (const [id, x, z, yaw, sp, gr] of arr) { const o = H.horses[id]; if (!o || o === H.mounted || H.ridden.has(o)) continue; o.net = { x, z, yaw, sp, gr }; } }
   function release(o) { if (!H.ridden.has(o)) return; H.ridden.delete(o); o.speed = 0; o.wait = 4 + rnd() * 4; o.tgt = null; o.inPen = inPen(o.pos.x, o.pos.z, .5); o.graze = true; if (!H.follow) o.net = null; }
-  function seat(h, obj) { if (h.g.userData.kind === 'real' && obj.userData.kind === 'real') { h.g.userData.bones[1].add(obj); obj.position.set(0, .45, .04); } else { h.g.add(obj); obj.position.set(0, h.g.userData.kind === 'real' ? 1.45 : 1.72, .08); } obj.rotation.set(0, 0, 0); obj.visible = true; }
+  function seat(h, obj) { if (h.g.userData.kind === 'real' && obj.userData.kind === 'real') { h.g.userData.bones[1].add(obj); obj.position.copy(me.seat); } else { h.g.add(obj); obj.position.set(0, h.g.userData.kind === 'real' ? 1.45 : 1.72, .08); } obj.rotation.set(0, 0, 0); obj.visible = true; }
   const avatars = new Set();
   function nameTag(text, color) { const c = document.createElement('canvas'); c.width = 256; c.height = 64; const x = c.getContext('2d'); x.fillStyle = 'rgba(10,12,14,.6)'; x.beginPath(); x.roundRect(8, 8, 240, 48, 22); x.fill();
     x.fillStyle = color; x.font = 'bold 30px sans-serif'; x.textAlign = 'center'; x.fillText(text, 128, 43); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true, fog: false, toneMapped: false })); sp.scale.set(1.2, .3, 1); sp.renderOrder = 9; return sp; }
-  const STAND = [['LeftArm', 'LeftForeArm', [.16, -1, .02]], ['LeftForeArm', 'LeftHand', [.06, -1, .12]], ['RightArm', 'RightForeArm', [-.16, -1, .02]], ['RightForeArm', 'RightHand', [-.06, -1, .12]]];
-  // remote player: a walker (rider model + walk/run clips) on foot, a seated copy on the horse they ride
+  // remote player: the same rigged person (idle / walk / run blend) on foot, a seated copy with the live riding pose on the horse they ride
   function avatar(id, color) {
-    const av = { id, g: new THREE.Group(), horse: null, walker: null, sitter: null, mixer: null, last: null, tag: nameTag(id, color), v: 0 };
+    const av = { id, g: new THREE.Group(), horse: null, walker: null, sitter: null, W: null, tag: nameTag(id, color), v: 0 };
     scene.add(av.g); av.g.add(av.tag); av.tag.position.y = 2.15;
     av.rebuild = () => { if (av.walker) av.g.remove(av.walker); if (av.sitter && av.sitter.parent) av.sitter.parent.remove(av.sitter); const A = H.assets;
-      if (A && A.riderSrc) { const w = cloneSkinned(A.riderSrc), st = cloneSkinned(A.riderSrc); for (const r of [w, st]) r.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
-        w.rotation.y = Math.PI; av.mixer = new THREE.AnimationMixer(w); const clip = n => A.clips.find(c => new RegExp(n, 'i').test(c.name)); av.walk = clip('walk') && av.mixer.clipAction(clip('walk')); av.run = clip('run') && av.mixer.clipAction(clip('run'));
-        poseLimbs(w, STAND); poseRider(st); const hp = st.getObjectByName('Hips').getWorldPosition(new THREE.Vector3()); const wrap = new THREE.Group(); wrap.add(st); st.position.set(-hp.x, -hp.y, -hp.z); wrap.userData = { kind: 'real', model: st };
-        av.walker = w; av.sitter = wrap; }
-      else { av.walker = makeProcRider(color); av.walker.position.y = .55; av.walker.rotation.y = Math.PI; av.sitter = makeProcRider(color); av.mixer = null; }
+      if (A && A.riderSrc) { av.W = makeWalker(A.riderSrc, A.clips); av.walker = av.W.m; av.walker.rotation.y = Math.PI;
+        const st = saveRest(cloneSkinned(A.riderSrc)); st.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } }); st.userData.kind = 'real'; riderPose(st, { sit: 1 }); av.sitter = st; }
+      else { av.walker = makeProcRider(color); av.walker.position.y = .55; av.walker.rotation.y = Math.PI; av.sitter = makeProcRider(color); av.W = null; }
       av.g.add(av.walker); av.sitter.visible = false; if (av.horse) seat(av.horse, av.sitter); };
     av.update = (dt, s) => { if (!s) return; const was = av.horse, h = s.m >= 0 ? H.horses[s.m] : null;
       if (was && was !== h) { release(was); if (av.sitter.parent) av.sitter.parent.remove(av.sitter); av.horse = null; }
       if (h) { if (h === H.mounted) { if (String(av.id) < String(H.me || 'P9')) dismount(); else return; } // two riders grabbed one horse: lower id keeps it
         if (!av.horse) { av.horse = h; H.ridden.set(h, av.id); seat(h, av.sitter); } h.net = { x: s.x, y: s.y, z: s.z, yaw: s.hy, sp: s.sp };
+        if (av.sitter.userData.B && h.g.userData.kind === 'real') { const sp = Math.max(0, s.sp || 0), gal = sstep(10, 15.5, sp), trot = sstep(2.6, 4, sp) * (1 - sstep(6.5, 8.5, sp)), ph = h.g.userData.phase;
+          riderPose(av.sitter, { sit: 1, k: sstep(.3, 2, sp), ph, gal, lean: .04 + .32 * gal, rein: Math.sin(ph * TAU * (gal > .5 ? 1 : 2)) * .05 * sstep(.3, 2, sp) });
+          av.sitter.position.set(me.seat.x, me.seat.y + trot * Math.abs(Math.sin(ph * TAU)) * .05 + gal * .05, me.seat.z); }
         av.walker.visible = false; av.g.position.set(h.pos.x, h.pos.y + 1.1, h.pos.z); av.tag.position.y = 1.55; return; }
       av.walker.visible = true; av.tag.position.y = 2.15; const p = av.g.position, d = Math.hypot(s.x - p.x, s.z - p.z), k = Math.min(1, dt * 10);
       if (d > 8) p.set(s.x, s.y, s.z); else { p.x += (s.x - p.x) * k; p.y += (s.y - p.y) * k; p.z += (s.z - p.z) * k; }
       let dy = s.yw - av.g.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); av.g.rotation.y += dy * k;
-      av.v += ((s.sp || 0) - av.v) * Math.min(1, dt * 6);
-      if (av.mixer) { const moving = av.v > .4, act = av.v > 5.8 && av.run ? av.run : av.walk;
-        if (moving && act) { for (const a of [av.walk, av.run]) if (a && a !== act && a.isRunning()) a.stop(); if (!act.isRunning()) act.play(); act.timeScale = act === av.run ? av.v / 7 : av.v / 4.6; av.mixer.update(dt); }
-        else if (av.walk && (av.walk.isRunning() || (av.run && av.run.isRunning()))) { av.mixer.stopAllAction(); av.walker.traverse(o => { if (o.isBone && o.userData.rest) o.quaternion.copy(o.userData.rest); }); poseLimbs(av.walker, STAND); } } };
+      av.v += ((s.sp || 0) - av.v) * Math.min(1, dt * 6); if (av.W) av.W.update(dt, av.v); };
     av.dispose = () => { if (av.horse) release(av.horse); if (av.sitter && av.sitter.parent) av.sitter.parent.remove(av.sitter); scene.remove(av.g); avatars.delete(av); };
     av.rebuild(); avatars.add(av); return av;
   }

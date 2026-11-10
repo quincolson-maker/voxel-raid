@@ -141,6 +141,7 @@ select,input{border-radius:1px;background:#11161a;border:1px solid #fff2}
 #hrPrompt{position:absolute;left:50%;top:62%;transform:translateX(-50%);padding:.45em 1em;font-weight:700;letter-spacing:.08em;color:#ffe6b0;background:rgba(20,14,6,.6);border-left:3px solid #e0b060;text-shadow:0 2px 0 #000a}#hrPrompt[hidden]{display:none}#hrPrompt.riding{top:auto;bottom:9%;opacity:.8;font-size:.85em}.touch.horse-mode #hrPrompt.riding{display:none}
 .horse-mode #vitals,.horse-mode #hotbar,.horse-mode #right,.horse-mode #cross,.horse-mode #zHud,.horse-mode #feed,.horse-mode #scope,.horse-mode #dbar{display:none!important}.horse-mode .bar{display:none}
 .horse-mode #tFire,.horse-mode #tAds,.horse-mode #tReload,.horse-mode #tSwap{display:none!important}.touch.horse-mode #hrPrompt{top:auto;bottom:40%}
+#hrStam{position:fixed;left:50%;bottom:15%;width:150px;height:6px;margin-left:-75px;border-radius:3px;background:rgba(10,8,4,.5);box-shadow:0 0 0 1px #0006;overflow:hidden;pointer-events:none;opacity:0;transition:opacity .5s;z-index:20}#hrStam i{display:block;height:100%;background:linear-gradient(90deg,#c98a2e,#f2dc9a);transition:width .2s}#hrStam.low i{background:linear-gradient(90deg,#a3301e,#e07a4a)}body:not(.horse-mode) #hrStam{display:none}.touch.horse-mode #hrStam{bottom:auto;top:24%}
 </style>
 </head><body>
 <div id="hud" style="display:none">
@@ -187,5 +188,5 @@ select,input{border-radius:1px;background:#11161a;border:1px solid #fff2}
 <div id="rot"><div class="ph"></div><p>Rotate your phone to landscape</p><button id="rotskip">Play anyway</button></div>
 <div id="ioshint" class="pill">For true fullscreen on iPhone: tap Share → <b>Add to Home Screen</b>, then launch Voxel Raid from your home screen. <button id="ioshintx" style="padding:.2em .6em">OK</button></div>
 <script src="./vendor/peerjs.min.js"></script>
-<script type="module" src="./game.min.js?v=20-beautyhorse"></script>
+<script type="module" src="./game.min.js?v=21-rdrride"></script>
 </body></html>

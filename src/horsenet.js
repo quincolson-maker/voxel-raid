@@ -97,7 +97,7 @@ export function createHorseNet({ horse, P, msg }) {
     if (S.last && dt > 0) S.footSp += (Math.hypot(x - S.last[0], z - S.last[1]) / dt - S.footSp) * Math.min(1, dt * 8); S.last = [x, z];
     S.netT -= dt; S.herdT -= dt;
     if (net.open && S.netT <= 0) { S.netT = .1;
-      const st = { t: 'p', x: +x.toFixed(2), y: +(h ? h.pos.y : P.pos.y).toFixed(2), z: +z.toFixed(2), yw: +P.yaw.toFixed(3), m: h ? h.id : -1, hy: h ? +h.yaw.toFixed(3) : 0, sp: +(h ? H.speed : S.footSp).toFixed(2) };
+      const st = { t: 'p', x: +x.toFixed(2), y: +(h ? h.pos.y : P.pos.y).toFixed(2), z: +z.toFixed(2), yw: +(h ? P.yaw : (H.bodyYaw ?? P.yaw)).toFixed(3), m: h ? h.id : -1, hy: h ? +h.yaw.toFixed(3) : 0, sp: +(h ? H.speed : S.footSp).toFixed(2) };
       if (isHost()) st.id = 'P1'; net.send(st); }
     if (isHost() && net.open && S.herdT <= 0) { S.herdT = .25; net.send({ t: 'herd', h: horse.herd() }); }
     // a lone host merges into an older open Horse Rider lobby (two players hosted at the same moment)
