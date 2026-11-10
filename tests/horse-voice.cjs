@@ -96,6 +96,11 @@ async function page(br, mobile, errors, tag) {
     await h.evaluate(id => { const H = __horse, o = H.state.horses[id]; __P.pos.set(o.pos.x + 3.5, H.hAt(o.pos.x + 3.5, o.pos.z + 4.5), o.pos.z + 4.5); __P.yaw = Math.atan2(3.5, 4.5); __P.pitch = -.15; }, R.p2Horse);
     await sleep(1500); await h.screenshot({ path: 'shot-horserider-voice-remote-desktop.png' });
     R.hostAvatar = await h.evaluate(() => { const r = __hnet.state.remotes.get('P2'); return { sitterOnHorse: !!(r.av.sitter && r.av.sitter.parent), walkerHidden: !r.av.walker.visible }; });
+    // P2 draws the six-shooter in the saddle and fires: the host sees the gun in P2's hand and the shot (tracer / flash / smoke / sound)
+    await c.evaluate(() => { __horse.guns.draw('revolver'); __P.yaw = __horse.state.mounted.yaw; }); await until(c, () => { const g = __horse.guns; return g.state.weapon === 'revolver' && g.shoot(false); }, null, 30000);
+    await until(h, () => (__horse.guns.state.remoteShots || 0) >= 1, null, 20000); R.hostSeesShot = true;
+    await until(h, () => { const r = __hnet.state.remotes.get('P2'); return !!(r && r.av.guns && r.av.guns.revolver.group.visible); }, null, 20000); R.hostSeesGun = true;
+    await c.evaluate(() => __horse.guns.holster());
     assert.ok(R.hostAvatar.sitterOnHorse && R.hostAvatar.walkerHidden);
     step('dismount releases the horse for everyone');
     await c.bringToFront(); await c.tap('#tAct'); await until(c, () => !__horse.state.mounted, null, 5000);

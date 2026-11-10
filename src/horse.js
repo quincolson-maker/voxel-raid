@@ -11,6 +11,7 @@ import { mergeGeometries } from '../addons/utils/BufferGeometryUtils.js';
 import { clone as cloneSkinned } from '../addons/utils/SkeletonUtils.js';
 import { mulberry, conifer } from './models.js';
 import { ShaderPass } from '../addons/postprocessing/ShaderPass.js';
+import { createGuns } from './hrguns.js';
 import { makeRawH, trailSegments, segDist as segD, createSky, terrainMaterial as terrainMat2, loadTerrainTextures, buildTerrain, createGrass, loadRockModels } from './hrworld.js';
 const $ = id => document.getElementById(id);
 const S = 800, EDGE = 360;                // map size (m) and walkable half-extent
@@ -20,6 +21,7 @@ const clearing = (x, z, m = 0) => Math.abs(x - PEN.x) < 11 + m && z > PEN.z && z
 const MOUNT_R = 2.8, COOLDOWN = .45;
 const sstep = (a, b, t) => { t = Math.min(1, Math.max(0, (t - a) / (b - a))); return t * t * (3 - 2 * t); };
 const rawH = makeRawH(EDGE);
+const RANGE = { x: PEN.x - PEN.hw - 8, z: PEN.z + 1 }, inRange = (x, z, m = 0) => x < RANGE.x + 3 + m && x > RANGE.x - 66 - m && Math.abs(z - RANGE.z) < 9 + m; // shooting range west of the pen
 const SEG = trailSegments(PEN, SPAWN), trailDist = (x, z) => { let d = 1e9; for (const g of SEG) d = Math.min(d, segD(x, z, g)); return d; };
 const BASE = rawH(PEN.x, PEN.z);
 export function hAt(x, z) { const d = Math.hypot(x - PEN.x, z - PEN.z); return BASE + (rawH(x, z) - BASE) * sstep(24, 60, d); }
@@ -308,7 +310,7 @@ function loadAssets(hq) {
 }
 
 export function createHorseRider(ctx) {
-  const { scene, GX, P, keys, input, camera, sfx, msg, PBRS } = ctx;
+  const { scene, GX, P, keys, input, camera, sfx, msg, PBRS } = ctx; let guns = null;
   const H = { on: false, horses: [], mounted: null, cd: 0, prompt: '', obst: [], fence: [], speed: 0, t: 0, near: null, vy: 0, ground: true, riddenT: 0, mounts: 0, models: 'loading', trees: [], lodT: 0, ridden: new Map(), follow: false, online: '',
     stam: 100, winded: 0, cruise: 2, shiftT: 0, yawRate: 0, roll: 0, pitchK: 0, mountT: 0, dismT: 0, wantOff: false, side: 1, lookT: 9, recenter: false, shake: 0, fv: new THREE.Vector2(), bodyYaw: 0, fp: false, gait: 'Standing', zoom: 1 };
   const rnd = mulberry(42), Q = GX.Q, mobile = !!ctx.mobile;
@@ -326,9 +328,9 @@ export function createHorseRider(ctx) {
   function buildTrees() {
     const nT = Math.round(Q.trees * (mobile ? 2.2 : 3));
     for (let i = 0; i < nT * 8 && H.trees.length < nT; i++) { const x = (rnd() - .5) * 2 * (EDGE + 30), z = (rnd() - .5) * 2 * (EDGE + 30);
-      if (Math.hypot(x - PEN.x, z - PEN.z) < 36 || Math.hypot(x - SPAWN.x, z - SPAWN.z) < 12 || clearing(x, z, 4) || trailDist(x, z) < 3.5) continue; if (rnd() > .3 + .7 * (Math.sin(x * .02) * Math.cos(z * .025) * .5 + .5)) continue;
+      if (Math.hypot(x - PEN.x, z - PEN.z) < 36 || Math.hypot(x - SPAWN.x, z - SPAWN.z) < 12 || clearing(x, z, 4) || trailDist(x, z) < 3.5 || inRange(x, z, 4)) continue; if (rnd() > .3 + .7 * (Math.sin(x * .02) * Math.cos(z * .025) * .5 + .5)) continue;
       const y = hAt(x, z); if (y - BASE > 44) continue; const s = .75 + rnd() * .65, conif = rnd() < (y - BASE > 12 ? .85 : .55);
-      H.trees.push({ x, y: y - .15, z, s, r: rnd() * 6.28, conif, hue: rnd() }); H.obst.push([x, z, (conif ? .4 : .45) * s]); }
+      H.trees.push({ x, y: y - .15, z, s, r: rnd() * 6.28, conif, hue: rnd() }); H.obst.push([x, z, (conif ? .4 : .45) * s, 11 * s]); }
     const bark = pbr('bark', { color: 0x9a8a7a }); if (bark.map) { bark.map = bark.map.clone(); bark.map.repeat.set(1, 3); bark.normalMap = bark.normalMap.clone(); bark.normalMap.repeat.set(1, 3); }
     const leaf = foliage(new THREE.MeshStandardMaterial({ roughness: .92, vertexColors: true, color: 0x9aa07c }), 2.2), needle = foliage(new THREE.MeshStandardMaterial({ roughness: .95, vertexColors: true, color: 0x7f9478 }), 3.4);
     const nC = H.trees.filter(t => t.conif).length, nB = H.trees.length - nC;
@@ -350,8 +352,8 @@ export function createHorseRider(ctx) {
   // CC0 scanned boulders (Poly Haven), instanced in three shapes; icosahedron stand-ins if the models fail to load
   function buildRocks() {
     const nR = Math.round(Q.trees * (mobile || !HQ ? .35 : .7)), list = [];
-    for (let i = 0; i < nR * 4 && list.length < nR; i++) { const x = (rnd() - .5) * 2 * EDGE, z = (rnd() - .5) * 2 * EDGE; if (Math.hypot(x - PEN.x, z - PEN.z) < 30 || Math.hypot(x - SPAWN.x, z - SPAWN.z) < 8 || clearing(x, z, 3) || trailDist(x, z) < 3) continue;
-      const s = .45 + rnd() * rnd() * 3.2, k = rnd() < .45 ? 0 : rnd() < .5 ? 1 : 2; list.push({ x, z, s, k, ry: rnd() * 6.28, tilt: (rnd() - .5) * .25 }); if (s > .8) H.obst.push([x, z, s * .62]); }
+    for (let i = 0; i < nR * 4 && list.length < nR; i++) { const x = (rnd() - .5) * 2 * EDGE, z = (rnd() - .5) * 2 * EDGE; if (Math.hypot(x - PEN.x, z - PEN.z) < 30 || Math.hypot(x - SPAWN.x, z - SPAWN.z) < 8 || clearing(x, z, 3) || trailDist(x, z) < 3 || inRange(x, z, 2)) continue;
+      const s = .45 + rnd() * rnd() * 3.2, k = rnd() < .45 ? 0 : rnd() < .5 ? 1 : 2; list.push({ x, z, s, k, ry: rnd() * 6.28, tilt: (rnd() - .5) * .25 }); if (s > .8) H.obst.push([x, z, s * .62, s * 1.3]); }
     const place = shapes => { for (let k = 0; k < shapes.length; k++) { const L = list.filter(r => r.k % shapes.length === k), im = new THREE.InstancedMesh(shapes[k].geo, shapes[k].mat, Math.max(1, L.length));
       L.forEach((r, i) => { m4.compose(v3.set(r.x, hAt(r.x, r.z) - r.s * .12, r.z), qq.setFromEuler(new THREE.Euler(r.tilt, r.ry, r.tilt * .6)), sc3.set(r.s * 1.5, r.s * (shapes[k].h ? 1.5 : .7), r.s * 1.5)); im.setMatrixAt(i, m4); });
       im.count = L.length; im.castShadow = im.receiveShadow = true; im.computeBoundingSphere(); scene.add(im); (H.rockMeshes = H.rockMeshes || []).push(im); } };
@@ -530,6 +532,8 @@ export function createHorseRider(ctx) {
     H.on = true; P.spawn.set(SPAWN.x, hAt(SPAWN.x, SPAWN.z), SPAWN.z); P.pos.copy(P.spawn); buildWorld(); spawnHorses();
     P.yaw = Math.atan2(SPAWN.x - PEN.x, SPAWN.z - PEN.z); P.pitch = -.05; P.hp = 100;
     GX.setLighting('day', false); setupSky();
+    guns = H.guns = createGuns({ scene, camera, P, H, hAt, sfx, fx: ctx.fx, msg, mobile, input, keys, renderer: GX.renderer, rig: () => real() ? rider : null, aimBone, twistBone, RANGE, BASE, dev: new URLSearchParams(location.search).has('dev'), send: m => H.netShot && H.netShot(m) });
+    if (mobile) { const a = document.getElementById('tAds'); if (a) a.textContent = 'AIM'; }
     loadAssets(!mobile && Q.shadow > 0).then(dress).catch(e => { H.models = 'proc'; if (!/requested/.test(e && e.message)) console.warn('horse models failed, using procedural horses', e); });
     msg(mobile ? 'HORSE RIDER — walk to the pen, tap RIDE next to a horse' : 'HORSE RIDER — walk to the pen and press E next to a horse', 5);
   }
@@ -603,6 +607,7 @@ export function createHorseRider(ctx) {
     dustEmit(h, dt);
   }
   function walk(dt, fwdIn, sideIn, stick, run, jump) {
+    if ((H.aimK || 0) > .5) { run = false; stick = Math.min(stick, .45); } // aiming: walk, don't run
     const slow = !!keys.AltLeft, sp = stick > .05 ? (stick < .5 ? 1.8 * stick / .5 : run ? 7.2 : lerp(1.8, 4.6, Math.min(1, (stick - .5) / .4))) : run && fwdIn > 0 ? 7.2 : slow ? 1.8 : 4.6;
     const f = tmp.set(-Math.sin(P.yaw), 0, -Math.cos(P.yaw)), rx = -f.z, rz = f.x;
     let mx = f.x * fwdIn + rx * sideIn, mz = f.z * fwdIn + rz * sideIn; const l = Math.hypot(mx, mz); if (l > 0) { mx *= sp / l; mz *= sp / l; }
@@ -611,7 +616,7 @@ export function createHorseRider(ctx) {
     const g0 = hAt(P.pos.x, P.pos.z); if (jump && H.ground) { H.vy = 7; H.ground = false; }
     H.vy -= 22 * dt; P.pos.y += H.vy * dt; if (P.pos.y <= g0) { P.pos.y = g0; H.vy = 0; H.ground = true; }
     const ob = P.bob; P.bob += dt * v * 1.6; if (H.ground && v > .5 && Math.floor(ob / Math.PI) !== Math.floor(P.bob / Math.PI)) sfx.step && sfx.step(false);
-    if (v > .3) { const wy = Math.atan2(-H.fv.x, -H.fv.y); H.bodyYaw += wrapA(wy - H.bodyYaw) * Math.min(1, dt * 10); }
+    if (H.gunFace != null) H.bodyYaw += wrapA(H.gunFace - H.bodyYaw) * Math.min(1, dt * 14); else if (v > .3) { const wy = Math.atan2(-H.fv.x, -H.fv.y); H.bodyYaw += wrapA(wy - H.bodyYaw) * Math.min(1, dt * 10); }
     if (real()) { me.body.position.copy(P.pos); me.body.rotation.y = H.bodyYaw; me.body.visible = !H.fp; if (me.W) me.W.update(dt, H.ground ? v : Math.max(v, 1)); }
   }
   // discrete key presses (no auto-repeat): Shift = one gait up while riding, C = one gait down / on foot toggles first person
@@ -638,6 +643,7 @@ export function createHorseRider(ctx) {
     for (const o of H.horses) lod(o);
     dustTick(dt);
     updateTreeLOD(false);
+    if (guns) guns.update(dt);
     H.near = h ? null : nearestHorse(); H.gait = h ? gaitName(H.speed) : '';
     H.prompt = h ? (H.mountT > 0 ? 'Mounting…' : H.wantOff || H.dismT > 0 ? 'Getting off…' : mobile ? 'Tap GET OFF to dismount' : '[E] Get off the horse') : H.near ? (mobile ? 'Tap RIDE to mount' : '[E] Ride horse') : '';
   }
@@ -666,14 +672,15 @@ export function createHorseRider(ctx) {
     const h = H.mounted;
     if (!h && (H.fp || !real())) { if (camera.fov !== 75) { camera.fov = 75; camera.updateProjectionMatrix(); } camera.position.set(P.pos.x, P.pos.y + 1.62 + (H.ground ? Math.abs(Math.cos(P.bob)) * .04 : 0), P.pos.z); camera.rotation.set(P.pitch, P.yaw, 0, 'YXZ'); H.camInit = false; return; }
     let fov, k;
-    if (!h) { const pitch = Math.max(-.85, Math.min(.6, P.pitch)), dist = 2.75 * Math.min(1.3, H.zoom), rx = Math.cos(P.yaw), rz = -Math.sin(P.yaw), v = H.fv.length();
-      look.set(P.pos.x + rx * .5, P.pos.y + 1.58, P.pos.z + rz * .5);
+    const ak = H.aimK || 0;
+    if (!h) { const pitch = Math.max(-.85, Math.min(.6, P.pitch)), dist = 2.75 * Math.min(1.3, H.zoom) * (1 - .45 * ak), rx = Math.cos(P.yaw), rz = -Math.sin(P.yaw), v = H.fv.length();
+      look.set(P.pos.x + rx * (.5 + .1 * ak), P.pos.y + 1.58 + .04 * ak, P.pos.z + rz * (.5 + .1 * ak));
       want.set(look.x + Math.sin(P.yaw) * Math.cos(pitch) * dist, look.y - Math.sin(pitch) * dist + .12, look.z + Math.cos(P.yaw) * Math.cos(pitch) * dist);
-      fov = 68 + sstep(4.8, 7.2, v) * 5; k = 14; }
-    else { const sp = Math.abs(H.speed), pitch = Math.max(-.7, Math.min(.35, P.pitch)), dist = (4.2 + sstep(3, 18, sp) * .6) * H.zoom, ph = h.g.userData.phase || 0;
-      look.set(h.pos.x, h.pos.y + 2.05 + Math.sin(ph * TAU) * .03 * sstep(10, 16, sp), h.pos.z);
+      fov = 68 + sstep(4.8, 7.2, v) * 5 - 16 * ak; k = 14; }
+    else { const sp = Math.abs(H.speed), pitch = Math.max(-.7, Math.min(.35, P.pitch)), dist = (4.2 + sstep(3, 18, sp) * .6) * H.zoom * (1 - .4 * ak), ph = h.g.userData.phase || 0;
+      look.set(h.pos.x + Math.cos(P.yaw) * .6 * ak, h.pos.y + 2.05 + .25 * ak + Math.sin(ph * TAU) * .03 * sstep(10, 16, sp), h.pos.z - Math.sin(P.yaw) * .6 * ak);
       want.set(look.x + Math.sin(P.yaw) * Math.cos(pitch) * dist, look.y - Math.sin(pitch) * dist + .3, look.z + Math.cos(P.yaw) * Math.cos(pitch) * dist);
-      fov = 70 + sstep(8, 18, sp) * 5; k = 9; }
+      fov = 70 + sstep(8, 18, sp) * 5 - 14 * ak; k = 9; }
     const mode = h ? 'ride' : 'foot'; if (H.camInit && lastMode && mode !== lastMode) lookOff.add(lastLook).sub(look); lastMode = mode; lookOff.multiplyScalar(1 - Math.min(1, (dt || 1) * 3.5));
     look.add(lookOff); want.add(lookOff); lastLook.copy(look).sub(lookOff);
     camClear(look, want); want.y = Math.max(want.y, hAt(want.x, want.z) + .5);
@@ -685,6 +692,7 @@ export function createHorseRider(ctx) {
   }
   let stamEl = null;
   function hud() {
+    if (guns) guns.hud();
     const pr = $('hrPrompt'); if (pr) { pr.textContent = H.prompt; pr.hidden = !H.prompt; pr.classList.toggle('riding', !!H.mounted); }
     const d = Math.round(Math.hypot(P.pos.x - PEN.x, P.pos.z - PEN.z)), hz = H.mounted;
     $('mode').textContent = '🐎 HORSE RIDER'; $('timer').textContent = hz ? Math.round(Math.abs(H.speed) * 3.6) + ' km/h' : ''; $('stars').textContent = H.online || '';
@@ -728,10 +736,12 @@ export function createHorseRider(ctx) {
       let dy = s.yw - av.g.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); av.g.rotation.y += dy * k;
       av.v += ((s.sp || 0) - av.v) * Math.min(1, dt * 6); if (av.W) av.W.update(dt, av.v); };
     av.dispose = () => { if (av.horse) release(av.horse); if (av.sitter && av.sitter.parent) av.sitter.parent.remove(av.sitter); scene.remove(av.g); avatars.delete(av); };
+    const up0 = av.update, dp0 = av.dispose; av.update = (dt, s) => { up0(dt, s); if (guns) guns.poseRemote(av, s, av.horse ? av.sitter : av.walker, !!av.horse); }; av.dispose = () => { if (guns) guns.disposeRemote(av); dp0(); };
     av.rebuild(); avatars.add(av); return av;
   }
   const touchLabel = () => H.mounted ? 'GET OFF' : H.near ? 'RIDE' : '';
   const stats = () => { const i = GX.renderer.info; i.autoReset = false; i.reset(); GX.renderer.render(scene, camera); i.autoReset = true; return { calls: i.render.calls, triangles: i.render.triangles, geometries: i.memory.geometries, textures: i.memory.textures }; };
   const syncAll = dt => { syncCamera(dt); envTick(dt); };
-  return { state: H, init, tick, syncCamera: syncAll, hud, use, dismount, touchLabel, hAt, PEN, nearestHorse, stats, herd, applyHerd, avatar };
+  const gunNet = () => guns ? guns.netState() : { g: 0 }, remoteShot = (id, m) => guns && guns.remoteShot(id, m);
+  return { state: H, init, tick, syncCamera: syncAll, hud, gunNet, remoteShot, get guns() { return guns; }, use, dismount, touchLabel, hAt, PEN, nearestHorse, stats, herd, applyHerd, avatar };
 }

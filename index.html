@@ -141,6 +141,13 @@ select,input{border-radius:1px;background:#11161a;border:1px solid #fff2}
 #hrPrompt{position:absolute;left:50%;top:62%;transform:translateX(-50%);padding:.45em 1em;font-weight:700;letter-spacing:.08em;color:#ffe6b0;background:rgba(20,14,6,.6);border-left:3px solid #e0b060;text-shadow:0 2px 0 #000a}#hrPrompt[hidden]{display:none}#hrPrompt.riding{top:auto;bottom:9%;opacity:.8;font-size:.85em}.touch.horse-mode #hrPrompt.riding{display:none}
 .horse-mode #vitals,.horse-mode #hotbar,.horse-mode #right,.horse-mode #cross,.horse-mode #zHud,.horse-mode #feed,.horse-mode #scope,.horse-mode #dbar{display:none!important}.horse-mode .bar{display:none}
 .horse-mode #tFire,.horse-mode #tAds,.horse-mode #tReload,.horse-mode #tSwap{display:none!important}.touch.horse-mode #hrPrompt{top:auto;bottom:40%}
+#tGun{display:none!important}.horse-mode #tGun{display:flex!important}.horse-mode.hr-gun #tFire,.horse-mode.hr-gun #tAds{display:flex!important}
+#hrGun{position:fixed;right:22px;bottom:22px;z-index:20;pointer-events:none;font:600 12px/1.25 system-ui,sans-serif;color:#f3e6c8;text-shadow:0 1px 2px #000;display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+#hrGun .w{letter-spacing:.14em;font-size:11px;opacity:.85}#hrGun .pips{display:flex;gap:3px}#hrGun .pips b{width:9px;height:9px;border-radius:50%;border:1.5px solid #e9d39a;opacity:.55}#hrGun .pips b.f{background:#d9b25c;opacity:1}
+#hrGun .pips.rifle b{width:4px;height:14px;border-radius:2px}#hrGun .rl{color:#ffcf7a}#hrGun .sc{opacity:.8}#hrGun em{font-style:normal;font-size:15px;color:#fff3cf}
+body.touch #hrGun,.touch #hrGun{right:auto;left:50%;transform:translateX(-50%);bottom:58px;top:auto;align-items:center}
+#hrCross{position:fixed;left:50%;top:50%;z-index:19;pointer-events:none;transform:translate(-50%,-50%)}#hrCross i{display:block;width:10px;height:10px;border-radius:50%;border:1.5px solid rgba(255,245,220,.75);box-shadow:0 0 2px #000;transform:translate(-50%,-50%);position:absolute;transition:width .12s,height .12s}
+#hrCross::after{content:'';position:absolute;left:-1.5px;top:-1.5px;width:3px;height:3px;border-radius:50%;background:#fff;box-shadow:0 0 2px #000}#hrCross.aim i{border-color:#fff}#hrCross.no{opacity:.35}#hrCross.no i{border-color:#ff6a50}
 #hrStam{position:fixed;left:50%;bottom:15%;width:150px;height:6px;margin-left:-75px;border-radius:3px;background:rgba(10,8,4,.5);box-shadow:0 0 0 1px #0006;overflow:hidden;pointer-events:none;opacity:0;transition:opacity .5s;z-index:20}#hrStam i{display:block;height:100%;background:linear-gradient(90deg,#c98a2e,#f2dc9a);transition:width .2s}#hrStam.low i{background:linear-gradient(90deg,#a3301e,#e07a4a)}body:not(.horse-mode) #hrStam{display:none}.touch.horse-mode #hrStam{bottom:auto;top:24%}
 </style>
 </head><body>
@@ -157,6 +164,7 @@ select,input{border-radius:1px;background:#11161a;border:1px solid #fff2}
  <div class="tb" id="tAds" style="right:calc(5% + clamp(74px,18vmin,110px));bottom:12%">ADS</div>
  <div class="tb" id="tReload" style="right:calc(5% + clamp(70px,17vmin,104px));bottom:calc(22% + clamp(56px,13vmin,84px))">RELOAD</div>
  <div class="tb" id="tJump" style="right:2%;bottom:3%">JUMP</div>
+ <div class="tb act" id="tGun" style="right:2%;bottom:calc(22% + clamp(76px,18vmin,112px))">🔫<small>DRAW</small></div>
  <div class="tb" id="tSwap" style="right:4%;bottom:calc(22% + clamp(76px,18vmin,112px))">SWAP</div>
  <div class="tb act" id="tAct" style="right:calc(7% + clamp(130px,30vmin,190px));bottom:30%" hidden>USE</div>
  <div id="tBuildBar" hidden><div class="tb sm" id="tPiece">PIECE</div><div class="tb sm" id="tMat">MAT</div><div class="tb sm skip" id="tSkip">SKIP</div></div>
@@ -188,5 +196,5 @@ select,input{border-radius:1px;background:#11161a;border:1px solid #fff2}
 <div id="rot"><div class="ph"></div><p>Rotate your phone to landscape</p><button id="rotskip">Play anyway</button></div>
 <div id="ioshint" class="pill">For true fullscreen on iPhone: tap Share → <b>Add to Home Screen</b>, then launch Voxel Raid from your home screen. <button id="ioshintx" style="padding:.2em .6em">OK</button></div>
 <script src="./vendor/peerjs.min.js"></script>
-<script type="module" src="./game.min.js?v=22-skyterrain"></script>
+<script type="module" src="./game.min.js?v=23-guns"></script>
 </body></html>

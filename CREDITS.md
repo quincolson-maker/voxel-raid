@@ -64,3 +64,9 @@ Both Grab3D models are marked by their author as **AI-assisted** (base mesh/text
 Textures re-encoded to WebP at 1k (desktop medium+) and 512 px (phones / low). Boulders simplified to ~1.8k triangles with meshoptimizer, 512 px WebP maps, quantized (glTF-Transform).
 The existing CC0 `sparse_grass` and `dirt` sets (above) are reused for grass variation and the pen floor.
 Sky: original code (`src/hrworld.js`); the atmospheric scattering is the Preetham analytic daylight model as implemented in three.js `examples/jsm/objects/Sky.js` (MIT, three.js authors), extended with procedural clouds, Kasten–Young sun colour and PMREM sky lighting. Terrain heights, GPU grass, wildflowers, trails and the colour grade are original code.
+
+## Horse Rider cowboy guns (v23) — original, no downloaded assets
+- Single-action six-shooter and lever-action rifle (`src/hrguns.js`): original procedural three.js geometry (extruded frames, lathe-turned cylinder/barrels, fluted cylinder, octagon barrel, brass receiver, walnut stock) with procedurally generated canvas textures (walnut grain, case-hardened colour, blued steel) — no external files, nothing to license.
+- Shooting range targets (glass bottles, tin cans, painted bullseye boards, sign) and muzzle flash / bullet-hole textures: procedural, original.
+- Gun sounds: synthesized at runtime with WebAudio (existing `SFX` in `src/fx.js`), no samples.
+- Gameplay tuning (round counts, fire/lever/reload timings, spread model, aim-assist cone, horseback yaw limit) adapted from a draft module Quin Colson had ChatGPT write (`cowboy-guns.mjs`); code reviewed and mostly rewritten.
