@@ -49,3 +49,18 @@ All from **Quaternius — "Ultimate Guns Pack"** (https://quaternius.itch.io/50-
 | "Farmer" (rigged version, full-resolution 250k-tri rig + 2K maps) | `assets/horses/rider_hq.glb` (desktop medium+, ~50k tris, 2K WebP base/normal/roughness) and `assets/horses/rider.glb` (phones / low, ~27k tris, 1K WebP). Used as the player on foot (its walk / run clips blended with an idle built at runtime) and as the rider (procedural seated, mounting and riding pose) | https://grab3d.com/models/characters/farmer/ | CC0 (see `assets/horses/LICENSE-rider.txt`) |
 
 Both Grab3D models are marked by their author as **AI-assisted** (base mesh/textures generated with Meshy image-to-3D, then cleaned up in Blender). They were simplified (meshoptimizer), resized (horse 2K/1K, rider 1K), converted to WebP and quantized with glTF-Transform for this project. Saddle, reins, fence, shed, trough, hay bales, trees and grass in Horse Rider are procedural/original.
+
+## Horse Rider sky + terrain pass (v22) — all CC0 1.0 (public domain) from Poly Haven
+| Asset | Author(s) | Used for | Source | License |
+|---|---|---|---|---|
+| leafy_grass (diff / nor / arm) | Charlotte Baglioni | Meadow grass layer (two scales) + AO / roughness | https://polyhaven.com/a/leafy_grass | CC0 |
+| rocky_trail (diff) | Amal Kumar | Dirt trails around the pen and south into the valley | https://polyhaven.com/a/rocky_trail | CC0 |
+| rock_face (diff / nor) | Greg Zaal, Dario Barresi | Triplanar rock on steep slopes and the mountains | https://polyhaven.com/a/rock_face | CC0 |
+| snow_02 (diff / nor) | Rob Tuytel | Snow caps on the high peaks | https://polyhaven.com/a/snow_02 | CC0 |
+| namaqualand_boulder_02 (glTF) | Greg Zaal, Rico Cilliers | Scanned boulders (`assets/models/rock_namaqualand_boulder_02.glb`) | https://polyhaven.com/a/namaqualand_boulder_02 | CC0 |
+| namaqualand_boulder_04 (glTF) | Jenelle van Heerden | Scanned boulders with lichen (`…_04.glb`) | https://polyhaven.com/a/namaqualand_boulder_04 | CC0 |
+| namaqualand_boulder_05 (glTF) | Jenelle van Heerden, Dario Barresi | Scanned boulders (`…_05.glb`) | https://polyhaven.com/a/namaqualand_boulder_05 | CC0 |
+
+Textures re-encoded to WebP at 1k (desktop medium+) and 512 px (phones / low). Boulders simplified to ~1.8k triangles with meshoptimizer, 512 px WebP maps, quantized (glTF-Transform).
+The existing CC0 `sparse_grass` and `dirt` sets (above) are reused for grass variation and the pen floor.
+Sky: original code (`src/hrworld.js`); the atmospheric scattering is the Preetham analytic daylight model as implemented in three.js `examples/jsm/objects/Sky.js` (MIT, three.js authors), extended with procedural clouds, Kasten–Young sun colour and PMREM sky lighting. Terrain heights, GPU grass, wildflowers, trails and the colour grade are original code.

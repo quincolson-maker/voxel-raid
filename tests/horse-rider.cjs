@@ -84,7 +84,7 @@ const ignorable = t => /pointer ?lock|requestPointerLock|fullscreen|favicon|WebG
     assert.ok(R.camThirdPerson > 3, 'chase camera is behind the horse');
     R.hud = await p.$eval('#sub', e => e.textContent);
     // dismount
-    await p.waitForFunction(() => Math.abs(__horse.state.speed) < 3, { timeout: 30000 }); await p.evaluate(() => { __horse.state.zoom = .5; __P.yaw = __horse.state.mounted.yaw + 1.1; __P.pitch = -.12; __P.swX = (__P.swX || 0) + 1; }); await sleep(900); await p.screenshot({ path: `shot-horserider-rdr-rider-closeup-${tag}.png` }); await p.evaluate(() => { __horse.state.zoom = 1; });
+    await p.waitForFunction(() => Math.abs(__horse.state.speed) < 3, { timeout: 60000 }); await p.evaluate(() => { __horse.state.zoom = .5; __P.yaw = __horse.state.mounted.yaw + 1.1; __P.pitch = -.12; __P.swX = (__P.swX || 0) + 1; }); await sleep(900); await p.screenshot({ path: `shot-horserider-rdr-rider-closeup-${tag}.png` }); await p.evaluate(() => { __horse.state.zoom = 1; });
     if (mobile) { await p.waitForFunction(() => !document.getElementById('tAct').hidden && document.getElementById('tAct').textContent === 'GET OFF'); await p.tap('#tAct'); } else await p.keyboard.press('KeyE');
     R.dismountAnim = await p.evaluate(() => !!(__horse.state.wantOff || __horse.state.dismT > 0)); await p.waitForFunction(() => !__horse.state.mounted, { timeout: 30000 });
     R.dismount = await p.evaluate(() => { const h = __horse.state.horses[2]; return { gap: +Math.hypot(h.pos.x - __P.pos.x, h.pos.z - __P.pos.z).toFixed(2), onGround: Math.abs(__P.pos.y - __horse.hAt(__P.pos.x, __P.pos.z)) < .05 }; });

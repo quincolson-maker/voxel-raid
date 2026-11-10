@@ -10,19 +10,17 @@ import { GLTFLoader } from '../addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from '../addons/utils/BufferGeometryUtils.js';
 import { clone as cloneSkinned } from '../addons/utils/SkeletonUtils.js';
 import { mulberry, conifer } from './models.js';
+import { ShaderPass } from '../addons/postprocessing/ShaderPass.js';
+import { makeRawH, trailSegments, segDist as segD, createSky, terrainMaterial as terrainMat2, loadTerrainTextures, buildTerrain, createGrass, loadRockModels } from './hrworld.js';
 const $ = id => document.getElementById(id);
 const S = 800, EDGE = 360;                // map size (m) and walkable half-extent
 const PEN = { x: 0, z: 0, hw: 13, hd: 9, gate: 2.6 }; // pen centre, half sizes, gate half-width (south side, +z)
 const SPAWN = { x: 4, z: 34 };
 const clearing = (x, z, m = 0) => Math.abs(x - PEN.x) < 11 + m && z > PEN.z && z < PEN.z + 150; // open riding meadow south of the gate
-const PATH = [SPAWN.x + 2, SPAWN.z + 30, PEN.x, PEN.z + PEN.hd]; // dirt track from the meadow to the pen gate
 const MOUNT_R = 2.8, COOLDOWN = .45;
 const sstep = (a, b, t) => { t = Math.min(1, Math.max(0, (t - a) / (b - a))); return t * t * (3 - 2 * t); };
-function rawH(x, z) {
-  const hills = Math.sin(x * .011 + 1.3) * Math.cos(z * .009 - .4) * 9 + Math.sin(x * .023 + z * .017) * 4.5 + Math.sin(z * .041 - x * .013) * 1.8 + Math.sin(x * .09 + z * .07) * .35;
-  const e = Math.max(Math.abs(x), Math.abs(z)); const mount = sstep(EDGE - 70, S / 2, e) * (38 + Math.sin(x * .05) * 8 + Math.cos(z * .045) * 8);
-  return hills + mount;
-}
+const rawH = makeRawH(EDGE);
+const SEG = trailSegments(PEN, SPAWN), trailDist = (x, z) => { let d = 1e9; for (const g of SEG) d = Math.min(d, segD(x, z, g)); return d; };
 const BASE = rawH(PEN.x, PEN.z);
 export function hAt(x, z) { const d = Math.hypot(x - PEN.x, z - PEN.z); return BASE + (rawH(x, z) - BASE) * sstep(24, 60, d); }
 
@@ -267,13 +265,12 @@ function broadleafGeo(detail, seed) { const r = mulberry(seed), parts = [], col 
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.computeVertexNormals(); return g; }
 function mergeG(gs) { const pos = []; for (const g of gs) { const q = g.index ? g.toNonIndexed() : g; pos.push(...q.attributes.position.array); } const r = new THREE.BufferGeometry(); r.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); return r; }
 function farConifer() { const a = new THREE.ConeGeometry(2.6, 7, 8, 1).translate(0, 6.2, 0), b = new THREE.ConeGeometry(1.7, 5, 8, 1).translate(0, 10, 0); const g = mergeG([a, b]); const col = []; for (let i = 0; i < g.attributes.position.count; i++) col.push(.8, .8, .8); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.computeVertexNormals(); return g; }
-function grassClump() { const r = mulberry(77), pos = [], col = [], nor = [];
-  for (let i = 0; i < 18; i++) { const a = r() * 6.28, d = Math.sqrt(r()) * .2, x = Math.cos(a) * d, z = Math.sin(a) * d, h = .2 + r() * .34, w = .014 + r() * .012, la = r() * 6.28, lean = .05 + r() * .14;
-    const px = Math.cos(la + 1.57) * w, pz = Math.sin(la + 1.57) * w, lx = Math.cos(la) * lean, lz = Math.sin(la) * lean, dry = r() < .18 ? 1 : 0, v = .85 + r() * .3;
-    const P0 = [x - px, 0, z - pz], P1 = [x + px, 0, z + pz], M0 = [x - px * .7 + lx * .35, h * .55, z - pz * .7 + lz * .35], M1 = [x + px * .7 + lx * .35, h * .55, z + pz * .7 + lz * .35], T = [x + lx, h, z + lz];
-    const cb = [.13 * v, .19 * v, .06 * v], cm = dry ? [.42 * v, .4 * v, .2 * v] : [.28 * v, .42 * v, .14 * v], ct = dry ? [.66 * v, .6 * v, .36 * v] : [.5 * v, .64 * v, .3 * v];
-    for (const [a1, b1, c1, ca, cb2, cc] of [[P0, P1, M0, cb, cb, cm], [P1, M1, M0, cb, cm, cm], [M0, M1, T, cm, cm, ct]]) { pos.push(...a1, ...b1, ...c1); col.push(...ca, ...cb2, ...cc); for (let k = 0; k < 3; k++) nor.push(lx * 2, 1, lz * 2); } }
-  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.normalizeNormals(); return g; }
+// leaf clumps: world-space noise breaks up the flat crowns, darker deep inside, a little sun shining through the edges
+function foliage(m, f) { m.onBeforeCompile = sh => {
+  sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vFW;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvFW = (modelMatrix * vec4(transformed, 1.)).xyz;\n#ifdef USE_INSTANCING\nvFW = (modelMatrix * instanceMatrix * vec4(transformed, 1.)).xyz;\n#endif');
+  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vFW; float fh(vec3 p){ return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); } float fn(vec3 p){ vec3 i = floor(p), q = fract(p); q = q * q * (3. - 2. * q); return mix(mix(mix(fh(i), fh(i + vec3(1,0,0)), q.x), mix(fh(i + vec3(0,1,0)), fh(i + vec3(1,1,0)), q.x), q.y), mix(mix(fh(i + vec3(0,0,1)), fh(i + vec3(1,0,1)), q.x), mix(fh(i + vec3(0,1,1)), fh(i + 1.), q.x), q.y), q.z); }')
+    .replace('#include <color_fragment>', `#include <color_fragment>\n float lc = fn(vFW * ${f.toFixed(1)}) * .65 + fn(vFW * ${(f * 3.1).toFixed(1)}) * .35; diffuseColor.rgb *= mix(.55, 1.12, lc) * mix(vec3(1.), vec3(.86, 1.02, .8), fn(vFW * .21));`); };
+  return m; }
 function softFoliage(g, cy, k = .75) { // blend flat face normals with normals radiating from the crown axis -> soft, leafy shading
   const p = g.attributes.position, n = g.attributes.normal; for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i) - cy(p.getY(i)), z = p.getZ(i), l = Math.hypot(x, y, z) || 1;
     const nx = n.getX(i) * (1 - k) + x / l * k, ny = n.getY(i) * (1 - k) + y / l * k + .15, nz = n.getZ(i) * (1 - k) + z / l * k, m = Math.hypot(nx, ny, nz) || 1; n.setXYZ(i, nx / m, ny / m, nz / m); } return g; }
@@ -281,25 +278,12 @@ function strawTex(spiral) { const c = document.createElement('canvas'); c.width 
   for (let i = 0; i < 1800; i++) { const l = 60 + r() * 120, h = 30 + r() * 25; x.strokeStyle = `hsla(${h},${45 + r() * 25}%,${38 + r() * 35}%,.55)`; x.lineWidth = .6 + r() * 1.4; x.beginPath();
     if (spiral) { const rad = r() * 125, a = r() * 6.28; x.arc(128, 128, rad, a, a + .3 + r() * .6); } else { const px = r() * 256, py = r() * 256; x.moveTo(px, py); x.lineTo(px + l * .97, py + (r() - .5) * 14); } x.stroke(); }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; return t; }
-function terrainMaterial(PB) {
-  const m = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 }); if (!PB || !PB.grass) { m.color.set(0x6b8a3a); return m; }
-  const cl = t => { const c = t.clone(); c.wrapS = c.wrapT = THREE.RepeatWrapping; return c; };
-  m.map = cl(PB.grass.map); m.normalMap = cl(PB.grass.normalMap); m.normalScale.set(.8, .8);
-  m.onBeforeCompile = sh => { Object.assign(sh.uniforms, { tDirt: { value: PB.dirt.map }, tRock: { value: PB.rock.map }, uPen: { value: new THREE.Vector4(PEN.x, PEN.z, PEN.hw, PEN.hd) }, uPath: { value: new THREE.Vector4(...PATH) }, uBase: { value: BASE } });
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWP; varying vec3 vWN;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP=(modelMatrix*vec4(position,1.)).xyz; vWN=normalize(mat3(modelMatrix)*normal);');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
-varying vec3 vWP; varying vec3 vWN; uniform sampler2D tDirt, tRock; uniform vec4 uPen, uPath; uniform float uBase;
-float hs(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);} float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hs(i),hs(i+vec2(1,0)),f.x),mix(hs(i+vec2(0,1)),hs(i+1.),f.x),f.y);}`)
-      .replace('#include <map_fragment>', `vec2 wuv=vWP.xz/2.5; vec3 g1=texture2D(map,wuv).rgb, g2=texture2D(map,wuv*.21+.37).rgb; float mv=vn(vWP.xz*.04)*.6+vn(vWP.xz*.19)*.4;
-vec3 grass=mix(g1,g2,.4)*mix(.78,1.15,mv)*vec3(.82,1.22,.6); grass=mix(grass,grass*vec3(1.3,1.12,.72),smoothstep(.55,.82,vn(vWP.xz*.013))*.8);
-vec3 dirt=texture2D(tDirt,vWP.xz/3.).rgb*vec3(.95,.9,.84); vec3 rock=texture2D(tRock,vWP.xz/6.).rgb; float slope=1.-vWN.y;
-float pen=1.-smoothstep(-1.,1.3,max(abs(vWP.x-uPen.x)-uPen.z,abs(vWP.z-uPen.y)-uPen.w)+(vn(vWP.xz*.6)-.5)*1.6);
-vec2 pd=vWP.xz-uPath.xy, ab=uPath.zw-uPath.xy; float hh=clamp(dot(pd,ab)/dot(ab,ab),0.,1.); float path=1.-smoothstep(.6,1.9,length(pd-ab*hh)+(vn(vWP.xz*.5)-.5)*1.3);
-float worn=smoothstep(.68,.9,vn(vWP.xz*.08)*.7+vn(vWP.xz*.35)*.3); float dm=max(max(pen*.95,path*.85),worn*.65);
-vec3 col=mix(grass,dirt,dm); col=mix(col,rock,smoothstep(.2,.38,slope)); col=mix(col,rock*1.05,smoothstep(uBase+26.,uBase+42.,vWP.y)*.75);
-diffuseColor.rgb*=col;`); };
-  return m;
-}
+// colour grade (after tone mapping): warm highlights / cool shadows, a touch of contrast and saturation, soft vignette
+const GRADE = { uniforms: { tDiffuse: { value: null }, uAmt: { value: 1 } }, vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uAmt; varying vec2 vUv;
+void main(){ vec4 c=texture2D(tDiffuse,vUv); vec3 x=c.rgb; float l=dot(x,vec3(.2126,.7152,.0722));
+ x=mix(vec3(l),x,1.+.1*uAmt); x+=mix(vec3(-.014,.0,.018),vec3(.03,.01,-.025),smoothstep(.1,.8,l))*uAmt;
+ x=mix(x,x*x*(3.-2.*x),.18*uAmt); vec2 d=vUv-.5; x*=1.-dot(d,d)*.28*uAmt; gl_FragColor=vec4(clamp(x,0.,1.),c.a); }` };
 const COATS = [{ n: 'Bay' }, { n: 'Chestnut', c: 0xa04a1c, m: 0x6a2c10 }, { n: 'Grey', c: 0xd8d2c8, m: 0x8e8882 }, { n: 'Black', c: 0x2e2826, m: 0x161312 }, { n: 'Palomino', c: 0xd9a656, m: 0xf1e3c2 }];
 const PROC_COATS = [[0x6b4226, 0x241812, 0x4a2c18], [0xa04a1c, 0x6a2c10, 0x3a2a1c], [0xd8d2c8, 0x8e8882, 0x7a4a24], [0x2a2220, 0x111111, 0x7a4a24], [0xd9a656, 0xf0e2c0, 0x4a2c18]];
 const MODEL_URL = { horse: 'assets/horses/horse.glb', mid: 'assets/horses/horse_mid.glb', far: 'assets/horses/horse_far.glb', rider: 'assets/horses/rider.glb', riderHQ: 'assets/horses/rider_hq.glb' };
@@ -331,24 +315,22 @@ export function createHorseRider(ctx) {
   const LOD_HORSE = mobile ? 9 : 14, LOD_TREE = mobile ? 55 : 85;
   const up = new THREE.Vector3(0, 1, 0), m4 = new THREE.Matrix4(), qq = new THREE.Quaternion(), v3 = new THREE.Vector3(), sc3 = new THREE.Vector3(), col = new THREE.Color();
   const pbr = (k, o = {}) => PBRS && PBRS[k] ? new THREE.MeshStandardMaterial({ map: PBRS[k].map, normalMap: PBRS[k].normalMap, roughness: 1, metalness: 0, ...o }) : std(o.color ?? 0x7a5634);
+  const HQ = !mobile && Q.shadow > 0; // desktop medium / high / ultra: full sky + terrain detail
   function buildWorld() {
-    const seg = mobile || Q.trees < 100 ? 160 : 240;
-    const geo = new THREE.PlaneGeometry(S, S, seg, seg); geo.rotateX(-Math.PI / 2);
-    const p = geo.attributes.position, uv = geo.attributes.uv;
-    for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i); p.setY(i, hAt(x, z)); uv.setXY(i, x / 2.5, z / 2.5); }
-    geo.computeVertexNormals();
-    const ground = new THREE.Mesh(geo, terrainMaterial(PBRS)); ground.receiveShadow = true; scene.add(ground); H.ground3d = ground;
+    const T = loadTerrainTextures(GX.renderer, HQ), mat = terrainMat2(T, PEN, SEG, BASE, HQ);
+    const seg = Q.shadow >= 2048 && !mobile ? 400 : HQ ? 320 : mobile ? 160 : 240;
+    H.terrain = buildTerrain(scene, mat, hAt, 500, seg, HQ ? 110 : 48, HQ ? 448 : 160); H.ground3d = H.terrain.inner;
     buildTrees(); buildRocks(); buildGrass(); buildPen();
   }
   // woods: conifers + broadleaf trees, instanced, with a near (detailed) / far (low-poly) LOD swapped around the player
   function buildTrees() {
     const nT = Math.round(Q.trees * (mobile ? 2.2 : 3));
     for (let i = 0; i < nT * 8 && H.trees.length < nT; i++) { const x = (rnd() - .5) * 2 * (EDGE + 30), z = (rnd() - .5) * 2 * (EDGE + 30);
-      if (Math.hypot(x - PEN.x, z - PEN.z) < 36 || Math.hypot(x - SPAWN.x, z - SPAWN.z) < 12 || clearing(x, z, 4)) continue; if (rnd() > .3 + .7 * (Math.sin(x * .02) * Math.cos(z * .025) * .5 + .5)) continue;
+      if (Math.hypot(x - PEN.x, z - PEN.z) < 36 || Math.hypot(x - SPAWN.x, z - SPAWN.z) < 12 || clearing(x, z, 4) || trailDist(x, z) < 3.5) continue; if (rnd() > .3 + .7 * (Math.sin(x * .02) * Math.cos(z * .025) * .5 + .5)) continue;
       const y = hAt(x, z); if (y - BASE > 44) continue; const s = .75 + rnd() * .65, conif = rnd() < (y - BASE > 12 ? .85 : .55);
       H.trees.push({ x, y: y - .15, z, s, r: rnd() * 6.28, conif, hue: rnd() }); H.obst.push([x, z, (conif ? .4 : .45) * s]); }
     const bark = pbr('bark', { color: 0x9a8a7a }); if (bark.map) { bark.map = bark.map.clone(); bark.map.repeat.set(1, 3); bark.normalMap = bark.normalMap.clone(); bark.normalMap.repeat.set(1, 3); }
-    const leaf = new THREE.MeshStandardMaterial({ roughness: .92, vertexColors: true }), needle = new THREE.MeshStandardMaterial({ roughness: .95, vertexColors: true });
+    const leaf = foliage(new THREE.MeshStandardMaterial({ roughness: .92, vertexColors: true, color: 0x9aa07c }), 2.2), needle = foliage(new THREE.MeshStandardMaterial({ roughness: .95, vertexColors: true, color: 0x7f9478 }), 3.4);
     const nC = H.trees.filter(t => t.conif).length, nB = H.trees.length - nC;
     const mk = (g, m, n, shadow = true) => { const im = new THREE.InstancedMesh(g, m, Math.max(1, n)); im.count = 0; im.castShadow = shadow; im.receiveShadow = true; im.frustumCulled = false; scene.add(im); return im; };
     H.tm = { cTrunk: mk(new THREE.CylinderGeometry(.16, .36, 12, 7).translate(0, 6, 0), bark, nC), bTrunk: mk(new THREE.CylinderGeometry(.18, .34, 5.2, 7).translate(0, 2.6, 0), bark, nB),
@@ -365,28 +347,21 @@ export function createHorseRider(ctx) {
       im.setColorAt(n[key]++, t.conif ? col.setHSL(.27 + t.hue * .06, .34 + t.hue * .1, .2 + t.hue * .06) : col.setHSL(.2 + t.hue * .09, .42 + t.hue * .15, .24 + t.hue * .08)); }
     for (const k in n) { const im = T[k]; im.count = n[k]; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; }
   }
+  // CC0 scanned boulders (Poly Haven), instanced in three shapes; icosahedron stand-ins if the models fail to load
   function buildRocks() {
-    const rg = new THREE.IcosahedronGeometry(1, 2); { const rp = rg.attributes.position; for (let i = 0; i < rp.count; i++) { v3.fromBufferAttribute(rp, i); const j = 1 + Math.sin(v3.x * 4.1 + v3.y * 2.3) * .12 + Math.sin(v3.z * 5.3 - v3.x * 1.7) * .08 + Math.sin(v3.y * 9 + v3.z * 7) * .03; rp.setXYZ(i, v3.x * j, v3.y * j * .62, v3.z * j); } rg.computeVertexNormals(); }
-    const nR = Math.round(Q.trees * 1.1), rock = new THREE.InstancedMesh(rg, pbr('rock', { color: 0xb0aca4 }), nR); let r = 0;
-    for (let i = 0; i < nR * 4 && r < nR; i++) { const x = (rnd() - .5) * 2 * EDGE, z = (rnd() - .5) * 2 * EDGE; if (Math.hypot(x - PEN.x, z - PEN.z) < 30 || Math.hypot(x - SPAWN.x, z - SPAWN.z) < 8 || clearing(x, z, 3)) continue;
-      const s = .35 + rnd() * rnd() * 2.6; m4.compose(v3.set(x, hAt(x, z) - s * .22, z), qq.setFromEuler(new THREE.Euler(rnd() * .3, rnd() * 6, rnd() * .2)), sc3.set(s * 1.3, s, s * (.8 + rnd() * .5))); rock.setMatrixAt(r++, m4); if (s > .7) H.obst.push([x, z, s * 1.1]); }
-    rock.count = r; rock.castShadow = rock.receiveShadow = true; rock.computeBoundingSphere(); scene.add(rock);
+    const nR = Math.round(Q.trees * (mobile || !HQ ? .35 : .7)), list = [];
+    for (let i = 0; i < nR * 4 && list.length < nR; i++) { const x = (rnd() - .5) * 2 * EDGE, z = (rnd() - .5) * 2 * EDGE; if (Math.hypot(x - PEN.x, z - PEN.z) < 30 || Math.hypot(x - SPAWN.x, z - SPAWN.z) < 8 || clearing(x, z, 3) || trailDist(x, z) < 3) continue;
+      const s = .45 + rnd() * rnd() * 3.2, k = rnd() < .45 ? 0 : rnd() < .5 ? 1 : 2; list.push({ x, z, s, k, ry: rnd() * 6.28, tilt: (rnd() - .5) * .25 }); if (s > .8) H.obst.push([x, z, s * .62]); }
+    const place = shapes => { for (let k = 0; k < shapes.length; k++) { const L = list.filter(r => r.k % shapes.length === k), im = new THREE.InstancedMesh(shapes[k].geo, shapes[k].mat, Math.max(1, L.length));
+      L.forEach((r, i) => { m4.compose(v3.set(r.x, hAt(r.x, r.z) - r.s * .12, r.z), qq.setFromEuler(new THREE.Euler(r.tilt, r.ry, r.tilt * .6)), sc3.set(r.s * 1.5, r.s * (shapes[k].h ? 1.5 : .7), r.s * 1.5)); im.setMatrixAt(i, m4); });
+      im.count = L.length; im.castShadow = im.receiveShadow = true; im.computeBoundingSphere(); scene.add(im); (H.rockMeshes = H.rockMeshes || []).push(im); } };
+    loadRockModels().then(place).catch(e => { console.warn('rock models failed', e); const rg = new THREE.IcosahedronGeometry(.5, 2); rg.translate(0, .3, 0); place([{ geo: rg, mat: pbr('rock', { color: 0xb0aca4 }), h: 0 }]); });
   }
-  // wind-blown grass clumps in a patch that follows the player (re-scattered when they move away)
+  // GPU grass: tufts on a camera-following grid (count / radius from the quality tier), sways in the wind, wildflowers, fades out by distance
   function buildGrass() {
-    const n = Math.round((Q.grass || 600) * (mobile ? .7 : 1)); H.grassR = Math.max(16, Math.min(40, Math.sqrt(n / 2.2 / Math.PI)));
-    const gm = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: .9 });
-    gm.onBeforeCompile = sh => { sh.uniforms.uT = { value: 0 }; gm.userData.sh = sh; sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uT;').replace('#include <begin_vertex>', `#include <begin_vertex>
-      vec4 ip=instanceMatrix*vec4(0.,0.,0.,1.); float w=sin(uT*1.7+ip.x*.35+ip.z*.27)*.5+sin(uT*3.1+ip.x*.9)*.2; transformed.x+=w*position.y*.22; transformed.z+=w*position.y*.1;`); };
-    H.grass = new THREE.InstancedMesh(grassClump(), gm, n); H.grass.receiveShadow = true; H.grass.frustumCulled = false; scene.add(H.grass); scene.userData.grassMat = gm; scatterGrass();
-  }
-  function scatterGrass() {
-    const G = H.grass; if (!G) return; const R = H.grassR, cx = P.pos.x, cz = P.pos.z, r = mulberry(((cx / 9) | 0) * 7919 + ((cz / 9) | 0)); let k = 0; H.grassAt = [cx, cz];
-    for (let i = 0; i < G.instanceMatrix.count * 2 && k < G.instanceMatrix.count; i++) { const a = r() * 6.28, d = Math.sqrt(r()) * R, x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
-      if (Math.abs(x - PEN.x) < PEN.hw - .6 && Math.abs(z - PEN.z) < PEN.hd - .6 && r() < .97) continue; // the pen floor is trodden dirt
-      if (segDist(x, z, PATH) < 1.3 && r() < .9) continue; // trodden track to the gate
-      const s = .6 + r() * .6; m4.compose(v3.set(x, hAt(x, z) - .02, z), qq.setFromAxisAngle(up, r() * 6.28), sc3.set(s, s * (.6 + r() * .9), s)); G.setMatrixAt(k, m4); G.setColorAt(k++, col.setHSL(.22 + r() * .05, .3 + r() * .2, .62 + r() * .14)); }
-    G.count = k; G.instanceMatrix.needsUpdate = true; if (G.instanceColor) G.instanceColor.needsUpdate = true;
+    const tufts = Math.round(Math.min(60000, Math.max(3000, (Q.grass || 600) * 4.5)) * (mobile ? .5 : 1)), N = Math.round(Math.sqrt(tufts));
+    const R = Math.min(52, Math.max(18, 9 + Math.sqrt(N * N) * .19));
+    H.grassG = createGrass(scene, H.terrain, PEN, SEG, { N, R, blades: mobile ? 4 : HQ ? 7 : 5 }); H.grassInfo = { tufts: N * N, radius: +R.toFixed(1), tris: H.grassG.tris };
   }
   function buildPen() {
     const y0 = BASE, { x: cx, z: cz, hw, hd, gate } = PEN, g = new THREE.Group(); scene.add(g);
@@ -518,10 +493,43 @@ export function createHorseRider(ctx) {
     if (H.follow) h.net = { x: h.pos.x, z: h.pos.z, yaw: h.yaw, sp: 0, gr: 1 };
     detachRider(h); H.bodyYaw = Math.atan2(h.pos.x - P.pos.x, h.pos.z - P.pos.z) + Math.PI; H.fv.set(0, 0); P.yaw = h.yaw; P.pitch = -.1; sfx.ui && sfx.ui(); msg('Dismounted', 1.2); return true;
   }
+
+  // ---------------- sky, sun, aerial haze, shadows, grade (Horse Rider only; leaving the mode reloads the page) ----------------
+  const QS = new URLSearchParams(location.search), SUN_FIX = QS.has('sun'), SUN0 = SUN_FIX ? +QS.get('sun') : 11, SUN_AZ = -.75;
+  let sky = null, fog = null; const sunTmp = new THREE.Vector3(), lm = new THREE.Matrix4(), lmi = new THREE.Matrix4(), O3 = new THREE.Vector3(), fwd3 = new THREE.Vector3(), fogTmp = new THREE.Color();
+  const sunEl = () => SUN_FIX ? SUN0 : SUN0 + 4.5 * Math.sin(H.t / 190); // golden hour, the sun drifts slowly (~20 min cycle)
+  const aces = x => { x *= GX.renderer.toneMappingExposure / .6; return Math.min(1, Math.max(0, x * (2.51 * x + .03) / (x * (2.43 * x + .59) + .14))); };
+  function setupSky() {
+    scene.userData.ownSky = true; scene.background = null; camera.near = .12; camera.far = 6000; camera.updateProjectionMatrix();
+    sky = H.sky = createSky(GX.renderer, scene, { hq: HQ, mobile });
+    fog = scene.fog = new THREE.Fog(0xc8c0b0, mobile ? .00052 : .00042, 0); // near = haze density, far = packed sun direction (see gfx.js fog chunk)
+    GX.renderer.toneMappingExposure = .82; GX.hemi.groundColor.set(0x3e3a2c);
+    const sn = GX.sun, sc = sn.shadow.camera, SR = Q.shadow >= 2048 && !mobile ? 46 : mobile ? 22 : 32;
+    if (sn.castShadow) { sc.left = sc.bottom = -SR; sc.right = sc.top = SR; sc.near = 1; sc.far = 420; sc.updateProjectionMatrix(); sn.shadow.bias = -.0005; sn.shadow.normalBias = .05; sn.shadow.radius = 2; }
+    // shadow box follows what the camera sees (shifted forward) and snaps to whole shadow texels -> no shimmer while riding
+    const tx = 2 * SR / Math.max(1, Q.shadow || 1024);
+    GX.followSun = () => { camera.getWorldDirection(fwd3); fwd3.y = 0; fwd3.normalize(); sunTmp.copy(camera.position).addScaledVector(fwd3, SR * .45); sunTmp.y = hAt(sunTmp.x, sunTmp.z);
+      lm.lookAt(sky.sunDir, O3, up); lmi.copy(lm).transpose(); sunTmp.applyMatrix4(lmi); sunTmp.x = Math.round(sunTmp.x / tx) * tx; sunTmp.y = Math.round(sunTmp.y / tx) * tx; sunTmp.applyMatrix4(lm);
+      sn.position.copy(sunTmp).addScaledVector(sky.sunDir, 200); sn.target.position.copy(sunTmp); sn.target.updateMatrixWorld(); };
+    GX.setLens(false); // the shared cinematic lens pass desaturates; Horse Rider uses its own grade below
+    if (GX.composer) { const ps = GX.composer.passes; for (const p of ps) if (p.strength != null && p.radius != null) { p.strength = .2; p.radius = .45; p.threshold = .9; }
+      const li = ps.indexOf(GX.lens && GX.lens()); H.grade = new ShaderPass(GRADE); GX.composer.insertPass(H.grade, li >= 0 ? li : ps.length); }
+    envTick(0, true);
+  }
+  function envTick(dt, force) {
+    if (!sky) return; const el = sunEl(); sky.setSun(el, SUN_AZ);
+    const env = sky.update(dt || 0, camera, force);
+    if (env) { scene.environment = env; scene.environmentIntensity = 1; GX.hemi.color.copy(sky.zenith);
+      fog.color.copy(sky.horizon).lerp(sky.sunSide, .25); if (!GX.composer) { fogTmp.copy(fog.color); fog.color.setRGB(aces(fogTmp.r), aces(fogTmp.g), aces(fogTmp.b), THREE.SRGBColorSpace); } }
+    if (scene.background) scene.background = null;
+    const day = sstep(-1, 9, el); GX.sunDir.copy(sky.sunDir); GX.sun.color.copy(sky.sunCol); GX.sun.intensity = 3.6 * day; GX.hemi.intensity = .1 + .08 * day;
+    fog.far = Math.floor((((SUN_AZ % TAU) + TAU) % TAU) * 100) + Math.min(.999, Math.max(0, sky.sunDir.y));
+    if (H.grassG) H.grassG.update(dt || 0, camera, sky.sunDir, sky.sunCol, .55 + .45 * Math.sin(H.t * .21) * Math.sin(H.t * .053 + 1));
+  }
   function init() {
     H.on = true; P.spawn.set(SPAWN.x, hAt(SPAWN.x, SPAWN.z), SPAWN.z); P.pos.copy(P.spawn); buildWorld(); spawnHorses();
     P.yaw = Math.atan2(SPAWN.x - PEN.x, SPAWN.z - PEN.z); P.pitch = -.05; P.hp = 100;
-    GX.setLighting('day', false); scene.fog.density = .0026; GX.followSun(P.pos);
+    GX.setLighting('day', false); setupSky();
     loadAssets(!mobile && Q.shadow > 0).then(dress).catch(e => { H.models = 'proc'; if (!/requested/.test(e && e.message)) console.warn('horse models failed, using procedural horses', e); });
     msg(mobile ? 'HORSE RIDER — walk to the pen, tap RIDE next to a horse' : 'HORSE RIDER — walk to the pen and press E next to a horse', 5);
   }
@@ -629,7 +637,6 @@ export function createHorseRider(ctx) {
       o.pos.y = hAt(o.pos.x, o.pos.z); o.g.rotation.set(0, o.yaw, 0); anim(o, dt, o.speed, o.graze); }
     for (const o of H.horses) lod(o);
     dustTick(dt);
-    if (H.grass && Math.hypot(P.pos.x - H.grassAt[0], P.pos.z - H.grassAt[1]) > H.grassR * .35) scatterGrass();
     updateTreeLOD(false);
     H.near = h ? null : nearestHorse(); H.gait = h ? gaitName(H.speed) : '';
     H.prompt = h ? (H.mountT > 0 ? 'Mounting…' : H.wantOff || H.dismT > 0 ? 'Getting off…' : mobile ? 'Tap GET OFF to dismount' : '[E] Get off the horse') : H.near ? (mobile ? 'Tap RIDE to mount' : '[E] Ride horse') : '';
@@ -642,7 +649,7 @@ export function createHorseRider(ctx) {
       fragmentShader: 'uniform vec3 uC; varying float vA; void main(){ vec2 d=gl_PointCoord-.5; float r=dot(d,d)*4.; if(r>1.) discard; gl_FragColor=vec4(uC, vA*(1.-r)*(1.-r)*.55); }' });
     dust.pts = new THREE.Points(g, m); dust.pts.frustumCulled = false; dust.pts.renderOrder = 2; scene.add(dust.pts); }
   function dustEmit(o, dt) { const sp = Math.abs(o === H.mounted ? H.speed : o.speed || 0); if (sp < 5.5 || (o === H.mounted && !H.ground)) return; if (!dust.pts) dustInit();
-    dust.acc += dt * sp * (mobile ? 1.6 : 3); const fx = -Math.sin(o.yaw), fz = -Math.cos(o.yaw), dirt = inPen(o.pos.x, o.pos.z) || segDist(o.pos.x, o.pos.z, PATH) < 2 ? 1.6 : 1;
+    dust.acc += dt * sp * (mobile ? 1.6 : 3); const fx = -Math.sin(o.yaw), fz = -Math.cos(o.yaw), dirt = inPen(o.pos.x, o.pos.z) || trailDist(o.pos.x, o.pos.z) < 2 ? 1.6 : 1;
     while (dust.acc > 1) { dust.acc -= 1; const i = dust.i = (dust.i + 1) % DN, side = (rnd() - .5) * .7, back = .2 + rnd() * 1.1;
       dust.p[i * 3] = o.pos.x - fx * back - fz * side; dust.p[i * 3 + 2] = o.pos.z - fz * back + fx * side; dust.p[i * 3 + 1] = hAt(dust.p[i * 3], dust.p[i * 3 + 2]) + .08;
       dust.v[i * 3] = -fx * sp * .12 + (rnd() - .5) * .6; dust.v[i * 3 + 1] = .35 + rnd() * .7; dust.v[i * 3 + 2] = -fz * sp * .12 + (rnd() - .5) * .6; dust.life[i] = 1; dust.sz[i] = (.25 + rnd() * .2) * dirt; } }
@@ -725,5 +732,6 @@ export function createHorseRider(ctx) {
   }
   const touchLabel = () => H.mounted ? 'GET OFF' : H.near ? 'RIDE' : '';
   const stats = () => { const i = GX.renderer.info; i.autoReset = false; i.reset(); GX.renderer.render(scene, camera); i.autoReset = true; return { calls: i.render.calls, triangles: i.render.triangles, geometries: i.memory.geometries, textures: i.memory.textures }; };
-  return { state: H, init, tick, syncCamera, hud, use, dismount, touchLabel, hAt, PEN, nearestHorse, stats, herd, applyHerd, avatar };
+  const syncAll = dt => { syncCamera(dt); envTick(dt); };
+  return { state: H, init, tick, syncCamera: syncAll, hud, use, dismount, touchLabel, hAt, PEN, nearestHorse, stats, herd, applyHerd, avatar };
 }
