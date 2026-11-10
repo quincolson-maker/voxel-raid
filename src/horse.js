@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from '../addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from '../addons/utils/BufferGeometryUtils.js';
+import { clone as cloneSkinned } from '../addons/utils/SkeletonUtils.js';
 import { mulberry, conifer } from './models.js';
 const $ = id => document.getElementById(id);
 const S = 800, EDGE = 360;                // map size (m) and walkable half-extent
@@ -129,6 +130,14 @@ function makeSaddle(PB) { // returns a group in horse model space
   for (const sx of [-1, 1]) { const st = add(s.leatherStrap, s.dark, sx * .325, 1.33, -.05); st.rotation.z = sx * .06; const r = add(s.stirrup, s.steel, sx * .35, .93, -.05); r.rotation.y = Math.PI / 2; }
   if (!s.merged) s.merged = mergeStatic(g); return s.merged.clone();
 }
+function poseLimbs(root, list) { // aim bone -> child at a direction given in the model's own space
+  const v1 = new THREE.Vector3(), v2 = new THREE.Vector3(), q1 = new THREE.Quaternion(), q2 = new THREE.Quaternion(), dq = new THREE.Quaternion(), w = new THREE.Vector3();
+  root.traverse(o => { if (o.isBone && !o.userData.rest) o.userData.rest = o.quaternion.clone(); });
+  for (const [bn, cn, d] of list) { const b = root.getObjectByName(bn), c = root.getObjectByName(cn); if (!b || !c) continue; root.updateMatrixWorld(true);
+    const cur = c.getWorldPosition(v2).sub(b.getWorldPosition(v1)).normalize(); w.set(...d).normalize().transformDirection(root.matrixWorld);
+    dq.setFromUnitVectors(cur, w); b.getWorldQuaternion(q1); b.parent.getWorldQuaternion(q2); b.quaternion.copy(q2.invert().multiply(dq.multiply(q1))); }
+  root.updateMatrixWorld(true);
+}
 // pose the rigged rider seated: aim each limb bone at a direction in the rider's own space (faces +z, left = +x)
 function poseRider(root) {
   const v1 = new THREE.Vector3(), v2 = new THREE.Vector3(), q1 = new THREE.Quaternion(), q2 = new THREE.Quaternion(), dq = new THREE.Quaternion();
@@ -230,13 +239,14 @@ function loadAssets() {
     const gN = deq(near.geometry).applyMatrix4(near.matrixWorld), gF = deq(far.geometry).applyMatrix4(far.matrixWorld);
     for (const g of [gN, gF]) { skinHorseGeometry(g); g.computeBoundingSphere(); }
     const farMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .8, metalness: 0 });
-    return { gN, gF, matN: COATS.map(c => coatMaterial(near.material, c)), matF: COATS.map(c => coatMaterial(farMat, c)), rider: r.scene };
+    const riderSrc = cloneSkinned(r.scene), clips = r.animations.map(c => { const k = c.clone(); k.tracks = k.tracks.filter(t => !/\.position$/.test(t.name)); return k; }); // no root motion
+    return { riderSrc, clips, gN, gF, matN: COATS.map(c => coatMaterial(near.material, c)), matF: COATS.map(c => coatMaterial(farMat, c)), rider: r.scene };
   }));
 }
 
 export function createHorseRider(ctx) {
   const { scene, GX, P, keys, input, camera, sfx, msg, PBRS } = ctx;
-  const H = { on: false, horses: [], mounted: null, cd: 0, prompt: '', obst: [], fence: [], speed: 0, t: 0, near: null, vy: 0, ground: true, riddenT: 0, mounts: 0, models: 'loading', trees: [], lodT: 0 };
+  const H = { on: false, horses: [], mounted: null, cd: 0, prompt: '', obst: [], fence: [], speed: 0, t: 0, near: null, vy: 0, ground: true, riddenT: 0, mounts: 0, models: 'loading', trees: [], lodT: 0, ridden: new Map(), follow: false, online: '' };
   const rnd = mulberry(42), Q = GX.Q, mobile = !!ctx.mobile;
   const LOD_HORSE = mobile ? 9 : 14, LOD_TREE = mobile ? 55 : 85;
   const up = new THREE.Vector3(0, 1, 0), m4 = new THREE.Matrix4(), qq = new THREE.Quaternion(), v3 = new THREE.Vector3(), sc3 = new THREE.Vector3(), col = new THREE.Color();
@@ -375,7 +385,7 @@ export function createHorseRider(ctx) {
     const wrap = new THREE.Group(); wrap.add(r); r.position.set(-hp.x, -hp.y, -hp.z); wrap.userData = { kind: 'real', model: r };
     const was = H.mounted; if (was) detachRider(was); rider = wrap; rider.visible = false; if (was) attachRider(was);
     const sp = saddleParts(PBRS); for (let i = 0; i < 2; i++) { const m = new THREE.Mesh(sp.rein, sp.dark); m.visible = false; m.castShadow = false; scene.add(m); reins.push(m); }
-    H.models = 'real';
+    H.models = 'real'; H.assets = A; for (const av of avatars) av.rebuild();
   }
   function attachRider(h) { rider.visible = true;
     if (h.g.userData.kind === 'real' && rider.userData.kind === 'real') { h.g.userData.bones[1].add(rider); rider.position.set(0, .45, .04); rider.rotation.set(0, 0, 0); }
@@ -397,7 +407,7 @@ export function createHorseRider(ctx) {
     return false;
   }
   function moveCircle(pos, dx, dz, r, skip) { let hit = false; if (!blocked(pos.x + dx, pos.z, r, skip)) pos.x += dx; else hit = true; if (!blocked(pos.x, pos.z + dz, r, skip)) pos.z += dz; else hit = true; return hit; }
-  function nearestHorse() { let best = null, bd = MOUNT_R; for (const h of H.horses) { const d = Math.hypot(h.pos.x - P.pos.x, h.pos.z - P.pos.z); if (d < bd) { bd = d; best = h; } } return best; }
+  function nearestHorse() { let best = null, bd = MOUNT_R; for (const h of H.horses) { if (H.ridden.has(h)) continue; const d = Math.hypot(h.pos.x - P.pos.x, h.pos.z - P.pos.z); if (d < bd) { bd = d; best = h; } } return best; }
   function use() {
     if (!H.on || H.cd > 0) return false;
     if (H.mounted) return dismount();
@@ -411,6 +421,7 @@ export function createHorseRider(ctx) {
     let spot = null; for (const [ox, oz] of tries) { const x = h.pos.x + ox, z = h.pos.z + oz; if (!blocked(x, z, .35, h) && !(Math.abs(x) > EDGE || Math.abs(z) > EDGE)) { spot = [x, z]; break; } }
     if (!spot) spot = [h.pos.x - rx * 1.5, h.pos.z - rz * 1.5];
     P.pos.set(spot[0], hAt(spot[0], spot[1]), spot[1]); H.vy = 0; H.mounted = null; H.cd = COOLDOWN; h.speed = 0; h.wait = 4 + rnd() * 4; h.inPen = inPen(h.pos.x, h.pos.z, .5); h.graze = true;
+    if (H.follow) h.net = { x: h.pos.x, z: h.pos.z, yaw: h.yaw, sp: 0, gr: 1 };
     detachRider(h); P.yaw = h.yaw; P.pitch = 0; sfx.ui && sfx.ui(); msg('Dismounted', 1.2); return true;
   }
   function init() {
@@ -452,6 +463,7 @@ export function createHorseRider(ctx) {
       const ob = P.bob; P.bob += dt * l * (l ? sp / l : 0) * 1.6; if (H.ground && l && Math.floor(ob / Math.PI) !== Math.floor(P.bob / Math.PI)) sfx.step && sfx.step(false);
     }
     for (const o of H.horses) { if (o === h) continue;
+      if (H.ridden.has(o) || (H.follow && o.net)) { netHorse(o, dt); continue; } // ridden by another player / herd mirrored from the host
       if (o.tgt) { const dx = o.tgt[0] - o.pos.x, dz = o.tgt[1] - o.pos.z, d = Math.hypot(dx, dz);
         if (d < .4) { o.tgt = null; o.wait = 2 + rnd() * 5; o.graze = rnd() < .6; o.speed = 0; }
         else { const want = Math.atan2(-dx, -dz); let dy = want - o.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); o.yaw += dy * Math.min(1, dt * 2.5); o.speed += (1.3 - o.speed) * Math.min(1, dt * 2);
@@ -481,11 +493,51 @@ export function createHorseRider(ctx) {
   function hud() {
     const pr = $('hrPrompt'); if (pr) { pr.textContent = H.prompt; pr.hidden = !H.prompt; pr.classList.toggle('riding', !!H.mounted); }
     const d = Math.round(Math.hypot(P.pos.x - PEN.x, P.pos.z - PEN.z)), hz = H.mounted;
-    $('mode').textContent = '🐎 HORSE RIDER'; $('timer').textContent = hz ? Math.round(Math.abs(H.speed) * 3.6) + ' km/h' : ''; $('stars').textContent = '';
+    $('mode').textContent = '🐎 HORSE RIDER'; $('timer').textContent = hz ? Math.round(Math.abs(H.speed) * 3.6) + ' km/h' : ''; $('stars').textContent = H.online || '';
     $('sub').textContent = hz ? (Math.abs(H.speed) > 12 ? 'Galloping' : Math.abs(H.speed) > 1 ? 'Riding' : 'Mounted') + (hz.coat ? ' ' + hz.coat : '') + (mobile ? ' · push the stick all the way to gallop' : ' · W ride · Shift gallop · A/D turn · Space jump')
       : H.models === 'loading' && d < 40 ? 'Horses arriving…' : d > 16 ? `Horse pen ${d} m away` : inPen(P.pos.x, P.pos.z) ? 'In the pen — walk up to a horse' : 'At the horse pen';
   }
+  // ---- multiplayer hooks (src/horsenet.js): remote riders, herd mirroring ----
+  function netHorse(o, dt) { const n = o.net; if (!n) { anim(o, dt, 0, false); return; } const k = Math.min(1, dt * 8);
+    if (Math.hypot(n.x - o.pos.x, n.z - o.pos.z) > 12) { o.pos.x = n.x; o.pos.z = n.z; } else { o.pos.x += (n.x - o.pos.x) * k; o.pos.z += (n.z - o.pos.z) * k; }
+    let dy = n.yaw - o.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); o.yaw += dy * k; o.speed = n.sp; o.graze = !!n.gr;
+    o.pos.y = H.ridden.has(o) && n.y != null ? o.pos.y + (n.y - o.pos.y) * k : hAt(o.pos.x, o.pos.z); o.g.rotation.y = o.yaw; anim(o, dt, n.sp, o.graze); }
+  const herd = () => H.horses.filter(o => o !== H.mounted && !H.ridden.has(o)).map(o => [o.id, +o.pos.x.toFixed(2), +o.pos.z.toFixed(2), +o.yaw.toFixed(3), +o.speed.toFixed(2), o.graze ? 1 : 0]);
+  function applyHerd(arr) { H.follow = true; for (const [id, x, z, yaw, sp, gr] of arr) { const o = H.horses[id]; if (!o || o === H.mounted || H.ridden.has(o)) continue; o.net = { x, z, yaw, sp, gr }; } }
+  function release(o) { if (!H.ridden.has(o)) return; H.ridden.delete(o); o.speed = 0; o.wait = 4 + rnd() * 4; o.tgt = null; o.inPen = inPen(o.pos.x, o.pos.z, .5); o.graze = true; if (!H.follow) o.net = null; }
+  function seat(h, obj) { if (h.g.userData.kind === 'real' && obj.userData.kind === 'real') { h.g.userData.bones[1].add(obj); obj.position.set(0, .45, .04); } else { h.g.add(obj); obj.position.set(0, h.g.userData.kind === 'real' ? 1.45 : 1.72, .08); } obj.rotation.set(0, 0, 0); obj.visible = true; }
+  const avatars = new Set();
+  function nameTag(text, color) { const c = document.createElement('canvas'); c.width = 256; c.height = 64; const x = c.getContext('2d'); x.fillStyle = 'rgba(10,12,14,.6)'; x.beginPath(); x.roundRect(8, 8, 240, 48, 22); x.fill();
+    x.fillStyle = color; x.font = 'bold 30px sans-serif'; x.textAlign = 'center'; x.fillText(text, 128, 43); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true, fog: false, toneMapped: false })); sp.scale.set(1.2, .3, 1); sp.renderOrder = 9; return sp; }
+  const STAND = [['LeftArm', 'LeftForeArm', [.16, -1, .02]], ['LeftForeArm', 'LeftHand', [.06, -1, .12]], ['RightArm', 'RightForeArm', [-.16, -1, .02]], ['RightForeArm', 'RightHand', [-.06, -1, .12]]];
+  // remote player: a walker (rider model + walk/run clips) on foot, a seated copy on the horse they ride
+  function avatar(id, color) {
+    const av = { id, g: new THREE.Group(), horse: null, walker: null, sitter: null, mixer: null, last: null, tag: nameTag(id, color), v: 0 };
+    scene.add(av.g); av.g.add(av.tag); av.tag.position.y = 2.15;
+    av.rebuild = () => { if (av.walker) av.g.remove(av.walker); if (av.sitter && av.sitter.parent) av.sitter.parent.remove(av.sitter); const A = H.assets;
+      if (A && A.riderSrc) { const w = cloneSkinned(A.riderSrc), st = cloneSkinned(A.riderSrc); for (const r of [w, st]) r.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
+        w.rotation.y = Math.PI; av.mixer = new THREE.AnimationMixer(w); const clip = n => A.clips.find(c => new RegExp(n, 'i').test(c.name)); av.walk = clip('walk') && av.mixer.clipAction(clip('walk')); av.run = clip('run') && av.mixer.clipAction(clip('run'));
+        poseLimbs(w, STAND); poseRider(st); const hp = st.getObjectByName('Hips').getWorldPosition(new THREE.Vector3()); const wrap = new THREE.Group(); wrap.add(st); st.position.set(-hp.x, -hp.y, -hp.z); wrap.userData = { kind: 'real', model: st };
+        av.walker = w; av.sitter = wrap; }
+      else { av.walker = makeProcRider(color); av.walker.position.y = .55; av.walker.rotation.y = Math.PI; av.sitter = makeProcRider(color); av.mixer = null; }
+      av.g.add(av.walker); av.sitter.visible = false; if (av.horse) seat(av.horse, av.sitter); };
+    av.update = (dt, s) => { if (!s) return; const was = av.horse, h = s.m >= 0 ? H.horses[s.m] : null;
+      if (was && was !== h) { release(was); if (av.sitter.parent) av.sitter.parent.remove(av.sitter); av.horse = null; }
+      if (h) { if (h === H.mounted) { if (String(av.id) < String(H.me || 'P9')) dismount(); else return; } // two riders grabbed one horse: lower id keeps it
+        if (!av.horse) { av.horse = h; H.ridden.set(h, av.id); seat(h, av.sitter); } h.net = { x: s.x, y: s.y, z: s.z, yaw: s.hy, sp: s.sp };
+        av.walker.visible = false; av.g.position.set(h.pos.x, h.pos.y + 1.1, h.pos.z); av.tag.position.y = 1.55; return; }
+      av.walker.visible = true; av.tag.position.y = 2.15; const p = av.g.position, d = Math.hypot(s.x - p.x, s.z - p.z), k = Math.min(1, dt * 10);
+      if (d > 8) p.set(s.x, s.y, s.z); else { p.x += (s.x - p.x) * k; p.y += (s.y - p.y) * k; p.z += (s.z - p.z) * k; }
+      let dy = s.yw - av.g.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); av.g.rotation.y += dy * k;
+      av.v += ((s.sp || 0) - av.v) * Math.min(1, dt * 6);
+      if (av.mixer) { const moving = av.v > .4, act = av.v > 5.8 && av.run ? av.run : av.walk;
+        if (moving && act) { for (const a of [av.walk, av.run]) if (a && a !== act && a.isRunning()) a.stop(); if (!act.isRunning()) act.play(); act.timeScale = act === av.run ? av.v / 7 : av.v / 4.6; av.mixer.update(dt); }
+        else if (av.walk && (av.walk.isRunning() || (av.run && av.run.isRunning()))) { av.mixer.stopAllAction(); av.walker.traverse(o => { if (o.isBone && o.userData.rest) o.quaternion.copy(o.userData.rest); }); poseLimbs(av.walker, STAND); } } };
+    av.dispose = () => { if (av.horse) release(av.horse); if (av.sitter && av.sitter.parent) av.sitter.parent.remove(av.sitter); scene.remove(av.g); avatars.delete(av); };
+    av.rebuild(); avatars.add(av); return av;
+  }
   const touchLabel = () => H.mounted ? 'GET OFF' : H.near ? 'RIDE' : '';
   const stats = () => { const i = GX.renderer.info; i.autoReset = false; i.reset(); GX.renderer.render(scene, camera); i.autoReset = true; return { calls: i.render.calls, triangles: i.render.triangles, geometries: i.memory.geometries, textures: i.memory.textures }; };
-  return { state: H, init, tick, syncCamera, hud, use, dismount, touchLabel, hAt, PEN, nearestHorse, stats };
+  return { state: H, init, tick, syncCamera, hud, use, dismount, touchLabel, hAt, PEN, nearestHorse, stats, herd, applyHerd, avatar };
 }

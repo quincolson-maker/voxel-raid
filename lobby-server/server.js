@@ -3,7 +3,7 @@
 // Stores nothing but room code, callsign, player count and map in memory. Gameplay and voice stay peer-to-peer.
 const http = require('http');
 const STALE_MS = +(process.env.STALE_MS || 45000), MAX_ROOMS = 200, MAX_BODY = 2048;
-const rooms = new Map(); // code -> { code, host, players, max, map, ts, ip }
+const rooms = new Map(); // code -> { code, host, players, max, map, mode ('zombies' | 'horse'), ts, ip }
 const hits = new Map();  // ip -> { n, t } simple rate limit
 const clean = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
 const cleanName = s => String(s || '').replace(/[^\w \-.']/g, '').trim().slice(0, 16) || 'Squad';
@@ -14,7 +14,7 @@ function send(res, code, obj) {
   res.writeHead(code, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Cache-Control': 'no-store' });
   res.end(obj == null ? '' : JSON.stringify(obj));
 }
-function list() { prune(); return [...rooms.values()].filter(r => r.players < r.max).sort((a, b) => b.ts - a.ts).slice(0, 20).map(({ code, host, players, max, map }) => ({ code, host, players, max, map })); }
+function list() { prune(); return [...rooms.values()].filter(r => r.players < r.max).sort((a, b) => b.ts - a.ts).slice(0, 20).map(({ code, host, players, max, map, mode }) => ({ code, host, players, max, map, mode })); }
 function handler(req, res) {
   const url = new URL(req.url, 'http://x'), ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
   if (req.method === 'OPTIONS') return send(res, 204, null);
@@ -31,7 +31,7 @@ function handler(req, res) {
       if (cur && cur.key !== String(m.key || '')) return send(res, 409, { error: 'code taken' });
       if (!cur && rooms.size >= MAX_ROOMS) { prune(); if (rooms.size >= MAX_ROOMS) return send(res, 503, { error: 'full' }); }
       const max = Math.max(2, Math.min(4, m.max | 0 || 4)), players = Math.max(1, Math.min(max, m.players | 0 || 1));
-      rooms.set(code, { code, key: String(m.key || '').slice(0, 40), host: cleanName(m.host), players, max, map: m.map === 'night' ? 'night' : 'day', ts: Date.now() });
+      rooms.set(code, { code, key: String(m.key || '').slice(0, 40), host: cleanName(m.host), players, max, map: m.map === 'night' ? 'night' : 'day', mode: m.mode === 'horse' ? 'horse' : 'zombies', ts: Date.now() });
       send(res, 200, { ok: true, stale: STALE_MS });
     });
     return;

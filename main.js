@@ -7,6 +7,7 @@ import { initTouch } from './src/touch.js';
 import { createZombies } from './src/zombies.js';
 import { watchLobbies } from './src/lobby.js';
 import { createHorseRider } from './src/horse.js';
+import { createHorseNet } from './src/horsenet.js';
 const $ = id => document.getElementById(id);
 const Q = new URLSearchParams(location.search);
 if (IS_TOUCH) document.body.classList.add('touch');
@@ -231,7 +232,7 @@ const act = { slide() { if ((P.sprintK || 0) > .3 && P.onGround) { P.slideT = .7
   quit() { if (confirm('Quit to the main menu?')) location.href = location.pathname; } };
 const nearZStation = () => !!(zombies.nearest() || zombies.reviveTarget());
 let lastShift = 0;
-function onKey(c) { if (G.phase == 'menu' || G.over) return; if (G.mode === 'horse') { if (c == 'KeyE') horse.use(); if (c == 'KeyH') act.help(); return; } if (c == 'ShiftLeft') { const n = performance.now(); if (n - lastShift < 320) P.tacReq = true; lastShift = n; } if ((c == 'KeyC' || c == 'ControlLeft') && (P.sprintK || 0) > .5 && P.onGround) { P.slideT = .75; sfx.step(true); } if (c == 'KeyI' && P.reload <= 0) P.inspect = 2.2; if (c == 'KeyE' && G.mode === 'zombies') zombies.use(); if (c == 'KeyQ') { if (building()) act.piece(); else act.swap(); } if (c == 'KeyZ') act.mat(); if (c == 'KeyR') act.reload(); if (c == 'KeyG') act.skip(); if (c == 'KeyH') act.help(); if (c == 'KeyV' && G.mode === 'zombies') zombies.voice.toggle(); if (c == 'Digit1') equip(0); if (c == 'Digit2') equip(1); }
+function onKey(c) { if (G.phase == 'menu' || G.over) return; if (G.mode === 'horse') { if (c == 'KeyE') horse.use(); if (c == 'KeyH') act.help(); if (c == 'KeyV') hnet.voice.toggle(); return; } if (c == 'ShiftLeft') { const n = performance.now(); if (n - lastShift < 320) P.tacReq = true; lastShift = n; } if ((c == 'KeyC' || c == 'ControlLeft') && (P.sprintK || 0) > .5 && P.onGround) { P.slideT = .75; sfx.step(true); } if (c == 'KeyI' && P.reload <= 0) P.inspect = 2.2; if (c == 'KeyE' && G.mode === 'zombies') zombies.use(); if (c == 'KeyQ') { if (building()) act.piece(); else act.swap(); } if (c == 'KeyZ') act.mat(); if (c == 'KeyR') act.reload(); if (c == 'KeyG') act.skip(); if (c == 'KeyH') act.help(); if (c == 'KeyV' && G.mode === 'zombies') zombies.voice.toggle(); if (c == 'Digit1') equip(0); if (c == 'Digit2') equip(1); }
 addEventListener('wheel', e => { if (G.phase != 'menu' && !G.over) equip(1 - P.w); }, { passive: true });
 const input = { mx: 0, mz: 0, fire: false, jump: false, ads: false };
 if (IS_TOUCH) initTouch(input, look, act, () => sfx.init());
@@ -339,6 +340,7 @@ function applyAtmos() { const L = Q.get('light') || $('lightsel').value, rain = 
   GX.setLighting(L, rain); fx.setRain(rain); sfx.rainLoop(rain); GX.setLens(Q.has('lens') ? Q.get('lens') == '1' : $('lenschk').checked); }
 const zombies = createZombies({ G, P, scene, GX, sfx, fx, setB, get, solid, buildChunk, dirty, astar, rebuildGrid, costD, hurt, msg, equip, PBRS, mobile: IS_TOUCH, damageBlock, buildDay: () => { G.mode = 'zombies'; buildWorld(LAYOUTS[0]); G.traps.forEach(t => scene.remove(t.m)); G.traps = []; }, held: heldUse, hotbar, launchRocket, feed, onKill, precisionStrike, explodeFx: (c) => { fx.explosion(c, 3); sfx.at(c, () => sfx.boom(1), .8); } });
 const horse = createHorseRider({ scene, GX, P, keys, input, camera, sfx, msg, PBRS, mobile: IS_TOUCH });
+const hnet = createHorseNet({ horse, P, msg });
 function start(mode, opts) { sfx.init(); document.body.classList.add('ingame'); if (mode === 'horse') { G.mode = mode; G.phase = 'ride'; $('menu').style.display = 'none'; $('hud').style.display = ''; document.body.classList.add('horse-mode'); vm.visible = false; horse.init(); return; } if (mode === 'zombies') { G.mode = mode; $('menu').style.display = 'none'; $('hud').style.display = ''; zombies.init(opts); return; } P.slots = [Q.get('gun') || $('primary').value || 'carbine', 'rpg']; P.ammoOf = {}; P.w = -1; equip(0); G.mode = mode; G.layout = +$('layout').value; G.buildT = Math.max(0, +$('buildT').value || 300); $('menu').style.display = 'none'; $('hud').style.display = '';
   P.team = mode == 'attack' ? 'att' : 'def'; const L = LAYOUTS[G.layout]; buildWorld(L); G.shield = true;
   if (mode == 'attack') { P.spawn.set(CX + .5, 1, 3); P.yaw = Math.PI; G.mat = { 2: 300, 3: 200, 4: 80 };
@@ -358,7 +360,7 @@ function end(why) { G.over = true; G.phase = 'over'; document.exitPointerLock &&
   $('endT').textContent = win ? 'VICTORY' : 'DEFEAT'; $('endS').textContent = `${why}\nDestruction: ${pct()}%   CP: ${coreDown() ? 'TOPPLED' : 'standing'}\nAttacker Crests: ${'★'.repeat(s)}${'☆'.repeat(3 - s)}`; }
 function update(dt) { if (G.phase == 'menu' || G.over) return; G.t += dt; G.timer -= dt;
   if (G.phase == 'build' && G.timer <= 0) startRaid();
-  if (G.mode === 'horse') { horse.tick(dt); if (msgT > 0) { msgT -= dt; if (msgT <= 0) $('msg').textContent = ''; } return; }
+  if (G.mode === 'horse') { horse.tick(dt); hnet.tick(dt); if (msgT > 0) { msgT -= dt; if (msgT <= 0) $('msg').textContent = ''; } return; }
   if (G.mode === 'zombies') { updatePlayer(dt); updateRockets(dt); updateSentries(dt); zombies.tick(dt); if (msgT > 0) { msgT -= dt; if (msgT <= 0) $('msg').textContent = ''; } return; }
   G.uavT = Math.max(0, (G.uavT || 0) - dt); updatePlayer(dt); updateRockets(dt); updateSentries(dt); G.units = G.units.filter(u => updateUnit(u, dt)); updateStructures(dt); updateTraps();
   if (G.phase == 'raid') { const atts = G.units.filter(u => u.team == 'att' && u.hp > 0);
@@ -413,7 +415,9 @@ if (isIOS && !standalone && !document.documentElement.requestFullscreen && !loca
 $('ioshintx').onclick = () => { localStorage.setItem('vr_ioshint', '1'); $('ioshint').classList.remove('show'); };
 $('queue').onclick = () => { msg('Queue matched!'); start(Math.random() < .5 ? 'attack' : 'defend'); lockIfDesktop(); };
 const zmapSel = () => Q.get('zmap') || 'day';
-$('horseBtn').onclick = () => { start('horse'); lockIfDesktop(); };
+// Horse Rider is an automatic shared lobby: join an open Horse Rider room with a free slot, else host one
+const rideHorses = code => { if (G.mode === 'horse') return; hnet.prime(); start('horse'); hnet.auto(code); lockIfDesktop(); };
+$('horseBtn').onclick = () => rideHorses();
 $('zombies').onclick = () => { start('zombies', { map: zmapSel() }); lockIfDesktop(); };
 $('zHost').onclick = () => { zombies.voice.prime(); start('zombies', { role: 'host', map: zmapSel() }); lockIfDesktop(); };
 let joining = false;
@@ -425,9 +429,10 @@ const esc = t => String(t).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';'
 const lobbies = watchLobbies(list => { const el = $('lobbyList'), hd = $('lobbyHead'); if (!el) return;
   if (list === null) { if (!el.children.length) hd.dataset.s = 'checking…'; return; }
   hd.dataset.s = list.length ? list.length + ' open' : 'none right now — host one!';
-  const html = list.slice(0, 5).map(l => `<button class="lob" data-code="${esc(l.code)}"><b>${esc(l.host)}</b><span>${esc(l.code)} · ${l.map === 'night' ? 'NIGHT' : 'DAY'}</span><i>${l.players}/${l.max}</i></button>`).join(''); if (el.dataset.h !== html) { el.dataset.h = html; el.innerHTML = html; } }, () => G.phase == 'menu' && $('menu').style.display !== 'none');
-$('lobbyList').onclick = e => { const b = e.target.closest('.lob'); if (b) { $('zCode').value = b.dataset.code; joinRoom(b.dataset.code); } };
-$('vMute').onclick = e => { e.preventDefault(); zombies.voice.toggle(); };
+  const html = list.slice(0, 5).map(l => l.mode === 'horse' ? `<button class="lob horse" data-code="${esc(l.code)}" data-mode="horse"><b>🐎 HORSE RIDER</b><span>${esc(l.host)} · tap to ride along</span><i>${l.players}/${l.max}</i></button>`
+    : `<button class="lob" data-code="${esc(l.code)}" data-mode="zombies"><b>${esc(l.host)}</b><span>☣ ZOMBIES · ${esc(l.code)} · ${l.map === 'night' ? 'NIGHT' : 'DAY'}</span><i>${l.players}/${l.max}</i></button>`).join(''); if (el.dataset.h !== html) { el.dataset.h = html; el.innerHTML = html; } }, () => G.phase == 'menu' && $('menu').style.display !== 'none');
+$('lobbyList').onclick = e => { const b = e.target.closest('.lob'); if (!b) return; if (b.dataset.mode === 'horse') { rideHorses(b.dataset.code); return; } $('zCode').value = b.dataset.code; joinRoom(b.dataset.code); };
+$('vMute').onclick = e => { e.preventDefault(); (G.mode === 'horse' ? hnet.voice : zombies.voice).toggle(); };
 $('vMute').addEventListener('pointerdown', e => e.stopPropagation());
 $('zJoinOpen').onclick = () => { $('joinBox').hidden = false; $('zJoinOpen').hidden = true; $('zCode').focus(); };
 $('gear').onclick = () => { $('settings').hidden = !$('settings').hidden; $('gear').classList.toggle('on', !$('settings').hidden); };
@@ -444,7 +449,7 @@ if (!(document.documentElement.requestFullscreen || document.documentElement.web
 // test hooks
 window.__sim = secs => { for (let i = 0; i < secs * 20 && !G.over; i++) update(.05); return [pct(), coreDown()]; };
 window.__boom = (x, y, z, r) => explode(new THREE.Vector3(x, y, z), r, 300, 'att');
-if (Q.get('dev') === '1') { window.__zombies = zombies; window.__horse = horse; window.__coop = { place, act, syncCamera, keys, input, setB, get, rockets, rocketBoom, launchRocket }; }
+if (Q.get('dev') === '1') { window.__zombies = zombies; window.__horse = horse; window.__hnet = hnet; window.__coop = { place, act, syncCamera, keys, input, setB, get, rockets, rocketBoom, launchRocket }; }
 window.__cam = camera; window.__G = G; window.__P = P; window.__stats = stats; window.__pct = pct; window.__Q = QNAME;
 if (Q.get('auto')) { if (Q.get('layout')) $('layout').value = Q.get('layout'); if (Q.get('build')) $('buildT').value = Q.get('build'); start(Q.get('auto')); if (Q.get('pitch')) P.pitch = +Q.get('pitch'); if (Q.get('yaw')) P.yaw = +Q.get('yaw');
   if (Q.get('px')) P.pos.set(+Q.get('px'), +(Q.get('py') || 1), +Q.get('pz')); }

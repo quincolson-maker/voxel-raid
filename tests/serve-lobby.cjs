@@ -4,7 +4,7 @@ const http = require('http'), fs = require('fs'), path = require('path');
 process.env.STALE_MS = process.env.STALE_MS || '45000';
 const { handler } = require('../lobby-server/server.js');
 const root = path.join(__dirname, '..'), port = +(process.argv[2] || 8795);
-const types = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.glb': 'model/gltf-binary', '.webmanifest': 'application/manifest+json', '.css': 'text/css', '.svg': 'image/svg+xml' };
+const types = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.glb': 'model/gltf-binary', '.webmanifest': 'application/manifest+json', '.css': 'text/css', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.hdr': 'application/octet-stream' };
 http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x');
   if (u.pathname === '/lobby' || u.pathname === '/lobbies' || u.pathname === '/health') return handler(req, res);
