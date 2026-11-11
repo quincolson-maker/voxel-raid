@@ -393,7 +393,7 @@ export function createGuns(c) {
     if (!scopeEl) { scopeEl = document.createElement('div'); scopeEl.id = 'hrScope'; scopeEl.innerHTML = '<div class="ret"><i class="h"></i><i class="v"></i><i class="dot"></i><i class="s1"></i><i class="s2"></i><i class="s3"></i></div><div class="br"><b></b></div><div class="tip"></div>'; document.body.appendChild(scopeEl); }
     const so = state.scopeK > .75; scopeEl.classList.toggle('on', so); document.body.classList.toggle('hr-scoped', so);
     if (so) { scopeEl.querySelector('.br b').style.width = (state.breath * 100).toFixed(0) + '%'; scopeEl.classList.toggle('steady', state.steady); scopeEl.classList.toggle('winded', state.winded);
-      scopeEl.querySelector('.tip').textContent = state.reloading ? 'reloading…' : mobile ? '' : state.winded ? 'out of breath' : state.steady ? 'holding breath' : 'hold Shift to steady'; }
+      scopeEl.querySelector('.tip').textContent = ''; } // no writing in the scope (Quin); the breath bar colour shows steady / winded
     if (w) { const n = state.ammo[w], mx = maxAmmo(w); let pips = ''; for (let i = 0; i < mx; i++) pips += `<b class="${i < n ? 'f' : ''}"></b>`;
       hudEl.innerHTML = `<span class="w">${w === 'revolver' ? 'SIX-SHOOTER' : w === 'rifle' ? 'LEVER RIFLE' : 'BUFFALO RIFLE'}</span><span class="pips ${w === 'revolver' ? 'revolver' : 'rifle'}">${pips}</span>${state.reloading ? '<span class="rl">reloading…</span>' : n === 0 ? `<span class="rl">${mobile || w === 'sniper' ? 'reloading…' : 'R to reload'}</span>` : ''}<span class="sc">🎯 ${state.hits} · ${state.score} pts</span>${toast > 0 ? `<em>${toastTxt}</em>` : ''}`;
       }

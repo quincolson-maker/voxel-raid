@@ -335,7 +335,7 @@ function updateViewmodel(dt) { const b = Math.sin(P.bob), b2 = Math.abs(Math.cos
     if (P.reload > 0) { const ins = ph < .35 ? 0 : Math.min(1, (ph - .35) / .45); war.visible = ph >= .35; war.position.z -= (1 - ins) * .35; war.position.y -= (1 - ins) * .12; } else war.visible = P.ammo > 0; }
   if (P.inspect > 0) { P.inspect -= dt; const t = 1 - P.inspect / 2.2, e = Math.sin(Math.min(1, t) * Math.PI); vm.rotation.y += e * .9; vm.rotation.z += e * .5; vm.position.x -= e * .05; vm.position.y += e * .03; }
   const spr = P.sprintK || 0; if (spr > 0) { vm.rotation.x -= spr * .55; vm.rotation.y += spr * .5; vm.position.y -= spr * .05; vm.position.x -= spr * .03; }
-  const scoped = !!(WP().scope && a > .85); $('scope').classList.toggle('on', scoped);
+  const scoped = !!(WP().scope && a > .85); $('scope').classList.toggle('on', scoped); document.body.classList.toggle('v-scoped', scoped);
   P.flashT = (P.flashT || 0) - dt; if (vm.userData.flash.visible && P.flashT <= 0) vm.userData.flash.visible = false; vm.visible = P.dead <= 0 && !scoped; $('cross').style.opacity = a > .5 || spr > .5 ? 0 : 1; }
 // ---------------- Match flow ----------------
 function applyAtmos() { const L = Q.get('light') || $('lightsel').value, rain = (Q.get('rain') || ($('rainchk').checked ? '1' : '')) == '1' && (QNAME == 'high' || QNAME == 'ultra' || Q.get('rain') == '1');

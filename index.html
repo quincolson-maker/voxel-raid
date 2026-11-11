@@ -152,6 +152,8 @@ body.touch #hrGun,.touch #hrGun{right:auto;left:50%;transform:translateX(-50%);b
 #hrCross{position:fixed;left:50%;top:50%;z-index:19;pointer-events:none;transform:translate(-50%,-50%)}#hrCross i{display:block;width:10px;height:10px;border-radius:50%;border:1.5px solid rgba(255,245,220,.75);box-shadow:0 0 2px #000;transform:translate(-50%,-50%);position:absolute;transition:width .12s,height .12s}
 #hrScope{position:fixed;inset:0;z-index:25;pointer-events:none;opacity:0;transition:opacity .12s;--R:min(45vh,45vw);background:radial-gradient(circle at 50% 50%,rgba(0,0,0,0) 0,rgba(0,0,0,0) calc(var(--R) - 26px),rgba(20,14,6,.55) calc(var(--R) - 6px),#050403 var(--R),#000 100%)}
 body.hr-scoped #touch,body.hr-scoped #vMute{z-index:27}body.hr-scoped .tb{background:rgba(24,26,28,.78);border-color:rgba(255,250,235,.95);box-shadow:0 0 0 1px #000c,0 0 12px rgba(255,240,200,.25);text-shadow:0 1px 2px #000}body.hr-scoped .tb.big{background:rgba(215,60,42,.85)}body.hr-scoped .tb.act{background:rgba(255,190,60,.8)}body.hr-scoped #stick{opacity:.9;border-color:rgba(255,250,235,.9);background:rgba(24,26,28,.45);box-shadow:0 0 0 1px #000c}body.hr-scoped #knob{background:rgba(255,250,235,.92)}
+/* no writing over a scope view (Horse Rider buffalo scope / voxel-mode sniper scope): only the reticle and the touch buttons stay */
+body.hr-scoped #hud,body.hr-scoped #hrZ,body.hr-scoped #hrGun,body.hr-scoped #nums,body.hr-scoped #hrScope .tip,body.hr-scoped #hrStam,body.hr-scoped #touchDbg .tl,body.v-scoped #top,body.v-scoped #compass,body.v-scoped #feed,body.v-scoped #msg,body.v-scoped #keyhint,body.v-scoped #keys,body.v-scoped #vitals,body.v-scoped #hotbar,body.v-scoped #right,body.v-scoped #zHud,body.v-scoped #nums,body.v-scoped #dbar{visibility:hidden!important}
 #hrScope.on{opacity:1}#hrScope .ret{position:absolute;left:50%;top:50%;width:calc(var(--R)*2);height:calc(var(--R)*2);transform:translate(-50%,-50%)}
 #hrScope .ret i{position:absolute;background:#0b0906;display:block}#hrScope .ret .h{left:0;right:0;top:50%;height:1.2px;margin-top:-.6px;background:linear-gradient(90deg,#0b0906 0 30%,rgba(11,9,6,.95) 30% 70%,#0b0906 70%)}
 #hrScope .ret .v{top:0;bottom:0;left:50%;width:1.2px;margin-left:-.6px}#hrScope .ret .dot{left:50%;top:50%;width:4px;height:4px;margin:-2px 0 0 -2px;border-radius:50%}
@@ -209,5 +211,5 @@ body.hr-scoped #touch,body.hr-scoped #vMute{z-index:27}body.hr-scoped .tb{backgr
 <div id="rot"><div class="ph"></div><p>Rotate your phone to landscape</p><button id="rotskip">Play anyway</button></div>
 <div id="ioshint" class="pill">For true fullscreen on iPhone: tap Share → <b>Add to Home Screen</b>, then launch Voxel Raid from your home screen. <button id="ioshintx" style="padding:.2em .6em">OK</button></div>
 <script src="./vendor/peerjs.min.js"></script>
-<script type="module" src="./game.min.js?v=27-scopefix"></script>
+<script type="module" src="./game.min.js?v=28-cleanscope"></script>
 </body></html>

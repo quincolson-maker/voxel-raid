@@ -4,7 +4,8 @@
 //  smoothing: finger look in the scope is low-pass filtered (frame-rate independent: same result at 60 / 12 fps), lower steady
 //  sensitivity, no step when the breath steadies, the saddle camera's head bob is filtered, aim assist never moves the camera;
 //  per-frame aim jitter stays under a threshold on foot and at a canter. Desktop: scope still works, no jitter, HUD above it.
-//  Saves shot-horserider-scope-fix-mobile*.png.
+//  No writing over the scope view (HUD, compass, hints, weapon name, score, toasts, zombie HUD, damage numbers): reticle + buttons only.
+//  Saves shot-horserider-scope-fix-mobile*.png and shot-horserider-scope-clean-{mobile,desktop}.png.
 const puppeteer = require('puppeteer-core');
 const assert = require('node:assert/strict');
 const base = process.argv[2] || 'http://localhost:8767';
@@ -43,6 +44,14 @@ const ignorable = t => /pointer ?lock|requestPointerLock|fullscreen|favicon|WebG
     assert.ok(R.footStill.maxStep < .0008, 'scoped on foot: per-frame aim jitter < 0.0008 rad (incl. the breath steadying)');
     R.footLowFps = await probe(20, .1); assert.ok(R.footLowFps.maxStep < .0016, 'at 10 fps no frame jumps more than 0.0016 rad');
     R.lookScale = await G(() => +__P.lookScale.toFixed(4)); assert.ok(R.lookScale < (mobile ? .16 : .15) && R.lookScale > .1, 'lower, steady look sensitivity in the scope');
+    // --- no writing over the scope view (Quin: "Get that writing off the scope view"): only the reticle + touch buttons ---
+    await frames(2); await sleep(300);
+    R.scopeText = await G(() => { const out = [], w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); let n;
+      while ((n = w.nextNode())) { const t = n.textContent.trim(); if (!t) continue; const e = n.parentElement; if (e.closest('#touch') || e.closest('#vMute')) continue;
+        const rc = e.getBoundingClientRect(); let vis = rc.width > 0 && rc.height > 0; for (let a = e; a && vis; a = a.parentElement) { const st = getComputedStyle(a); if (st.display === 'none' || st.visibility === 'hidden' || +st.opacity === 0 || a.hidden) vis = false; }
+        if (vis) out.push((e.id || e.className || e.tagName) + ': ' + t.slice(0, 40)); } return out; });
+    assert.deepEqual(R.scopeText, [], 'no text shown over the scope view');
+    await sleep(600); await p.screenshot({ path: `shot-horserider-scope-clean-${tag}.png` });
     if (mobile) {
       // --- controls stay visible and on top of the vignette ---
       R.controls = await G(() => { const scope = document.getElementById('hrScope'), zs = +getComputedStyle(scope).zIndex, zt = +getComputedStyle(document.getElementById('touch')).zIndex;
