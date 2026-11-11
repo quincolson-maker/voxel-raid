@@ -17,7 +17,7 @@ export const ZSET = { travel: 6, near: 90, capDesktop: 14, capPhone: 6, startDel
 const KIND_LIST = ['walker', 'runner', 'brute'];
 
 export function createHrZombies(c) {
-  const { scene, H, P, hAt, PEN, EDGE, sfx, fx, mobile } = c;
+  const { scene, H, P, hAt, PEN, EDGE, sfx, fx, mobile } = c, WALK = c.WALK || EDGE;
   const Q = new URLSearchParams(location.search);
   const Z = { on: Q.get('zombies') !== '0', list: [], wave: 1, waveT: 0, spawnT: ZSET.startDelay, nextId: 1, kills: 0, heads: 0, cap: mobile ? ZSET.capPhone : ZSET.capDesktop,
     hp: ZSET.playerHp, hurtT: -99, dead: 0, deaths: 0, flash: 0, t: 0, snapT: 0, role: c.role || (() => 'solo') };
@@ -50,7 +50,9 @@ export function createHrZombies(c) {
   function edgePoint(ang) { const dx = Math.cos(ang), dz = Math.sin(ang), k = (EDGE - 9) / Math.max(Math.abs(dx), Math.abs(dz)); return [dx * k, dz * k]; }
   function spawn(kind, at, id) {
     kind = ZKINDS[kind] ? kind : 'walker'; const K = ZKINDS[kind], B = makeBody(kind), g = new THREE.Group(); g.add(B.m); B.m.rotation.y = Math.PI; B.m.position.set(0, 0, 0); B.m.scale.setScalar(K.s); scene.add(g);
-    let x, z; if (at) [x, z] = at; else { const ps = players(); let best = null, bd = 1e9; for (let i = 0; i < 4; i++) { const p = edgePoint(rnd() * Math.PI * 2), q = ps[(rnd() * ps.length) | 0] || { x: 0, z: 0 }, d = Math.hypot(p[0] - q.x, p[1] - q.z); if (d < bd) { bd = d; best = p; } } [x, z] = best; }
+    let x, z; if (at) [x, z] = at; else if (!at && (() => { const ps = players(); return ps.length && ps.every(p => Math.max(Math.abs(p.x), Math.abs(p.z)) > EDGE - 20); })()) { // everyone is up in the mountains: they come down the slopes above you
+      const ps = players(), q = ps[(rnd() * ps.length) | 0]; let best = null, bh = -1e9; for (let i = 0; i < 6; i++) { const a = rnd() * Math.PI * 2, d = 85 + rnd() * 45, px = Math.max(-WALK + 5, Math.min(WALK - 5, q.x + Math.cos(a) * d)), pz = Math.max(-WALK + 5, Math.min(WALK - 5, q.z + Math.sin(a) * d)), hh = hAt(px, pz); if (hh > bh) { bh = hh; best = [px, pz]; } } [x, z] = best; }
+    else { const ps = players(); let best = null, bd = 1e9; for (let i = 0; i < 4; i++) { const p = edgePoint(rnd() * Math.PI * 2), q = ps[(rnd() * ps.length) | 0] || { x: 0, z: 0 }, d = Math.hypot(p[0] - q.x, p[1] - q.z); if (d < bd) { bd = d; best = p; } } [x, z] = best; }
     const o = { id: id || Z.nextId++, kind, K, B, g, pos: g.position, yaw: Math.atan2(x - PEN.x, z - PEN.z), hp: K.hp, alive: true, deadT: 0, cd: 1, st: 0, groanT: 2 + rnd() * 6, flinch: 0, sp: 0, born: Z.t, tgt: null, net: null, anim: rnd() * 6 };
     o.pos.set(x, hAt(x, z), z); o.from = [+x.toFixed(1), +z.toFixed(1)]; Z.list.push(o); return o; }
   function despawn(o) { scene.remove(o.g); o.g.remove(o.B.m); if (!o.B.stand) { o.B.m.rotation.set(0, Math.PI, 0); o.B.m.position.set(0, 0, 0); pool[o.kind].push(o.B); } Z.list.splice(Z.list.indexOf(o), 1); }
@@ -123,8 +125,8 @@ export function createHrZombies(c) {
     if (o.push) { mx += o.push[0] * dt * 4; mz += o.push[1] * dt * 4; o.push[0] *= 1 - dt * 6; o.push[1] *= 1 - dt * 6; if (Math.abs(o.push[0]) + Math.abs(o.push[1]) < .02) o.push = null; }
     if (safe && Math.hypot(tx - o.pos.x, tz - o.pos.z) < 1.2) { mx *= .2; mz *= .2; } // pressed up against the rails, groaning
     o.pos.x += mx; o.pos.z += mz;
-    for (const [ox, oz, or] of H.obst) { const ddx = o.pos.x - ox, ddz = o.pos.z - oz; if (Math.abs(ddx) > or + .4 || Math.abs(ddz) > or + .4) continue; const dd = Math.hypot(ddx, ddz), rr = or + .35; if (dd < rr && dd > 1e-4) { o.pos.x = ox + ddx / dd * rr; o.pos.z = oz + ddz / dd * rr; } }
-    pushOutOfPen(o.pos); o.pos.x = Math.max(-EDGE, Math.min(EDGE, o.pos.x)); o.pos.z = Math.max(-EDGE, Math.min(EDGE, o.pos.z)); }
+    for (const [ox, oz, or] of (H.obstNear ? H.obstNear(o.pos.x, o.pos.z) : H.obst)) { const ddx = o.pos.x - ox, ddz = o.pos.z - oz; if (Math.abs(ddx) > or + .4 || Math.abs(ddz) > or + .4) continue; const dd = Math.hypot(ddx, ddz), rr = or + .35; if (dd < rr && dd > 1e-4) { o.pos.x = ox + ddx / dd * rr; o.pos.z = oz + ddz / dd * rr; } }
+    pushOutOfPen(o.pos); o.pos.x = Math.max(-WALK, Math.min(WALK, o.pos.x)); o.pos.z = Math.max(-WALK, Math.min(WALK, o.pos.z)); }
   function separate() { const L = Z.list; for (let i = 0; i < L.length; i++) { const a = L[i]; if (!a.alive) continue; for (let j = i + 1; j < L.length; j++) { const b = L[j]; if (!b.alive) continue;
     const dx = b.pos.x - a.pos.x, dz = b.pos.z - a.pos.z, d = Math.hypot(dx, dz), r = .55 * (a.K.s + b.K.s) / 2; if (d < r && d > 1e-4) { const k = (r - d) / 2 / d; a.pos.x -= dx * k; a.pos.z -= dz * k; b.pos.x += dx * k; b.pos.z += dz * k; pushOutOfPen(a.pos); pushOutOfPen(b.pos); } } } }
 

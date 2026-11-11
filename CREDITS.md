@@ -74,3 +74,6 @@ Sky: original code (`src/hrworld.js`); the atmospheric scattering is the Preetha
 
 ## Horse Rider landscape (v29) — original, no downloaded assets
 - Sagebrush, bunchgrass, prickly pear, saguaro, pebbles and far mountain conifers (`src/hrflora.js`, `src/horse.js`): original procedural three.js geometry, instanced; existing CC0 textures above reused. Mountain range, snow-line, conifer-belt and haze shaders: original code. Nothing bought or downloaded.
+
+## Horse Rider rideable mountains (v30) — original, no downloaded assets
+- Mountain trails, ponds, creek, detail-terrain chunks, world mask, water shader (`src/hrterrain.js`), mountain forests, low-poly outcrop rocks, fallen logs, trail signposts and summit cairns (`src/horse.js`): original code / procedural geometry. Textures are the existing CC0 Poly Haven sets listed above (bark, rock, grass, dirt, rocky trail, snow). Nothing bought or downloaded.

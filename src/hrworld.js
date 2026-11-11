@@ -115,17 +115,27 @@ void main(){ vec3 dir=normalize(vWorldPosition-cameraPosition); vec3 sd=normaliz
 }
 
 // ---------------- terrain material: grass / dirt / trail / rock (triplanar) / snow blended by slope, height and masks ----------------
-export function terrainMaterial(T, PEN, SEG, BASE, hq = true) {
-  const m = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, normalMap: T.grass.n }); m.normalScale.set(1, 1); if (hq) m.defines = { TERRAIN_HQ: '' };
+export function terrainMaterial(T, PEN, SEG, BASE, hq = true, o = {}) {
+  const m = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, normalMap: T.grass.n }); m.normalScale.set(1, 1); m.defines = {}; if (hq) m.defines.TERRAIN_HQ = '';
+  if (o.hole) { m.defines.CHUNK_HOLE = ''; m.defines.CH_SIZE = o.CH.toFixed(1); m.defines.CH_LIM = o.LIM.toFixed(1); } // coarse terrain: sink + discard where the detail chunks are
+  const XU = { uMask: { value: o.mask || null }, uMH: { value: o.maskHalf || 1 }, uChunk: o.chunkU || { value: new THREE.Vector4(0, 0, -1, 0) } };
   m.onBeforeCompile = sh => { Object.assign(sh.uniforms, { tG: { value: T.grass.d }, tGa: { value: T.grass.a }, tG2: { value: T.grass2.d }, tD: { value: T.dirt.d }, tDn: { value: T.dirt.n }, tTr: { value: T.trail.d },
-      tR: { value: T.rock.d }, tRn: { value: T.rock.n }, tS: { value: T.snow.d }, tSn: { value: T.snow.n }, uPen: { value: new THREE.Vector4(PEN.x, PEN.z, PEN.hw, PEN.hd) }, uSeg: { value: SEG.map(s => new THREE.Vector4(...s)) }, uBase: { value: BASE } });
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWP; varying vec3 vWN;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP=(modelMatrix*vec4(position,1.)).xyz; vWN=normalize(mat3(modelMatrix)*normal);');
+      tR: { value: T.rock.d }, tRn: { value: T.rock.n }, tS: { value: T.snow.d }, tSn: { value: T.snow.n }, uPen: { value: new THREE.Vector4(PEN.x, PEN.z, PEN.hw, PEN.hd) }, uSeg: { value: SEG.map(s => new THREE.Vector4(...s)) }, uBase: { value: BASE } }, XU);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWP; varying vec3 vWN; uniform vec4 uChunk;').replace('#include <begin_vertex>', `#include <begin_vertex>
+#ifdef CHUNK_HOLE
+{ vec2 cc=floor(position.xz/CH_SIZE); vec2 dc=abs(cc-uChunk.xy); if(uChunk.w>.5&&max(dc.x,dc.y)<=uChunk.z&&cc.x>=-CH_LIM&&cc.x<CH_LIM&&cc.y>=-CH_LIM&&cc.y<CH_LIM) transformed.y-=4.; }
+#endif
+vWP=(modelMatrix*vec4(transformed,1.)).xyz; vWN=normalize(mat3(modelMatrix)*normal);`);
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
-varying vec3 vWP; varying vec3 vWN; uniform sampler2D tG,tGa,tG2,tD,tDn,tTr,tR,tRn,tS,tSn; uniform float uBase;
+varying vec3 vWP; varying vec3 vWN; uniform sampler2D tG,tGa,tG2,tD,tDn,tTr,tR,tRn,tS,tSn,uMask; uniform float uBase,uMH; uniform vec4 uChunk;
 ${GLSL_NOISE}
 ${GLSL_TRAIL}
 vec3 tri(sampler2D t, vec3 p, vec3 w){ return texture2D(t,p.zy).rgb*w.x+texture2D(t,p.xz).rgb*w.y+texture2D(t,p.xy).rgb*w.z; }`)
-      .replace('#include <map_fragment>', `float dist=length(vWP-cameraPosition); vec2 xz=vWP.xz; float slope=1.-vWN.y; float hgt=vWP.y-uBase; float r0=length(xz);
+      .replace('#include <map_fragment>', `
+#ifdef CHUNK_HOLE
+{ vec2 cc=floor(vWP.xz/CH_SIZE); vec2 dc=abs(cc-uChunk.xy); if(uChunk.w>.5&&max(dc.x,dc.y)<=uChunk.z&&cc.x>=-CH_LIM&&cc.x<CH_LIM&&cc.y>=-CH_LIM&&cc.y<CH_LIM) discard; }
+#endif
+float dist=length(vWP-cameraPosition); vec2 xz=vWP.xz; float slope=1.-vWN.y; float hgt=vWP.y-uBase; float r0=length(xz);
 float mv=vn(xz*.035)*.55+vn(xz*.17)*.3+vn(xz*.9)*.15; float macro=fbm3(xz*.0035);
 vec2 uvG=xz/3.2; vec3 gA=texture2D(tG,uvG).rgb, gB=texture2D(tG,mat2(.8,-.6,.6,.8)*xz/11.+.37).rgb, g2=texture2D(tG2,xz/4.3).rgb;
 vec3 grass=mix(gA,g2*vec3(.95,1.08,.78),.35+.3*(mv-.5)); grass=mix(grass,gB,smoothstep(15.,90.,dist)*.65);
@@ -136,16 +146,20 @@ vec3 tw=pow(abs(vWN),vec3(4.)); tw/=tw.x+tw.y+tw.z; vec3 rock=tri(tR,vWP/7.,tw)*
 vec3 snow=texture2D(tS,xz/4.).rgb*vec3(.98,1.,1.04); rock=mix(rock,vec3(dot(rock,vec3(.3,.4,.3))),.4)*vec3(.9,.9,.95);
 float pen=1.-smoothstep(-1.,1.3,penM(xz)+(vn(xz*.6)-.5)*1.6); float td=trailD(xz); float path=1.-smoothstep(.7,2.1,td+(vn(xz*.5)-.5)*1.4);
 float worn=smoothstep(.7,.92,vn(xz*.08)*.7+vn(xz*.35)*.3)*(1.-smoothstep(200.,400.,r0)); float dm=max(pen*.95,worn*.6);
-float rockW=smoothstep(.2,.38,slope+(mv-.5)*.12)+smoothstep(70.,150.,hgt+(macro-.5)*60.)*.7; rockW=clamp(rockW,0.,1.);
-float sLine=250.-smoothstep(900.,2600.,r0)*60.+(vn(xz*.012)-.5)*55.-clamp(-vWN.z,0.,1.)*25.; float snowW=smoothstep(sLine,sLine+45.,hgt+(macro-.5)*70.)*mix(1.,smoothstep(.15,.65,vn(xz*.05+vWP.y*.02)),smoothstep(.45,.78,slope))*(1.-smoothstep(.78,.92,slope)); 
+vec2 mk=texture2D(uMask,xz/(2.*uMH)+.5).rg; float tdM=(1.-mk.r)*8.; float path2=(1.-smoothstep(1.3,3.3,tdM+(vn(xz*.5)-.5)*1.5))*step(.004,mk.r); path=max(path,path2*.96);
+float wd=(1.-mk.g)*30.; float moist=(1.-smoothstep(1.5,22.,wd))*step(.004,mk.g); float bank=(1.-smoothstep(.3,2.6,wd+(vn(xz*.45)-.5)*3.2))*step(.004,mk.g);
+grass=mix(grass,grass*vec3(.74,1.12,.78),moist*.65); float speck=smoothstep(.74,.86,vn(xz*.85)+vn(xz*3.3)*.2)*(1.-moist)*(1.-smoothstep(10.,40.,dist)); dm=max(dm,speck*.55);
+float rockW=smoothstep(.2,.38,slope+(mv-.5)*.12)+smoothstep(70.,150.,hgt+(macro-.5)*60.)*.7; rockW=clamp(rockW,0.,1.)*(1.-path2*.85)*(1.-bank*.6);
+float sLine=355.-smoothstep(900.,2600.,r0)*90.+(vn(xz*.012)-.5)*55.-clamp(-vWN.z,0.,1.)*25.-(1.-smoothstep(.08,.4,slope))*28.; float snowW=smoothstep(sLine,sLine+45.,hgt+(macro-.5)*70.)*mix(1.,smoothstep(.15,.65,vn(xz*.05+vWP.y*.02)),smoothstep(.45,.78,slope))*(1.-smoothstep(.78,.92,slope)); 
 rock*=mix(.86,1.08,vn(vec2(vWP.y*.07,macro*4.+xz.x*.002)))*mix(vec3(.86,.86,.9),vec3(1.04,.97,.88),vn(xz*.008)); rock*=mix(.62,1.,smoothstep(.25,.6,vn(vWP.xz*.06+vWP.y*.03)))*mix(1.,.8,smoothstep(.55,.9,slope));
 float forest=smoothstep(380.,560.,r0)*(1.-smoothstep(.36,.55,slope))*(1.-smoothstep(110.,175.,hgt+(macro-.5)*50.))*smoothstep(.3,.55,fbm3(xz*.006+2.)); forest=max(forest,smoothstep(380.,520.,r0)*(1.-smoothstep(.45,.62,slope))*(1.-smoothstep(130.,175.,hgt))*smoothstep(25.,60.,hgt)*.85);
-vec3 col=mix(grass,dirt,dm); col=mix(col,trail,path*.92); col=mix(col,vec3(.085,.12,.065)*(.65+.7*vn(xz*.11))*(.85+.3*macro),forest*.8); col=mix(col,rock,rockW);
+vec3 litter=mix(vec3(.085,.12,.065)*(.65+.7*vn(xz*.11))*(.85+.3*macro),dirt*vec3(.62,.55,.45)*(.8+.4*vn(xz*.6)),1.-smoothstep(30.,120.,dist)); // forest floor: needle litter up close
+vec3 col=mix(grass,dirt,dm); col=mix(col,trail,path*.92); col=mix(col,litter,forest*.8); col=mix(col,rock,rockW); col=mix(col,mix(dirt*vec3(.5,.47,.44),trail*vec3(.8,.78,.74),vn(xz*.9)),bank*.7);
 float belt=smoothstep(420.,560.,r0)*(1.-smoothstep(.42,.6,slope))*smoothstep(15.,45.,hgt)*(1.-smoothstep(120.,175.,hgt+(macro-.5)*60.))*smoothstep(.25,.5,fbm3(xz*.005+7.)); col=mix(col,vec3(.07,.1,.06)*(.7+.6*vn(xz*.09)),belt*.85); // conifer belt on the lower mountain flanks
-col=mix(col,snow,snowW);
+snowW*=1.-path2*.45; col=mix(col,snow,snowW); col*=mix(1.,.82+.36*vn(xz*2.7),(1.-smoothstep(5.,28.,dist))*(1.-snowW)); // micro variation up close
 vec4 gArm=texture2D(tGa,uvG); float ao=mix(gArm.r,1.,max(max(dm,path),rockW)); col*=mix(1.,ao,.8);
-float tRough=mix(mix(mix(gArm.g,.97,dm),.98,path),.84,rockW); tRough=mix(tRough,.62,snowW); tRough=max(tRough,mix(.6,.96,smoothstep(40.,350.,dist))); // far, grazing terrain must not mirror the bright sky (white valley floors)
-vec3 nG=texture2D(normalMap,vNormalMapUv*1.28).xyz*2.-1., nD=texture2D(tDn,xz/3.).xyz*2.-1., nR=texture2D(tRn,xz/7.).xyz*2.-1., nS=texture2D(tSn,xz/4.).xyz*2.-1.;
+float tRough=mix(mix(mix(gArm.g,.97,dm),.98,path),.84,rockW); tRough=mix(tRough,.62,snowW); tRough=mix(tRough,.5,bank*.7); tRough=max(tRough,mix(.6,.96,smoothstep(40.,350.,dist))); // far, grazing terrain must not mirror the bright sky (white valley floors)
+vec3 nG=texture2D(normalMap,vNormalMapUv*1.28).xyz*2.-1.; nG=normalize(nG+(texture2D(normalMap,xz/.85).xyz*2.-1.)*vec3(.7,.7,0.)*(1.-smoothstep(6.,26.,dist))); vec3 nD=texture2D(tDn,xz/3.).xyz*2.-1., nR=texture2D(tRn,xz/7.).xyz*2.-1., nS=texture2D(tSn,xz/4.).xyz*2.-1.;
 vec3 tN=normalize(mix(mix(mix(nG,nD,max(dm,path)),nR*vec3(1.3,1.3,1.),rockW),nS,snowW)); tN.xy*=1.-smoothstep(60.,260.,dist)*.7;
 #ifdef TERRAIN_HQ
 float fd=smoothstep(30.,260.,dist); if(fd>0.){ vec2 q=xz*.022; float c0=fbm3(q), cx=fbm3(q+vec2(.12,0.)), cz=fbm3(q+vec2(0.,.12)); tN.xy+=vec2(cx-c0,cz-c0)*(5.+9.*rockW)*fd; tN=normalize(tN); }
@@ -164,12 +178,12 @@ export function loadTerrainTextures(renderer, hd) {
     trail: { d: ld('rocky_trail', 'diff', true) }, rock: { d: ld('rock_face', 'diff', true), n: ld('rock_face', 'nor') }, snow: { d: ld('snow_02', 'diff', true), n: ld('snow_02', 'nor') } };
 }
 // inner terrain (square, +-HALF m) + far ring out to ~4.2 km for the mountain silhouettes; returns the inner heightmap for the GPU grass
-export function buildTerrain(scene, mat, hAt, HALF, seg, farRings, farSegs) {
-  const n = seg + 1, hm = new Float32Array(n * n), step = HALF * 2 / seg, BASE = hAt(0, 0);
+export function buildTerrain(scene, mat, hAt, HALF, seg, farRings, farSegs, holeMat = mat) { // inner + far use holeMat (they make way for the streamed detail chunks)
+  const step = HALF * 2 / seg, BASE = hAt(0, 0);
   const geo = new THREE.PlaneGeometry(HALF * 2, HALF * 2, seg, seg); geo.rotateX(-Math.PI / 2);
   const p = geo.attributes.position, uv = geo.attributes.uv;
-  for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i), y = hAt(x, z); p.setY(i, y); uv.setXY(i, x / 2.5, z / 2.5); const ix = Math.round((x + HALF) / step), iz = Math.round((z + HALF) / step); hm[iz * n + ix] = y - BASE; }
-  geo.computeVertexNormals(); const inner = new THREE.Mesh(geo, mat); inner.receiveShadow = true; scene.add(inner);
+  for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i), y = hAt(x, z); p.setY(i, y); uv.setXY(i, x / 2.5, z / 2.5); }
+  geo.computeVertexNormals(); const inner = new THREE.Mesh(geo, holeMat); inner.receiveShadow = true; scene.add(inner);
   { // skirt: a 40 m curtain hanging from the inner square's rim, so no sky shows through where it meets the far ring
     const sp = [], si = [], sn = []; const rim = []; for (let i = 0; i <= seg; i++) rim.push([-HALF + i * step, -HALF]); for (let i = 1; i <= seg; i++) rim.push([HALF, -HALF + i * step]); for (let i = 1; i <= seg; i++) rim.push([HALF - i * step, HALF]); for (let i = 1; i <= seg; i++) rim.push([-HALF, HALF - i * step]);
     for (const [x, z] of rim) { const y = hAt(x, z), l = Math.hypot(x, z); sp.push(x, y, z, x, y - 40, z); sn.push(x / l, .3, z / l, x / l, .3, z / l); }
@@ -182,9 +196,8 @@ export function buildTerrain(scene, mat, hAt, HALF, seg, farRings, farSegs) {
     const inSq = Math.max(Math.abs(x), Math.abs(z)) < HALF + 2; pos.push(x, hAt(x, z) - (inSq ? 1.2 : 0), z); uvs.push(x / 2.5, z / 2.5); } }
   for (let j = 0; j < farRings; j++) for (let i = 0; i < farSegs; i++) { const a = j * (farSegs + 1) + i, b = a + farSegs + 1; idx.push(a, a + 1, b, a + 1, b + 1, b); } // CCW from above (the old order faced down, so only far-side slopes drew and valleys showed sky)
   const fg = new THREE.BufferGeometry(); fg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); fg.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2)); fg.setIndex(idx); fg.computeVertexNormals();
-  const far = new THREE.Mesh(fg, mat); far.receiveShadow = false; far.frustumCulled = false; scene.add(far);
-  const tex = new THREE.DataTexture(THREE.DataUtils ? toHalf(hm) : hm, n, n, THREE.RedFormat, THREE.HalfFloatType); tex.minFilter = tex.magFilter = THREE.LinearFilter; tex.needsUpdate = true;
-  return { inner, far, heightTex: tex, BASE, HALF };
+  const far = new THREE.Mesh(fg, holeMat); far.receiveShadow = false; far.frustumCulled = false; scene.add(far);
+  return { inner, far, BASE, HALF };
 }
 function toHalf(f) { const o = new Uint16Array(f.length); for (let i = 0; i < f.length; i++) o[i] = THREE.DataUtils.toHalfFloat(f[i]); return o; }
 
@@ -204,23 +217,28 @@ function tuftGeometry(blades) {
 }
 export function createGrass(scene, T, PEN, SEG, opt) {
   const N = opt.N, R = opt.R, cell = R * 2 / N, g = tuftGeometry(opt.blades || 4); g.instanceCount = N * N; g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e5);
-  const U = { uHm: { value: T.heightTex }, uHalf: { value: T.HALF }, uBase: { value: T.BASE }, uCam: { value: new THREE.Vector3() }, uN: { value: N }, uCell: { value: cell }, uR: { value: R }, uTime: { value: 0 },
+  // local height map that follows the camera (HM x HM texels over 2*(R+24) m), rebuilt a few rows per frame into a back buffer, then swapped in
+  const HM = 128, SPAN = 2 * (R + 24), hAt = opt.hAt, bufs = [0, 1].map(() => new Uint16Array(HM * HM)), texs = bufs.map(b => { const t = new THREE.DataTexture(b, HM, HM, THREE.RedFormat, THREE.HalfFloatType); t.minFilter = t.magFilter = THREE.LinearFilter; return t; });
+  const LH = { cur: -1, back: 0, row: HM + 1, ox: 0, oz: 0, nx: 0, nz: 0, off: 0 };
+  const fill = (rows) => { const b = bufs[LH.back], px = SPAN / (HM - 1); for (let n = 0; n < rows && LH.row < HM; n++, LH.row++) { const j = LH.row; for (let i = 0; i < HM; i++) b[j * HM + i] = THREE.DataUtils.toHalfFloat(hAt(LH.nx + i * px, LH.nz + j * px) - LH.off); } // relative to the map centre: half floats stay cm-accurate up in the mountains
+    if (LH.row >= HM) { texs[LH.back].needsUpdate = true; U.uHm.value = texs[LH.back]; U.uHmO.value.set(LH.nx, LH.nz, SPAN, LH.off); LH.cur = LH.back; LH.back = 1 - LH.back; LH.row = HM + 1; } };
+  const U = { uHm: { value: texs[0] }, uHmO: { value: new THREE.Vector4(-1e5, -1e5, SPAN, 0) }, uMask: { value: opt.mask || null }, uMH: { value: opt.maskHalf || 1 }, uBase: { value: T.BASE }, uCam: { value: new THREE.Vector3() }, uN: { value: N }, uCell: { value: cell }, uR: { value: R }, uTime: { value: 0 },
     uPen: { value: new THREE.Vector4(PEN.x, PEN.z, PEN.hw, PEN.hd) }, uSeg: { value: SEG.map(s => new THREE.Vector4(...s)) }, uSunV: { value: new THREE.Vector3() }, uSunC: { value: new THREE.Color() }, uWind: { value: 1 } };
   const m = new THREE.MeshStandardMaterial({ roughness: .78, metalness: 0, side: THREE.DoubleSide });
   m.onBeforeCompile = sh => { Object.assign(sh.uniforms, U);
     sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
-attribute float aH; attribute float aHead; uniform sampler2D uHm; uniform float uHalf, uBase, uN, uCell, uR, uTime, uWind; uniform vec3 uCam; varying vec3 vGC; varying float vTr;
+attribute float aH; attribute float aHead; uniform sampler2D uHm, uMask; uniform float uBase, uN, uCell, uR, uTime, uWind, uMH; uniform vec3 uCam; uniform vec4 uHmO; varying vec3 vGC; varying float vTr;
 ${GLSL_NOISE}
 ${GLSL_TRAIL}
-float hgt(vec2 p){ return texture2D(uHm,(p+uHalf)/(2.*uHalf)).r+uBase; }
+float hgt(vec2 p){ return texture2D(uHm,((p-uHmO.xy)/uHmO.z*127.+.5)/128.).r+uHmO.w; }
 float h1(vec2 p){return fract(sin(dot(p,vec2(41.3,289.1)))*43758.5453);}`)
       .replace('#include <beginnormal_vertex>', `float fi=float(gl_InstanceID); vec2 ij=vec2(mod(fi,uN),floor(fi/uN)); vec2 c0=floor(uCam.xz/uCell)-floor(uN*.5); vec2 cw=c0+ij;
 vec2 jit=vec2(h1(cw),h1(cw+17.3)); vec2 base=(cw+jit)*uCell; float dCam=length(base-uCam.xz); float rnd=h1(cw+5.1), rot=h1(cw+9.7)*6.2832;
-float pen=penM(base); float td=trailD(base); float e=uHalf*.98-max(abs(base.x),abs(base.y));
+float pen=penM(base); float td=trailD(base); vec2 lq=(base-uHmO.xy)/uHmO.z-vec2(.004); float e=min(min(lq.x,lq.y),1.-max(lq.x,lq.y)); vec2 mk=texture2D(uMask,base/(2.*uMH)+.5).rg; float tdM=mix(99.,(1.-mk.r)*8.,step(.004,mk.r)), wd=mix(99.,(1.-mk.g)*30.,step(.004,mk.g));
 float hC=hgt(base), hX=hgt(base+vec2(1.,0.)), hZ=hgt(base+vec2(0.,1.)); float slope=length(vec2(hX-hC,hZ-hC));
-float macro=fbm3(base*.0035); float keep=step(rnd,1.-smoothstep(uR*.45,uR,dCam)*.75)*step(.4,pen)*step(1.05+h1(cw+3.)*.6,td)*step(slope,.5)*step(hC-uBase,120.)*step(0.,e);
+float macro=fbm3(base*.0035); float keep=step(rnd,1.-smoothstep(uR*.45,uR,dCam)*.75)*step(.4,pen)*step(1.05+h1(cw+3.)*.6,td)*step(slope,.5)*step(hC-uBase,185.+vn(base*.01)*50.)*step(0.,e)*step(2.2+h1(cw+6.)*.8,tdM)*step(1.6,wd);
 keep*=1.-step(h1(cw+8.),smoothstep(.7,.92,vn(base*.08)*.7+vn(base*.35)*.3)*.85); // worn patches
-float sc=keep*(1.-smoothstep(uR*.72,uR,dCam))*(.55+h1(cw+1.)*.75)*mix(.7,1.25,smoothstep(.3,.7,macro)); float flower=step(h1(cw+11.),.035);
+float sc=keep*(1.-smoothstep(uR*.72,uR,dCam))*(.55+h1(cw+1.)*.75)*mix(.7,1.25,smoothstep(.3,.7,macro))*mix(1.,1.3,1.-smoothstep(2.,14.,wd))*mix(1.,.6,smoothstep(90.,170.,hC-uBase)); float flower=step(h1(cw+11.),.03+.17*smoothstep(.62,.85,vn(base*.022+3.1))); // patchy wildflower meadows
 float cr=cos(rot), sr=sin(rot); vec3 lp=vec3(position.x*cr-position.z*sr, position.y, position.x*sr+position.z*cr)*sc; lp.y*=mix(.75,1.35,vn(base*.11));
 // wind: travelling gusts + per-tuft flutter; bend grows with height^2
 float gust=sin(dot(base,vec2(.13,.07))-uTime*1.9)*.5+.5; gust=gust*gust*(.6+.8*vn(base*.03+uTime*.15)); float flut=sin(uTime*4.3+rnd*30.)*.12;
@@ -235,7 +253,8 @@ vGC=mix(dry,tip,aH)*mix(.82,1.15,h1(cw+4.)); vec3 fc=h1(cw+12.)<.4?vec3(.95,.92,
       .replace('#include <opaque_fragment>', 'float bk=pow(max(dot(normalize(-vViewPosition),uSunV),0.),3.); outgoingLight += vGC*uSunC*bk*vTr*1.6; outgoingLight*=mix(.55,1.,vTr);\n#include <opaque_fragment>'); };
   const mesh = new THREE.Mesh(g, m); mesh.frustumCulled = false; mesh.receiveShadow = true; mesh.castShadow = false; scene.add(mesh);
   const v = new THREE.Vector3();
-  return { mesh, U, update(dt, cam, sunDir, sunCol, wind) { U.uTime.value += dt; U.uCam.value.copy(cam.position); U.uSunV.value.copy(sunDir).transformDirection(cam.matrixWorldInverse); U.uSunC.value.copy(sunCol); U.uWind.value = wind; }, tris: g.index.count / 3 * N * N };
+  return { mesh, U, LH, bufs, update(dt, cam, sunDir, sunCol, wind) { U.uTime.value += dt; U.uCam.value.copy(cam.position);
+    { const cx = cam.position.x - SPAN / 2, cz = cam.position.z - SPAN / 2; if (LH.row > HM && (LH.cur < 0 || Math.max(Math.abs(cx - LH.ox), Math.abs(cz - LH.oz)) > 14)) { LH.nx = Math.round(cx); LH.nz = Math.round(cz); LH.off = Math.round(hAt(cam.position.x, cam.position.z)); LH.row = 0; } if (LH.row < HM) { fill(LH.cur < 0 || Math.max(Math.abs(cx - LH.ox), Math.abs(cz - LH.oz)) > SPAN * .3 ? HM : opt.mobile ? 10 : 18); /* teleports / respawns: all at once */ if (LH.row > HM) { LH.ox = LH.nx; LH.oz = LH.nz; } } } U.uSunV.value.copy(sunDir).transformDirection(cam.matrixWorldInverse); U.uSunC.value.copy(sunCol); U.uWind.value = wind; }, tris: g.index.count / 3 * N * N };
 }
 // ---------------- CC0 scanned boulders (Poly Haven) ----------------
 export function loadRockModels() {

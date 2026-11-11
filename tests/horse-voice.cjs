@@ -71,8 +71,9 @@ async function page(br, mobile, errors, tag) {
     L = (await api('/lobbies')).lobbies; R.listedPlayers = L.find(l => l.code === code).players; assert.equal(R.listedPlayers, 3);
     step('sync: player 2 mounts and rides; host sees it');
     await c.bringToFront();
-    await c.evaluate(() => { const H = __horse, h = H.state.horses[2]; for (const o of H.state.horses) o.wait = 1e9; __P.pos.set(h.pos.x + 1.2, h.pos.y, h.pos.z); });
-    await until(c, () => !!__horse.state.near, null, 10000); await c.tap('#tAct'); await until(c, () => !!__horse.state.mounted, null, 20000);
+    await h.evaluate(() => { for (const o of __horse.state.horses) { o.tgt = null; o.wait = 1e9; } }); await sleep(1500);
+    await c.evaluate(() => { const H = __horse, h = H.state.horses[2]; for (const o of H.state.horses) { o.tgt = null; o.wait = 1e9; } __P.pos.set(h.pos.x + 1.2, h.pos.y, h.pos.z); });
+    await until(c, () => !!__horse.state.near, null, 10000); await until(c, () => !document.getElementById('tAct').hidden && document.getElementById('tAct').textContent === 'RIDE', null, 20000); await c.tap('#tAct'); await until(c, () => !!__horse.state.mounted, null, 20000);
     R.p2Horse = await c.evaluate(() => __horse.state.mounted.id);
     await until(h, id => __horse.state.ridden.get(__horse.state.horses[id]) === 'P2', R.p2Horse, 15000); R.hostSeesRidden = true;
     await c.evaluate(() => { const h = __horse.state.mounted; __P.yaw = Math.PI; h.yaw = Math.PI; h.pos.x = __horse.PEN.x; h.pos.z = __horse.PEN.z + __horse.PEN.hd + 3; });

@@ -14,9 +14,11 @@ import { ShaderPass } from '../addons/postprocessing/ShaderPass.js';
 import { createGuns } from './hrguns.js';
 import { createHrZombies } from './hrzombies.js';
 import { createFlora } from './hrflora.js';
+import { buildFeatures, buildMask, createChunks, createWater } from './hrterrain.js';
 import { makeRawH, trailSegments, segDist as segD, createSky, terrainMaterial as terrainMat2, loadTerrainTextures, buildTerrain, createGrass, loadRockModels } from './hrworld.js';
 const $ = id => document.getElementById(id);
-const S = 800, EDGE = 360;                // map size (m) and walkable half-extent
+const S = 800, EDGE = 360;                // meadow half-extent (the mountains start around here)
+const WALK = 1050, CHUNK = 125, CH_LIM = 10, MASK_HALF = 1200; // v30: rideable half-extent (up into the mountains), detail-chunk size / limit, world-mask extent
 const PEN = { x: 0, z: 0, hw: 13, hd: 9, gate: 2.6 }; // pen centre, half sizes, gate half-width (south side, +z)
 const SPAWN = { x: 4, z: 34 };
 const clearing = (x, z, m = 0) => Math.abs(x - PEN.x) < 11 + m && z > PEN.z && z < PEN.z + 150; // open riding meadow south of the gate
@@ -28,7 +30,11 @@ const inLane = (x, z, m) => { const ex = x - RANGE.x + 1, ez = z - RANGE.z, t = 
 const inRange = (x, z, m = 0) => (x < RANGE.x + 3 + m && x > RANGE.x - 66 - m && Math.abs(z - RANGE.z) < 9 + m) || inLane(x, z, m);
 const SEG = trailSegments(PEN, SPAWN), trailDist = (x, z) => { let d = 1e9; for (const g of SEG) d = Math.min(d, segD(x, z, g)); return d; };
 const BASE = rawH(PEN.x, PEN.z);
-export function hAt(x, z) { const d = Math.hypot(x - PEN.x, z - PEN.z); return BASE + (rawH(x, z) - BASE) * sstep(24, 60, d); }
+function h0(x, z) { const d = Math.hypot(x - PEN.x, z - PEN.z); return BASE + (rawH(x, z) - BASE) * sstep(24, 60, d); }
+// mountain trails, ponds and the creek are carved into the height field (deterministic, same for every player): src/hrterrain.js
+let FEAT = null; const featAvoid = (x, z) => (Math.abs(x - PEN.x) < 75 && Math.abs(z - PEN.z) < 75) || clearing(x, z, 12) || inRange(x, z, 14) || trailDist(x, z) < 10;
+export function features() { return FEAT || (FEAT = buildFeatures(h0, { BASE, WALK, avoid: featAvoid })); }
+export function hAt(x, z) { return (FEAT || features()).carve(x, z, h0(x, z)); }
 
 function std(color, o = {}) { return new THREE.MeshStandardMaterial({ color, roughness: o.r ?? .85, metalness: o.m ?? 0, ...(o.map ? { map: o.map } : {}) }); }
 function box(g, w, h, d, m, x, y, z) { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); b.castShadow = true; g.add(b); return b; }
@@ -323,10 +329,15 @@ export function createHorseRider(ctx) {
   const pbr = (k, o = {}) => PBRS && PBRS[k] ? new THREE.MeshStandardMaterial({ map: PBRS[k].map, normalMap: PBRS[k].normalMap, roughness: 1, metalness: 0, ...o }) : std(o.color ?? 0x7a5634);
   const HQ = !mobile && Q.shadow > 0; // desktop medium / high / ultra: full sky + terrain detail
   function buildWorld() {
-    const T = loadTerrainTextures(GX.renderer, HQ), mat = terrainMat2(T, PEN, SEG, BASE, HQ);
-    const seg = Q.shadow >= 2048 && !mobile ? 400 : HQ ? 320 : mobile ? 160 : 240;
-    H.terrain = buildTerrain(scene, mat, hAt, 500, seg, HQ ? 110 : 72, HQ ? 448 : 256); H.ground3d = H.terrain.inner;
-    buildTrees(); buildRocks(); buildFlora(); buildGrass(); buildPen();
+    const F = H.F = features(); H.mask = buildMask(F, MASK_HALF, mobile ? 1024 : 2048);
+    const T = loadTerrainTextures(GX.renderer, HQ), XO = { mask: H.mask, maskHalf: MASK_HALF, chunkU: { value: new THREE.Vector4(0, 0, -1, 0) }, CH: CHUNK, LIM: CH_LIM };
+    const mat = terrainMat2(T, PEN, SEG, BASE, HQ, XO), holeMat = terrainMat2(T, PEN, SEG, BASE, HQ, { ...XO, hole: true });
+    // coarse inner square + far ring everywhere, streamed detail chunks (1.6-3.1 m grid) in a square around the player
+    const seg = Q.shadow >= 2048 && !mobile ? 200 : HQ ? 180 : mobile ? 100 : 150;
+    H.terrain = buildTerrain(scene, mat, hAt, 500, seg, HQ ? 110 : 72, HQ ? 448 : 256, holeMat); H.ground3d = H.terrain.inner;
+    H.chunks = createChunks(scene, mat, hAt, { CH: CHUNK, seg: Q.shadow >= 2048 && !mobile ? 80 : HQ ? 64 : mobile ? 40 : 50, K: mobile ? 1 : 2, lim: CH_LIM, U: XO.chunkU }); H.chunks.update(P.pos.x, P.pos.z, true);
+    H.water = createWater(scene, F, hAt, { mobile });
+    buildTrees(); buildRocks(); buildLogs(); buildFlora(); buildGrass(); buildPen(); buildTrailMarks();
   }
   // woods: conifers + broadleaf trees, instanced, with a near (detailed) / far (low-poly) LOD swapped around the player
   function buildTrees() {
@@ -334,13 +345,20 @@ export function createHorseRider(ctx) {
     for (let i = 0; i < nT * 8 && H.trees.length < nT; i++) { const x = (rnd() - .5) * 2 * (EDGE + 30), z = (rnd() - .5) * 2 * (EDGE + 30);
       if (Math.hypot(x - PEN.x, z - PEN.z) < 36 || Math.hypot(x - SPAWN.x, z - SPAWN.z) < 12 || clearing(x, z, 4) || trailDist(x, z) < 3.5 || inRange(x, z, 4)) continue; if (rnd() > .3 + .7 * (Math.sin(x * .02) * Math.cos(z * .025) * .5 + .5)) continue;
       const y = hAt(x, z); if (y - BASE > 44) continue; const s = .75 + rnd() * .65, conif = rnd() < (y - BASE > 12 ? .85 : .55);
-      H.trees.push({ x, y: y - .15, z, s, r: rnd() * 6.28, conif, hue: rnd() }); H.obst.push([x, z, (conif ? .4 : .45) * s, 11 * s]); }
+      const tr = rnd() * 6.28, hue = rnd(); if (FEAT.trailDist(x, z) < 4.2 || FEAT.waterDist(x, z) < 3.5) continue; H.trees.push({ x, y: y - .15, z, s, r: tr, conif, hue }); H.obst.push([x, z, (conif ? .4 : .45) * s, 11 * s]); }
+    { // v30: pine forests up the mountain slopes you can ride among (collision inside the rideable square), thinning out to the tree line
+      const r2 = mulberry(77), n2 = (x, z) => Math.sin(x * .013 + Math.cos(z * .009) * 2) * Math.cos(z * .011 - Math.sin(x * .007) * 1.7), nM = mobile ? 1300 : HQ ? 4800 : 3000; let c = 0;
+      for (let i = 0; i < nM * 14 && c < nM; i++) { const a = r2() * TAU, d = EDGE + 8 + Math.pow(r2(), 1.25) * (1420 - EDGE), x = Math.cos(a) * d, z = Math.sin(a) * d;
+        if (Math.max(Math.abs(x), Math.abs(z)) < EDGE + 25 || FEAT.trailDist(x, z) < 4.2 || FEAT.waterDist(x, z) < 3.5) continue; const y = hAt(x, z), hh = y - BASE, sl = Math.hypot(hAt(x + 1.5, z) - y, hAt(x, z + 1.5) - y) / 1.5;
+        if (sl > .85 || hh > 215 + n2(x, z) * 40 || hh < -10 || n2(x * 1.7, z * 1.7) < -.4 + Math.min(.5, hh / 420)) continue;
+        const s = (.8 + r2() * .85) * (1 - Math.min(.35, Math.max(0, hh - 120) / 300)); H.trees.push({ x, y: y - .25, z, s, r: r2() * 6.28, conif: r2() < .94, hue: r2() }); c++;
+        if (Math.max(Math.abs(x), Math.abs(z)) < WALK + 8) H.obst.push([x, z, .4 * s, 11 * s]); } H.mountainTrees = c; }
     const bark = pbr('bark', { color: 0x9a8a7a }); if (bark.map) { bark.map = bark.map.clone(); bark.map.repeat.set(1, 3); bark.normalMap = bark.normalMap.clone(); bark.normalMap.repeat.set(1, 3); }
     const leaf = foliage(new THREE.MeshStandardMaterial({ roughness: .92, vertexColors: true, color: 0x9aa07c }), 2.2), needle = foliage(new THREE.MeshStandardMaterial({ roughness: .95, vertexColors: true, color: 0x7f9478 }), 3.4);
     const nC = H.trees.filter(t => t.conif).length, nB = H.trees.length - nC;
     const mk = (g, m, n, shadow = true) => { const im = new THREE.InstancedMesh(g, m, Math.max(1, n)); im.count = 0; im.castShadow = shadow; im.receiveShadow = true; im.frustumCulled = false; scene.add(im); return im; };
     H.tm = { cTrunk: mk(new THREE.CylinderGeometry(.16, .36, 12, 7).translate(0, 6, 0), bark, nC), bTrunk: mk(new THREE.CylinderGeometry(.18, .34, 5.2, 7).translate(0, 2.6, 0), bark, nB),
-      cNear: mk(softFoliage(conifer(), y => y, .6), needle, nC), cFar: mk(softFoliage(farConifer(), y => y, .6), needle, nC), bNear: mk(softFoliage(broadleafGeo(1, 11), () => 5, .8), leaf, nB), bFar: mk(softFoliage(broadleafGeo(0, 11), () => 5, .8), leaf, nB) };
+      cNear: mk(softFoliage(conifer(), y => y, .6), needle, nC), cFar: mk(softFoliage(farConifer(), y => y, .6), needle, nC, false), bNear: mk(softFoliage(broadleafGeo(1, 11), () => 5, .8), leaf, nB), bFar: mk(softFoliage(broadleafGeo(0, 11), () => 5, .8), leaf, nB, false) }; // far LOD is never inside the shadow box
     // trunks never change LOD: fill once
     let ic = 0, ib = 0; for (const t of H.trees) { m4.compose(v3.set(t.x, t.y, t.z), qq.setFromAxisAngle(up, t.r), sc3.set(t.s, t.s * (t.conif ? 1 : .9 + t.hue * .3), t.s)); if (t.conif) H.tm.cTrunk.setMatrixAt(ic++, m4); else H.tm.bTrunk.setMatrixAt(ib++, m4); }
     H.tm.cTrunk.count = ic; H.tm.bTrunk.count = ib; updateTreeLOD(true);
@@ -356,30 +374,69 @@ export function createHorseRider(ctx) {
   // sagebrush, bunchgrass, cacti and the far woods on the mountain slopes (src/hrflora.js)
   function buildFlora() {
     const needle = foliage(new THREE.MeshStandardMaterial({ roughness: .95, vertexColors: true, color: 0x7f9478 }), 3.4);
-    H.flora = createFlora(scene, { hAt, BASE, EDGE, mobile, HQ, farTree: softFoliage(farConifer(), y => y, .6), needle, obst: H.obst,
-      avoid: (x, z) => Math.abs(x - PEN.x) < PEN.hw + 22 && Math.abs(z - PEN.z) < PEN.hd + 22 || Math.hypot(x - SPAWN.x, z - SPAWN.z) < 8 || clearing(x, z, 3) || trailDist(x, z) < 2.6 || inRange(x, z, 3) });
+    H.flora = createFlora(scene, { hAt, BASE, EDGE, mobile, HQ, farTree: null, needle, obst: H.obst,
+      avoid: (x, z) => Math.abs(x - PEN.x) < PEN.hw + 22 && Math.abs(z - PEN.z) < PEN.hd + 22 || Math.hypot(x - SPAWN.x, z - SPAWN.z) < 8 || clearing(x, z, 3) || trailDist(x, z) < 2.6 || inRange(x, z, 3) || FEAT.trailDist(x, z) < 3.2 || FEAT.waterDist(x, z) < 2.5 });
   }
   // CC0 scanned boulders (Poly Haven), instanced in three shapes; icosahedron stand-ins if the models fail to load
   function buildRocks() {
     const nR = Math.round(Q.trees * (mobile || !HQ ? .35 : .7)), list = [];
     for (let i = 0; i < nR * 4 && list.length < nR; i++) { const x = (rnd() - .5) * 2 * EDGE, z = (rnd() - .5) * 2 * EDGE; if (Math.hypot(x - PEN.x, z - PEN.z) < 30 || Math.hypot(x - SPAWN.x, z - SPAWN.z) < 8 || clearing(x, z, 3) || trailDist(x, z) < 3 || inRange(x, z, 2)) continue;
-      const s = .45 + rnd() * rnd() * 3.2, k = rnd() < .45 ? 0 : rnd() < .5 ? 1 : 2; list.push({ x, z, s, k, ry: rnd() * 6.28, tilt: (rnd() - .5) * .25 }); if (s > .8) H.obst.push([x, z, s * .62, s * 1.3]); }
-    const place = shapes => { for (let k = 0; k < shapes.length; k++) { const L = list.filter(r => r.k % shapes.length === k), im = new THREE.InstancedMesh(shapes[k].geo, shapes[k].mat, Math.max(1, L.length));
-      L.forEach((r, i) => { m4.compose(v3.set(r.x, hAt(r.x, r.z) - r.s * .12, r.z), qq.setFromEuler(new THREE.Euler(r.tilt, r.ry, r.tilt * .6)), sc3.set(r.s * 1.5, r.s * (shapes[k].h ? 1.5 : .7), r.s * 1.5)); im.setMatrixAt(i, m4); });
+      const s = .45 + rnd() * rnd() * 3.2, k = rnd() < .45 ? 0 : rnd() < .5 ? 1 : 2; if (FEAT.trailDist(x, z) < 3.6 + s || FEAT.waterDist(x, z) < 2 + s) continue; list.push({ x, z, s, k, ry: rnd() * 6.28, tilt: (rnd() - .5) * .25 }); if (s > .8) H.obst.push([x, z, s * .62, s * 1.3]); }
+    { // v30: rocky outcrops and boulder fields on the mountain slopes, boulders along the trails
+      const r3 = mulberry(91), nO = mobile ? 90 : HQ ? 340 : 200, nB = mobile ? 70 : HQ ? 260 : 160; let c = 0;
+      for (let i = 0; i < nO * 20 && c < nO; i++) { const a = r3() * TAU, d = EDGE - 30 + r3() * 1000, x = Math.cos(a) * d, z = Math.sin(a) * d; if (FEAT.trailDist(x, z) < 7 || FEAT.waterDist(x, z) < 4 || featAvoid(x, z)) continue;
+        const y = hAt(x, z), sl = Math.hypot(hAt(x + 3, z) - y, hAt(x, z + 3) - y) / 3; if (sl < .4 || y - BASE > 330) continue; const s = 1.6 + r3() * r3() * 5.5, k = (r3() * 3) | 0;
+        list.push({ x, z, s, k, ry: r3() * 6.28, tilt: (r3() - .5) * .6, sink: .3, lp: 1 }); c++; if (Math.max(Math.abs(x), Math.abs(z)) < WALK + 8) H.obst.push([x, z, s * .62, s * 1.3]);
+        if (r3() < .5) for (let m = 0; m < 3; m++) { const bx = x + (r3() - .5) * s * 4, bz = z + (r3() - .5) * s * 4, bs = .4 + r3() * 1.2; if (FEAT.trailDist(bx, bz) < 4) continue; list.push({ x: bx, z: bz, s: bs, k: (r3() * 3) | 0, ry: r3() * 6.28, tilt: (r3() - .5) * .4, lp: 2 }); if (bs > .8 && Math.max(Math.abs(bx), Math.abs(bz)) < WALK + 8) H.obst.push([bx, bz, bs * .62, bs * 1.3]); } }
+      for (const t of FEAT.trails) for (let i = 0; i < nB / FEAT.trails.length; i++) { const p = t.pts[(r3() * t.pts.length) | 0], q = t.pts[Math.min(t.pts.length - 1, t.pts.indexOf(p) + 1)], dx = q[0] - p[0], dz = q[1] - p[1], l = Math.hypot(dx, dz) || 1, sd = r3() < .5 ? -1 : 1, off = 3.6 + r3() * 3;
+        const x = p[0] - dz / l * off * sd, z = p[1] + dx / l * off * sd, s = .35 + r3() * r3() * 1.1; if (FEAT.trailDist(x, z) < 3.4) continue; list.push({ x, z, s, k: (r3() * 3) | 0, ry: r3() * 6.28, tilt: (r3() - .5) * .3, lp: 2 }); if (s > .8) H.obst.push([x, z, s * .62, s * 1.3]); } }
+    // low-poly procedural rocks for the thousand-odd mountain outcrops / boulders (the scanned boulders stay in the meadows: ~1.8k tris each)
+    const lowRock = (det, seed) => { const g = new THREE.IcosahedronGeometry(.5, det), p = g.attributes.position, rr = mulberry(seed); const ph = [rr() * 6, rr() * 6, rr() * 6];
+      for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i), n = 1 + .22 * Math.sin(x * 7 + ph[0]) * Math.cos(z * 6 + ph[1]) + .12 * Math.sin(y * 9 + ph[2]); p.setXYZ(i, x * n, Math.max(-.12, y * n * .78), z * n); }
+      g.translate(0, .14, 0); g.computeVertexNormals(); return g; };
+    const placeLow = mat => { const rm = mat.clone(); rm.normalScale && rm.normalScale.set(1.2, 1.2); for (const [lp, det] of [[1, 2], [2, 1]]) { const L = list.filter(r => r.lp === lp); if (!L.length) continue; const im = new THREE.InstancedMesh(lowRock(det, 7 + lp), rm, L.length);
+      L.forEach((r, i) => { m4.compose(v3.set(r.x, hAt(r.x, r.z) - r.s * (r.sink || .12), r.z), qq.setFromEuler(new THREE.Euler(r.tilt, r.ry, r.tilt * .6)), sc3.set(r.s * 1.5, r.s * (.8 + (i % 5) * .12), r.s * 1.5)); im.setMatrixAt(i, m4); });
+      im.castShadow = im.receiveShadow = true; im.computeBoundingSphere(); scene.add(im); (H.rockMeshes = H.rockMeshes || []).push(im); } list.splice(0, list.length, ...list.filter(r => !r.lp)); };
+    const place = shapes => { placeLow(shapes[0].mat); for (let k = 0; k < shapes.length; k++) { const L = list.filter(r => r.k % shapes.length === k), im = new THREE.InstancedMesh(shapes[k].geo, shapes[k].mat, Math.max(1, L.length));
+      L.forEach((r, i) => { m4.compose(v3.set(r.x, hAt(r.x, r.z) - r.s * (r.sink || .12), r.z), qq.setFromEuler(new THREE.Euler(r.tilt, r.ry, r.tilt * .6)), sc3.set(r.s * 1.5, r.s * (shapes[k].h ? 1.5 : .7), r.s * 1.5)); im.setMatrixAt(i, m4); });
       im.count = L.length; im.castShadow = im.receiveShadow = true; im.computeBoundingSphere(); scene.add(im); (H.rockMeshes = H.rockMeshes || []).push(im); }
       // small stones scattered through the grass (no collision, no shadow casting)
       const nP = mobile ? 260 : HQ ? 1100 : 600, S = 2, pg = [new THREE.IcosahedronGeometry(.5, 1).translate(0, .25, 0), new THREE.DodecahedronGeometry(.5, 0).translate(0, .22, 0)]; // low-poly stand-ins (the scanned boulders are far too dense to scatter by the thousand)
       const pm = shapes[0].mat.clone(); if (pm.color) pm.color.multiplyScalar(.55); const ims = pg.map(g => { const im = new THREE.InstancedMesh(g, pm, Math.ceil(nP / S)); im.count = 0; im.receiveShadow = true; scene.add(im); return im; });
       for (let i = 0; i < nP * 3 && ims.reduce((n, m) => n + m.count, 0) < nP; i++) { const x = (rnd() - .5) * 2 * EDGE, z = (rnd() - .5) * 2 * EDGE; if (Math.hypot(x - PEN.x, z - PEN.z) < 18 || trailDist(x, z) < 1.5 || inRange(x, z, 1)) continue;
-        const im = ims[i % S]; if (im.count >= Math.ceil(nP / S)) continue; const s = .12 + rnd() * rnd() * .45; m4.compose(v3.set(x, hAt(x, z) - s * .25, z), qq.setFromEuler(new THREE.Euler(rnd() * .6, rnd() * 6.28, rnd() * .6)), sc3.set(s, s * (.5 + rnd() * .6), s)); im.setMatrixAt(im.count++, m4); }
+        const im = ims[i % S]; if (im.count >= Math.ceil(nP / S) || FEAT.waterDist(x, z) < 1.5) continue; const s = .12 + rnd() * rnd() * .45; m4.compose(v3.set(x, hAt(x, z) - s * .25, z), qq.setFromEuler(new THREE.Euler(rnd() * .6, rnd() * 6.28, rnd() * .6)), sc3.set(s, s * (.5 + rnd() * .6), s)); im.setMatrixAt(im.count++, m4); }
       for (const im of ims) { im.computeBoundingSphere(); im.instanceMatrix.needsUpdate = true; } H.pebbles = ims.reduce((n, m) => n + m.count, 0); };
     loadRockModels().then(place).catch(e => { console.warn('rock models failed', e); const rg = new THREE.IcosahedronGeometry(.5, 2); rg.translate(0, .3, 0); place([{ geo: rg, mat: pbr('rock', { color: 0xb0aca4 }), h: 0 }]); });
   }
+  // v30: fallen logs in the woods (meadow edges and mountain forests); they block like a low wall
+  function buildLogs() {
+    const r4 = mulberry(133), n = mobile ? 60 : HQ ? 200 : 130, L = [], src = H.trees.filter(t => t.conif);
+    for (let i = 0; i < n * 8 && L.length < n && src.length; i++) { const t = src[(r4() * src.length) | 0], a = r4() * TAU, d = 2.5 + r4() * 5, x = t.x + Math.cos(a) * d, z = t.z + Math.sin(a) * d, len = 3.5 + r4() * 5.5, yaw = r4() * TAU, cx = Math.cos(yaw), cz = Math.sin(yaw);
+      const ax = x - cx * len / 2, az = z - cz * len / 2, bx = x + cx * len / 2, bz = z + cz * len / 2; if ([[ax, az], [x, z], [bx, bz]].some(([px, pz]) => featAvoid(px, pz) || FEAT.trailDist(px, pz) < 4 || FEAT.waterDist(px, pz) < 3 || trailDist(px, pz) < 4 || Math.max(Math.abs(px), Math.abs(pz)) > WALK)) continue;
+      const ya = hAt(ax, az), yb = hAt(bx, bz); if (Math.abs(ya - yb) / len > .6) continue; L.push({ x, z, len, yaw, ya, yb, s: .75 + r4() * .55 }); }
+    const bark = pbr('bark', { color: 0x7d6e60 }); if (bark.map) { bark.map = bark.map.clone(); bark.map.repeat.set(3, 1); bark.normalMap = bark.normalMap.clone(); bark.normalMap.repeat.set(3, 1); }
+    const geo = new THREE.CylinderGeometry(.24, .3, 1, 9, 1).rotateZ(Math.PI / 2), end = new THREE.CircleGeometry(.27, 9), im = new THREE.InstancedMesh(geo, bark, Math.max(1, L.length));
+    L.forEach((g, i) => { m4.compose(v3.set(g.x, (g.ya + g.yb) / 2 + .2 * g.s, g.z), qq.setFromEuler(new THREE.Euler(0, -g.yaw, Math.atan2(g.yb - g.ya, g.len), 'YXZ')), sc3.set(g.len, g.s, g.s)); im.setMatrixAt(i, m4);
+      for (let k = 0; k <= Math.ceil(g.len / 1.1); k++) { const f = k / Math.ceil(g.len / 1.1) - .5; H.obst.push([g.x + Math.cos(g.yaw) * g.len * f, g.z + Math.sin(g.yaw) * g.len * f, .34 * g.s, .55 * g.s]); } });
+    im.count = L.length; im.castShadow = im.receiveShadow = true; im.computeBoundingSphere(); scene.add(im); H.logs = L.length; void end;
+  }
+  // v30: a signpost at each mountain trailhead and a stone cairn on each summit
+  function buildTrailMarks() {
+    const bark = pbr('bark', { color: 0x8a7c6c }), stone = pbr('rock', { color: 0xa49e94 }), r5 = mulberry(171);
+    H.marks = []; for (const t of FEAT.trails) { const [hx, hz] = t.head, p1 = t.pts[Math.min(8, t.pts.length - 1)], dx = p1[0] - hx, dz = p1[1] - hz, l = Math.hypot(dx, dz) || 1, sx = hx - dz / l * 3.6, sz = hz + dx / l * 3.6, y = hAt(sx, sz);
+      const mg = new THREE.Group(); mg.userData.at = [sx, sz]; scene.add(mg); H.marks.push(mg);
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(.08, .1, 2.6, 8), bark); post.position.set(sx, y + 1.25, sz); post.castShadow = true; mg.add(post);
+      const sign = signMesh('MOUNTAIN TRAIL'); sign.scale.setScalar(.7); sign.position.set(sx, y + 2.2, sz); sign.rotation.y = Math.atan2(-hx, -hz); mg.add(sign); const sb = sign.clone(); sb.rotation.y += Math.PI; sb.position.addScaledVector(new THREE.Vector3(Math.sin(sign.rotation.y), 0, Math.cos(sign.rotation.y)), -.03); mg.add(sb);
+      H.obst.push([sx, sz, .25, 2.6]);
+      const [tx, tz, ty] = t.top, g = new THREE.Group(); g.position.set(tx + 2.5, hAt(tx + 2.5, tz), tz); g.userData.at = [tx, tz]; scene.add(g); H.marks.push(g); let yy = 0;
+      for (let k = 0; k < 6; k++) { const rs = .55 - k * .07, st = new THREE.Mesh(new THREE.DodecahedronGeometry(rs, 0), stone); st.scale.set(1, .55, 1); st.position.set((r5() - .5) * .12, yy + rs * .45, (r5() - .5) * .12); st.rotation.y = r5() * 6; st.castShadow = st.receiveShadow = true; g.add(st); yy += rs * .75; }
+      H.obst.push([tx + 2.5, tz, .6, 1.8]); void ty; }
+  }
   // GPU grass: tufts on a camera-following grid (count / radius from the quality tier), sways in the wind, wildflowers, fades out by distance
   function buildGrass() {
-    const tufts = Math.round(Math.min(60000, Math.max(3000, (Q.grass || 600) * 4.5)) * (mobile ? .5 : 1)), N = Math.round(Math.sqrt(tufts));
+    const tufts = Math.round(Math.min(60000, Math.max(3000, (Q.grass || 600) * 4.5)) * (mobile ? .5 : 1.15)), N = Math.round(Math.sqrt(tufts)); // v30: denser near the player on desktop
     const R = Math.min(52, Math.max(18, 9 + Math.sqrt(N * N) * .19));
-    H.grassG = createGrass(scene, H.terrain, PEN, SEG, { N, R, blades: mobile ? 4 : HQ ? 7 : 5 }); H.grassInfo = { tufts: N * N, radius: +R.toFixed(1), tris: H.grassG.tris };
+    H.grassG = createGrass(scene, H.terrain, PEN, SEG, { N, R, blades: mobile ? 4 : HQ ? 7 : 5, hAt, mask: H.mask, maskHalf: MASK_HALF, mobile }); H.grassInfo = { tufts: N * N, radius: +R.toFixed(1), tris: H.grassG.tris };
   }
   function buildPen() {
     const y0 = BASE, { x: cx, z: cz, hw, hd, gate } = PEN, g = new THREE.Group(); scene.add(g);
@@ -483,13 +540,22 @@ export function createHorseRider(ctx) {
   const inPen = (x, z, m = 0) => Math.abs(x - PEN.x) < PEN.hw - m && Math.abs(z - PEN.z) < PEN.hd - m;
   function segDist(px, pz, [ax, az, bx, bz]) { const dx = bx - ax, dz = bz - az, t = Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / (dx * dx + dz * dz))); return Math.hypot(px - ax - dx * t, pz - az - dz * t); }
   // blocked(x, z, r, skipHorse): fence/walls, trees/rocks/props, other horses, map edge
+  // obstacle buckets (8 m cells, rebuilt whenever obstacles are added): thousands of mountain trees stay cheap to collide with
+  const OG = { n: -1, m: new Map() }, OC = 8, NONE = [], okey = (i, j) => (i + 512) * 1024 + j + 512;
+  function obstNear(x, z) { if (OG.n !== H.obst.length) { OG.m.clear(); for (const o of H.obst) { const rr = o[2] + 1.1; for (let i = Math.floor((o[0] - rr) / OC); i <= Math.floor((o[0] + rr) / OC); i++) for (let j = Math.floor((o[1] - rr) / OC); j <= Math.floor((o[1] + rr) / OC); j++) { const k = okey(i, j); let L = OG.m.get(k); if (!L) OG.m.set(k, L = []); L.push(o); } } OG.n = H.obst.length; }
+    return OG.m.get(okey(Math.floor(x / OC), Math.floor(z / OC))) || NONE; }
+  H.obstNear = obstNear;
   function blocked(x, z, r, skip) {
-    if (Math.abs(x) > EDGE || Math.abs(z) > EDGE) return true;
+    if (Math.abs(x) > WALK || Math.abs(z) > WALK) return true;
     for (const f of H.fence) if (segDist(x, z, f) < r + .1) return true;
-    for (const [ox, oz, or] of H.obst) if (Math.abs(ox - x) < or + r && Math.abs(oz - z) < or + r && Math.hypot(ox - x, oz - z) < or + r) return true;
+    for (const [ox, oz, or] of obstNear(x, z)) if (Math.abs(ox - x) < or + r && Math.abs(oz - z) < or + r && Math.hypot(ox - x, oz - z) < or + r) return true;
     for (const h of H.horses) if (h !== skip && h !== H.mounted && Math.hypot(h.pos.x - x, h.pos.z - z) < .75 + r) return true;
     return false;
   }
+  // too steep to climb: keep only the along-the-contour part of the step (slide along the bank), else stay put. true = it was too steep
+  function slopeGate(pos, ox, oz, gy0, maxG, r, skip) { const dx = pos.x - ox, dz = pos.z - oz, mv = Math.hypot(dx, dz); if (mv < 1e-4 || (hAt(ox + dx / mv * 1.2, oz + dz / mv * 1.2) - gy0) / 1.2 <= maxG) return false; // grade over the next 1.2 m (ignores tiny kinks)
+    let gx = hAt(ox + .7, oz) - hAt(ox - .7, oz), gz = hAt(ox, oz + .7) - hAt(ox, oz - .7); const gl = Math.hypot(gx, gz) || 1; gx /= gl; gz /= gl; const upc = dx * gx + dz * gz, tx = ox + dx - upc * gx, tz = oz + dz - upc * gz, m = Math.hypot(tx - ox, tz - oz);
+    if (m > 1e-4 && (hAt(ox + (tx - ox) / m * 1.2, oz + (tz - oz) / m * 1.2) - gy0) / 1.2 <= maxG && !blocked(tx, tz, r, skip)) { pos.x = tx; pos.z = tz; } else { pos.x = ox; pos.z = oz; } return true; }
   function moveCircle(pos, dx, dz, r, skip) { let hit = false; if (!blocked(pos.x + dx, pos.z, r, skip)) pos.x += dx; else hit = true; if (!blocked(pos.x, pos.z + dz, r, skip)) pos.z += dz; else hit = true; return hit; }
   function nearestHorse() { let best = null, bd = MOUNT_R; for (const h of H.horses) { if (H.ridden.has(h)) continue; const d = Math.hypot(h.pos.x - P.pos.x, h.pos.z - P.pos.z); if (d < bd) { bd = d; best = h; } } return best; }
   function use() {
@@ -504,7 +570,7 @@ export function createHorseRider(ctx) {
   function dismount() { // immediate (net conflicts, tests); the E / GET OFF path animates first via H.wantOff
     const h = H.mounted; if (!h) return false; const fx = -Math.sin(h.yaw), fz = -Math.cos(h.yaw), rx = -fz, rz = fx, sd = H.side || 1;
     const tries = [[-rx * 1.5 * sd, -rz * 1.5 * sd], [rx * 1.5 * sd, rz * 1.5 * sd], [-fx * 2.4, -fz * 2.4], [fx * 2.4, fz * 2.4], [-rx * 2.6, -rz * 2.6], [rx * 2.6, rz * 2.6]];
-    let spot = null; for (const [ox, oz] of tries) { const x = h.pos.x + ox, z = h.pos.z + oz; if (!blocked(x, z, .35, h) && !(Math.abs(x) > EDGE || Math.abs(z) > EDGE)) { spot = [x, z]; break; } }
+    let spot = null; for (const [ox, oz] of tries) { const x = h.pos.x + ox, z = h.pos.z + oz; if (!blocked(x, z, .35, h)) { spot = [x, z]; break; } }
     if (!spot) spot = [h.pos.x - rx * 1.5, h.pos.z - rz * 1.5];
     P.pos.set(spot[0], hAt(spot[0], spot[1]), spot[1]); H.vy = 0; H.mounted = null; H.cd = COOLDOWN; H.wantOff = false; H.dismT = 0; H.mountT = 0; H.speed = 0; H.roll = 0;
     h.speed = 0; h.wait = 4 + rnd() * 4; h.inPen = inPen(h.pos.x, h.pos.z, .5); h.graze = true; h.g.rotation.z = 0;
@@ -549,7 +615,7 @@ export function createHorseRider(ctx) {
     P.yaw = Math.atan2(SPAWN.x - PEN.x, SPAWN.z - PEN.z); P.pitch = -.05; P.hp = 100;
     GX.setLighting('day', false); setupSky();
     guns = H.guns = createGuns({ scene, camera, P, H, hAt, sfx, fx: ctx.fx, msg, mobile, input, keys, renderer: GX.renderer, rig: () => real() ? rider : null, aimBone, twistBone, RANGE, BASE, dev: new URLSearchParams(location.search).has('dev'), send: m => H.netShot && H.netShot(m), zombies: () => zombies });
-    zombies = H.zombies = createHrZombies({ scene, camera, P, H, hAt, PEN, EDGE, sfx, fx: ctx.fx, mobile, msg, aimBone, dismount, walker: () => H.assets && H.assets.riderSrc ? makeWalker(H.assets.riderSrc, H.assets.clips) : null,
+    zombies = H.zombies = createHrZombies({ scene, camera, P, H, hAt, PEN, EDGE, WALK, sfx, fx: ctx.fx, mobile, msg, aimBone, dismount, walker: () => H.assets && H.assets.riderSrc ? makeWalker(H.assets.riderSrc, H.assets.clips) : null,
       remotes: () => H.netRemotes ? H.netRemotes() : [], send: m => H.zSend && H.zSend(m), sendTo: (id, m) => H.zSendTo && H.zSendTo(id, m), role: () => H.netRole ? H.netRole() : 'solo' });
     if (mobile) { const a = document.getElementById('tAds'); if (a) a.textContent = 'AIM'; }
     loadAssets(!mobile && Q.shadow > 0).then(dress).catch(e => { H.models = 'proc'; if (!/requested/.test(e && e.message)) console.warn('horse models failed, using procedural horses', e); });
@@ -561,7 +627,8 @@ export function createHorseRider(ctx) {
   const tmp = new THREE.Vector3(), lerp = (a, b, t) => a + (b - a) * t, wrapA = a => Math.atan2(Math.sin(a), Math.cos(a));
   const GAIT_SP = [0, 1.7, 4.4, 9, 15.5], SPRINT = 18.5, GAIT_N = ['Standing', 'Walk', 'Trot', 'Canter', 'Gallop'];
   const gaitName = sp => sp < -.2 ? 'Backing up' : sp < .3 ? 'Standing' : sp < 3 ? 'Walk' : sp < 6.6 ? 'Trot' : sp < 12.3 ? 'Canter' : 'Gallop';
-  function aheadBlocked(h, yaw, L) { const fx = -Math.sin(yaw), fz = -Math.cos(yaw); for (const t of [.5, 1]) if (blocked(h.pos.x + fx * L * t, h.pos.z + fz * L * t, .7, h)) return true; return false; }
+  const MAX_GRADE = 1.1; // steeper than ~48 degrees: the horse won't climb it (trails and gentler spurs go up)
+  function aheadBlocked(h, yaw, L) { const fx = -Math.sin(yaw), fz = -Math.cos(yaw); for (const t of [.5, 1]) { const x = h.pos.x + fx * L * t, z = h.pos.z + fz * L * t; if (blocked(x, z, .7, h) || (hAt(x, z) - h.pos.y) / (L * t) > MAX_GRADE) return true; } return false; }
   // stick magnitude -> speed through the four gaits (analog in between)
   function stickSpeed(m) { const K = [[.1, 0], [.3, GAIT_SP[1]], [.55, GAIT_SP[2]], [.8, GAIT_SP[3]], [.93, GAIT_SP[4]], [1, SPRINT]]; if (m <= K[0][0]) return 0;
     for (let i = 1; i < K.length; i++) if (m <= K[i][0]) return lerp(K[i - 1][1], K[i][1], (m - K[i - 1][0]) / (K[i][0] - K[i - 1][0])); return SPRINT; }
@@ -587,6 +654,10 @@ export function createHorseRider(ctx) {
     if (target > 12.5 && H.speed > 11) { H.stam = Math.max(0, H.stam - dt * (target > 16 ? 7.5 : 4)); if (H.stam <= 0) { H.winded = 5; msg('Your horse is winded — ease off', 1.6); } }
     else H.stam = Math.min(100, H.stam + dt * (H.speed < 9.5 ? 12 : 4));
     if (H.winded > 0) { H.winded -= dt; target = Math.min(target, GAIT_SP[3]); if (H.cruise > 3) H.cruise = 3; }
+    // slopes: the steeper the climb the slower (trails stay a canter), picking its way down steep ground; galloping uphill tires it faster
+    { const fx0 = -Math.sin(h.yaw), fz0 = -Math.cos(h.yaw), dir = H.speed < -.1 ? -1 : 1, gF = (hAt(h.pos.x + fx0 * 2.5 * dir, h.pos.z + fz0 * 2.5 * dir) - hAt(h.pos.x, h.pos.z)) / 2.5; H.grade = gF;
+      const cap = gF > .32 ? (gF < .62 ? lerp(SPRINT, 9, (gF - .32) / .3) : lerp(9, 1.7, sstep(.62, MAX_GRADE, gF))) : gF < -.7 ? lerp(9.5, 1.7, sstep(.7, 1.35, -gF)) : 1e9;
+      if (Math.abs(target) > cap) target = Math.sign(target) * cap; if (gF > .25 && H.speed > 9) H.stam = Math.max(0, H.stam - dt * gF * 6); }
     // obstacle sense: look ahead along the heading, swing round trees / rocks / posts, refuse (rein in) at a wall of fence
     let avoid = 0; if (H.speed > 1.2 && target > 0) { const L = 1.4 + H.speed * .45;
       if (aheadBlocked(h, h.yaw, L)) { let best = null; const goal = want == null ? h.yaw : want;
@@ -602,7 +673,9 @@ export function createHorseRider(ctx) {
     H.yawRate += (wantR - H.yawRate) * Math.min(1, dt * 5); h.yaw += H.yawRate * dt;
     if (Math.abs(H.yawRate) > .8 && H.speed > 8) H.speed -= (Math.abs(H.yawRate) - .8) * dt * 2;
     const fx = -Math.sin(h.yaw), fz = -Math.cos(h.yaw);
-    const hit = moveCircle(h.pos, fx * H.speed * dt, fz * H.speed * dt, .8, h); if (hit) { if (Math.abs(H.speed) > 5) { hu.toss = 1; H.shake = .6; sfx.step && sfx.step(true); } H.speed *= Math.abs(H.speed) > 5 ? .3 : .6; }
+    const ox0 = h.pos.x, oz0 = h.pos.z, gy0 = hAt(ox0, oz0); let hit = moveCircle(h.pos, fx * H.speed * dt, fz * H.speed * dt, .8, h);
+    if (slopeGate(h.pos, ox0, oz0, gy0, MAX_GRADE, .8, h)) { H.steepHits = (H.steepHits || 0) + 1; H.speed *= .96; }
+    if (hit) { if (Math.abs(H.speed) > 5) { hu.toss = 1; H.shake = .6; sfx.step && sfx.step(true); } H.speed *= Math.abs(H.speed) > 5 ? .3 : .6; }
     const g0 = hAt(h.pos.x, h.pos.z); if (jump && H.ground && !busy && H.speed > -.5) { H.vy = 6.2; H.ground = false; }
     H.vy -= 22 * dt; h.pos.y += H.vy * dt; if (h.pos.y <= g0) { if (!H.ground && H.vy < -5) H.shake = Math.max(H.shake, .25); h.pos.y = g0; H.vy = 0; H.ground = true; }
     // body: lean into turns, pitch with the slope, sit back on the haunches when braking hard
@@ -630,7 +703,8 @@ export function createHorseRider(ctx) {
     const f = tmp.set(-Math.sin(P.yaw), 0, -Math.cos(P.yaw)), rx = -f.z, rz = f.x;
     let mx = f.x * fwdIn + rx * sideIn, mz = f.z * fwdIn + rz * sideIn; const l = Math.hypot(mx, mz); if (l > 0) { mx *= sp / l; mz *= sp / l; }
     H.fv.x += (mx - H.fv.x) * Math.min(1, dt * 9); H.fv.y += (mz - H.fv.y) * Math.min(1, dt * 9); // momentum: ease into and out of a run
-    const v = H.fv.length(); moveCircle(P.pos, H.fv.x * dt, H.fv.y * dt, .35, null);
+    const v = H.fv.length(), ox0 = P.pos.x, oz0 = P.pos.z, gy0 = hAt(ox0, oz0); moveCircle(P.pos, H.fv.x * dt, H.fv.y * dt, .35, null);
+    if (slopeGate(P.pos, ox0, oz0, gy0, 1.3, .35, null)) H.fv.multiplyScalar(.9); // scrambling up: only up to ~52 degrees
     const g0 = hAt(P.pos.x, P.pos.z); if (jump && H.ground) { H.vy = 7; H.ground = false; }
     H.vy -= 22 * dt; P.pos.y += H.vy * dt; if (P.pos.y <= g0) { P.pos.y = g0; H.vy = 0; H.ground = true; }
     const ob = P.bob; P.bob += dt * v * 1.6; if (H.ground && v > .5 && Math.floor(ob / Math.PI) !== Math.floor(P.bob / Math.PI)) sfx.step && sfx.step(false);
@@ -661,6 +735,8 @@ export function createHorseRider(ctx) {
     for (const o of H.horses) lod(o);
     dustTick(dt);
     updateTreeLOD(false);
+    if (H.chunks) H.chunks.update(P.pos.x, P.pos.z); if (H.water) H.water.update(dt);
+    if (H.marks && ((H.markT = (H.markT || 0) + dt) > .5)) { H.markT = 0; for (const g of H.marks) g.visible = Math.hypot(g.userData.at[0] - P.pos.x, g.userData.at[1] - P.pos.z) < 220; } // signposts / cairns only drawn nearby
     if (guns) guns.update(dt);
     if (zombies) zombies.tick(dt);
     H.near = h ? null : nearestHorse(); H.gait = h ? gaitName(H.speed) : '';
@@ -686,7 +762,7 @@ export function createHorseRider(ctx) {
   const camPos = new THREE.Vector3(), look = new THREE.Vector3(), want = new THREE.Vector3(), lookOff = new THREE.Vector3(), lastLook = new THREE.Vector3(); let lastMode = null;
   function camClear(from, to) { // pull the camera in front of tree trunks / rocks between it and the subject
     const dx = to.x - from.x, dz = to.z - from.z; for (let t = .3; t <= 1.001; t += .175) { const x = from.x + dx * t, z = from.z + dz * t;
-      for (const [ox, oz, or] of H.obst) if (Math.abs(ox - x) < or + .35 && Math.abs(oz - z) < or + .35 && Math.hypot(ox - x, oz - z) < or + .3) { to.x = from.x + dx * (t - .2); to.z = from.z + dz * (t - .2); to.y = from.y + (to.y - from.y) * (t - .2); return; } } }
+      for (const [ox, oz, or] of obstNear(x, z)) if (Math.abs(ox - x) < or + .35 && Math.abs(oz - z) < or + .35 && Math.hypot(ox - x, oz - z) < or + .3) { to.x = from.x + dx * (t - .2); to.z = from.z + dz * (t - .2); to.y = from.y + (to.y - from.y) * (t - .2); return; } } }
   function syncCamera(dt) { if (H.fovSave) { camera.fov = H.fovSave; H.fovSave = 0; camera.updateProjectionMatrix(); } camRig(dt); if (guns) guns.scopeCam(dt); } // the scope takes over after the rig
   function camRig(dt) {
     const h = H.mounted;
@@ -716,8 +792,9 @@ export function createHorseRider(ctx) {
     const pr = $('hrPrompt'); if (pr) { pr.textContent = H.prompt; pr.hidden = !H.prompt; pr.classList.toggle('riding', !!H.mounted); }
     const d = Math.round(Math.hypot(P.pos.x - PEN.x, P.pos.z - PEN.z)), hz = H.mounted;
     $('mode').textContent = '🐎 HORSE RIDER'; $('timer').textContent = hz ? Math.round(Math.abs(H.speed) * 3.6) + ' km/h' : ''; $('stars').textContent = H.online || '';
-    $('sub').textContent = hz ? H.gait + (hz.coat ? ' · ' + hz.coat : '') + (H.winded > 0 ? ' · winded' : '') + (mobile ? ' · push the stick further to speed up' : ' · W ride · tap Shift faster · hold Shift gallop · C slower · A/D steer')
-      : H.models === 'loading' && d < 40 ? 'Horses arriving…' : d > 16 ? `Horse pen ${d} m away` : inPen(P.pos.x, P.pos.z) ? 'In the pen — walk up to a horse' : 'At the horse pen';
+    const alt = Math.round(P.pos.y - BASE - (hz ? 1.1 : 0)), altS = alt > 25 ? ' · ⛰ ' + alt + ' m' : '';
+    $('sub').textContent = hz ? H.gait + altS + (hz.coat ? ' · ' + hz.coat : '') + (H.winded > 0 ? ' · winded' : '') + (mobile ? ' · push the stick further to speed up' : ' · W ride · tap Shift faster · hold Shift gallop · C slower · A/D steer')
+      : H.models === 'loading' && d < 40 ? 'Horses arriving…' : d > 16 ? `Horse pen ${d} m away${altS}` : inPen(P.pos.x, P.pos.z) ? 'In the pen — walk up to a horse' : 'At the horse pen';
     if (!stamEl) { stamEl = document.createElement('div'); stamEl.id = 'hrStam'; stamEl.innerHTML = '<i></i>'; document.body.appendChild(stamEl); }
     const show = !!hz && (H.stam < 99 || Math.abs(H.speed) > 12); stamEl.style.opacity = show ? 1 : 0; stamEl.firstChild.style.width = H.stam.toFixed(0) + '%'; stamEl.classList.toggle('low', H.stam < 25 || H.winded > 0);
   }
