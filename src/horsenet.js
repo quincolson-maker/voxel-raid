@@ -23,6 +23,9 @@ export function createHorseNet({ horse, P, msg }) {
   const isHost = () => S.role === 'host', isClient = () => S.role === 'client';
   const peerOf = id => { for (const [peer, p] of S.peers) if (p === id) return peer; return null; };
   let hiWait = null;
+  H.netRole = () => S.role; H.netRemotes = () => [...S.remotes.values()];
+  H.zSend = m => { if (!net.open || S.role === 'solo') return; net.send(m); }; // host: zombie snapshot to everyone; client: its hits to the host
+  H.zSendTo = (id, m) => { if (!isHost() || !net.open) return; const p = peerOf(id); if (p) net.send(m, p); };
   H.netShot = m => { if (!net.open || S.role === 'solo') return; net.send(isHost() ? { ...m, id: 'P1' } : m); };
   const net = createNet((m, from) => {
     if (m.t === 'full') { if (hiWait) { hiWait(null); hiWait = null; } return; }
@@ -66,6 +69,9 @@ export function createHorseNet({ horse, P, msg }) {
       case 'p': { const id = isHost() ? S.peers.get(from) : m.id; if (!id || id === S.me) return; const R = S.remotes.get(id) || addRemote(id); if (R) R.s = m; if (isHost()) net.send({ ...m, id }, null, from); break; }
       case 'sh': { const id = isHost() ? S.peers.get(from) : m.id; if (!id || id === S.me) return; horse.remoteShot && horse.remoteShot(id, m); if (isHost()) net.send({ t: 'sh', w: m.w, o: m.o, e: m.e, id }, null, from); break; } // gunshots: visual + sound only
       case 'herd': if (isClient()) horse.applyHerd(m.h); break;
+      case 'zs': if (isClient() && H.zombies) H.zombies.apply(m); break; // the host's zombies (host-authoritative)
+      case 'zh': if (isHost() && H.zombies) H.zombies.remoteHit(m); break; // a client shot one
+      case 'zd': if (isClient() && H.zombies) H.zombies.remoteHurt(m); break; // a zombie hit me (host decides)
       case 'join': if (isClient()) addRemote(m.id); break;
       case 'left': if (isClient()) removeRemote(m.id); break;
     }
@@ -100,7 +106,7 @@ export function createHorseNet({ horse, P, msg }) {
     S.netT -= dt; S.herdT -= dt;
     if (net.open && S.netT <= 0) { S.netT = .1;
       const st = { t: 'p', x: +x.toFixed(2), y: +(h ? h.pos.y : P.pos.y).toFixed(2), z: +z.toFixed(2), yw: +(h ? P.yaw : (H.bodyYaw ?? P.yaw)).toFixed(3), m: h ? h.id : -1, hy: h ? +h.yaw.toFixed(3) : 0, sp: +(h ? H.speed : S.footSp).toFixed(2) };
-      if (horse.gunNet) Object.assign(st, horse.gunNet()); if (isHost()) st.id = 'P1'; net.send(st); }
+      if (horse.gunNet) Object.assign(st, horse.gunNet()); if (H.dead) st.dd = 1; if (isHost()) st.id = 'P1'; net.send(st); }
     if (isHost() && net.open && S.herdT <= 0) { S.herdT = .25; net.send({ t: 'herd', h: horse.herd() }); }
     // a lone host merges into an older open Horse Rider lobby (two players hosted at the same moment)
     if (isHost() && !S.remotes.size && LOBBY_URL && (S.mergeT -= dt) <= 0) { S.mergeT = 10;

@@ -12,6 +12,7 @@ import { clone as cloneSkinned } from '../addons/utils/SkeletonUtils.js';
 import { mulberry, conifer } from './models.js';
 import { ShaderPass } from '../addons/postprocessing/ShaderPass.js';
 import { createGuns } from './hrguns.js';
+import { createHrZombies } from './hrzombies.js';
 import { makeRawH, trailSegments, segDist as segD, createSky, terrainMaterial as terrainMat2, loadTerrainTextures, buildTerrain, createGrass, loadRockModels } from './hrworld.js';
 const $ = id => document.getElementById(id);
 const S = 800, EDGE = 360;                // map size (m) and walkable half-extent
@@ -312,7 +313,7 @@ function loadAssets(hq) {
 }
 
 export function createHorseRider(ctx) {
-  const { scene, GX, P, keys, input, camera, sfx, msg, PBRS } = ctx; let guns = null;
+  const { scene, GX, P, keys, input, camera, sfx, msg, PBRS } = ctx; let guns = null, zombies = null;
   const H = { on: false, horses: [], mounted: null, cd: 0, prompt: '', obst: [], fence: [], speed: 0, t: 0, near: null, vy: 0, ground: true, riddenT: 0, mounts: 0, models: 'loading', trees: [], lodT: 0, ridden: new Map(), follow: false, online: '',
     stam: 100, winded: 0, cruise: 2, shiftT: 0, yawRate: 0, roll: 0, pitchK: 0, mountT: 0, dismT: 0, wantOff: false, side: 1, lookT: 9, recenter: false, shake: 0, fv: new THREE.Vector2(), bodyYaw: 0, fp: false, gait: 'Standing', zoom: 1 };
   const rnd = mulberry(42), Q = GX.Q, mobile = !!ctx.mobile;
@@ -534,7 +535,9 @@ export function createHorseRider(ctx) {
     H.on = true; P.spawn.set(SPAWN.x, hAt(SPAWN.x, SPAWN.z), SPAWN.z); P.pos.copy(P.spawn); buildWorld(); spawnHorses();
     P.yaw = Math.atan2(SPAWN.x - PEN.x, SPAWN.z - PEN.z); P.pitch = -.05; P.hp = 100;
     GX.setLighting('day', false); setupSky();
-    guns = H.guns = createGuns({ scene, camera, P, H, hAt, sfx, fx: ctx.fx, msg, mobile, input, keys, renderer: GX.renderer, rig: () => real() ? rider : null, aimBone, twistBone, RANGE, BASE, dev: new URLSearchParams(location.search).has('dev'), send: m => H.netShot && H.netShot(m) });
+    guns = H.guns = createGuns({ scene, camera, P, H, hAt, sfx, fx: ctx.fx, msg, mobile, input, keys, renderer: GX.renderer, rig: () => real() ? rider : null, aimBone, twistBone, RANGE, BASE, dev: new URLSearchParams(location.search).has('dev'), send: m => H.netShot && H.netShot(m), zombies: () => zombies });
+    zombies = H.zombies = createHrZombies({ scene, camera, P, H, hAt, PEN, EDGE, sfx, fx: ctx.fx, mobile, msg, aimBone, dismount, walker: () => H.assets && H.assets.riderSrc ? makeWalker(H.assets.riderSrc, H.assets.clips) : null,
+      remotes: () => H.netRemotes ? H.netRemotes() : [], send: m => H.zSend && H.zSend(m), sendTo: (id, m) => H.zSendTo && H.zSendTo(id, m), role: () => H.netRole ? H.netRole() : 'solo' });
     if (mobile) { const a = document.getElementById('tAds'); if (a) a.textContent = 'AIM'; }
     loadAssets(!mobile && Q.shadow > 0).then(dress).catch(e => { H.models = 'proc'; if (!/requested/.test(e && e.message)) console.warn('horse models failed, using procedural horses', e); });
     msg(mobile ? 'HORSE RIDER — walk to the pen, tap RIDE next to a horse' : 'HORSE RIDER — walk to the pen and press E next to a horse', 5);
@@ -633,19 +636,20 @@ export function createHorseRider(ctx) {
     const stick = Math.min(1, Math.hypot(input.mx || 0, input.mz || 0)); if (stick > .05) { fwdIn = -input.mz; sideIn = input.mx; }
     const run = !!keys.ShiftLeft || !!keys.ShiftRight || (stick > .92 && fwdIn > .6);
     const jump = keys.Space || input.jump;
-    if (h) ride(h, dt, stick > .05 ? 0 : fwdIn, stick > .05 ? 0 : sideIn, stick, jump); else walk(dt, fwdIn, sideIn, stick, run, jump);
+    if (H.dead) { H.fv.x = H.fv.y = 0; } else if (h) ride(h, dt, stick > .05 ? 0 : fwdIn, stick > .05 ? 0 : sideIn, stick, jump); else walk(dt, fwdIn, sideIn, stick, run, jump);
     for (const o of H.horses) { if (o === h) continue;
       if (H.ridden.has(o) || (H.follow && o.net)) { netHorse(o, dt); if (H.ridden.has(o)) dustEmit(o, dt); continue; } // ridden by another player / herd mirrored from the host
       if (o.tgt) { const dx = o.tgt[0] - o.pos.x, dz = o.tgt[1] - o.pos.z, d = Math.hypot(dx, dz);
-        if (d < .4) { o.tgt = null; o.wait = 2 + rnd() * 5; o.graze = rnd() < .6; o.speed = 0; }
-        else { const want = Math.atan2(-dx, -dz); let dy = want - o.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); o.yaw += dy * Math.min(1, dt * 2.5); o.speed += (1.3 - o.speed) * Math.min(1, dt * 2);
-          if (moveCircle(o.pos, -Math.sin(o.yaw) * o.speed * dt, -Math.cos(o.yaw) * o.speed * dt, .8, o)) { o.tgt = null; o.wait = 1 + rnd() * 2; } } }
+        if (d < .4 && o.path && o.path.length) o.tgt = o.path.shift(); else if (d < .4) { o.tgt = null; o.wait = 2 + rnd() * 5; o.graze = rnd() < .6; o.speed = 0; }
+        else { const want = Math.atan2(-dx, -dz); let dy = want - o.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); o.yaw += dy * Math.min(1, dt * 2.5); o.speed += ((o.panic > 0 ? 7 : 1.3) - o.speed) * Math.min(1, dt * 2);
+          if (moveCircle(o.pos, -Math.sin(o.yaw) * o.speed * dt, -Math.cos(o.yaw) * o.speed * dt, .8, o)) { if (o.path && o.path.length) o.tgt = o.path.shift(); else { o.tgt = null; o.wait = 1 + rnd() * 2; } } } }
       else { o.speed *= Math.max(0, 1 - dt * 4); o.wait -= dt; if (o.wait <= 0) { if (o.inPen) o.tgt = [PEN.x + (rnd() - .5) * (PEN.hw * 2 - 4), PEN.z + (rnd() - .5) * (PEN.hd * 2 - 4)]; else { const a = rnd() * 6.28; o.tgt = [o.pos.x + Math.cos(a) * 3, o.pos.z + Math.sin(a) * 3]; } o.graze = false; } }
       o.pos.y = hAt(o.pos.x, o.pos.z); o.g.rotation.set(0, o.yaw, 0); anim(o, dt, o.speed, o.graze); }
     for (const o of H.horses) lod(o);
     dustTick(dt);
     updateTreeLOD(false);
     if (guns) guns.update(dt);
+    if (zombies) zombies.tick(dt);
     H.near = h ? null : nearestHorse(); H.gait = h ? gaitName(H.speed) : '';
     H.prompt = h ? (H.mountT > 0 ? 'Mounting…' : H.wantOff || H.dismT > 0 ? 'Getting off…' : mobile ? 'Tap GET OFF to dismount' : '[E] Get off the horse') : H.near ? (mobile ? 'Tap RIDE to mount' : '[E] Ride horse') : '';
   }

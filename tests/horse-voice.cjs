@@ -36,7 +36,7 @@ async function page(br, mobile, errors, tag) {
     let L = (await api('/lobbies')).lobbies; assert.equal(L.find(l => l.code === 'ZOMB1').mode, 'zombies', 'old/zombies adverts default to zombies');
     br = await puppeteer.launch({ executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', headless: true, protocolTimeout: 120000, args });
     await br.defaultBrowserContext().overridePermissions(base, ['microphone']);
-    const Q = '/?dev=1&loopnet=1&q=low&lobby=' + encodeURIComponent(base);
+    const Q = '/?dev=1&zombies=0&loopnet=1&q=low&lobby=' + encodeURIComponent(base);
     step('player 1 taps HORSE RIDER -> hosts');
     const h = await page(br, false, errors, 'host'); await h.goto(base + Q, { waitUntil: 'networkidle0' });
     await h.evaluate(() => { document.getElementById('operator').value = 'NOMAD'; });

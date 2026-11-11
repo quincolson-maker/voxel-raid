@@ -255,6 +255,7 @@ export function createGuns(c) {
       if (t > 0 && t < best.t) best = { t, kind: 'target', T }; }
     for (const h of H.horses) { if (h === H.mounted) continue; const fx_ = -Math.sin(h.yaw), fz = -Math.cos(h.yaw);
       for (const [f, y, r] of [[0, 1.3, .62], [.75, 1.35, .5], [1.25, 1.65, .32]]) { v3.set(h.pos.x + fx_ * f, h.pos.y + y, h.pos.z + fz * f); const t = raySphere(o, d, v3, r); if (t > 0 && t < best.t) best = { t, kind: 'horse' }; } }
+    const zs = c.zombies && c.zombies(); if (zs) { const zh = zs.rayHit(o, d, best.t, raySphere, rayCyl); if (zh) best = { t: zh.t, kind: 'zombie', Z: zh.Z, head: zh.head }; } // the walking dead (head sphere + body)
     for (const ob of H.obst) { if (Math.abs(ob[0] - o.x) > maxT + 3 || Math.abs(ob[1] - o.z) > maxT + 3) continue; const g = hAt(ob[0], ob[1]), t = rayCyl(o, d, ob[0], ob[1], ob[2], g - .5, g + (ob[3] || 3)); if (t > 0 && t < best.t) best = { t, kind: (ob[3] || 3) > 4 ? 'tree' : 'rock' }; }
     for (const f of H.fence) { const t = raySeg(o, d, f[0], f[1], f[2], f[3], c.BASE, c.BASE + 1.45); if (t > 0 && t < best.t) best = { t, kind: 'wood' }; }
     let pt = 0, ph = o.y - hAt(o.x, o.z); for (let t = 1; t <= best.t; t += t < 40 ? 1 : 2.5) { const x = o.x + d.x * t, y = o.y + d.y * t, z = o.z + d.z * t, hh = y - hAt(x, z);
@@ -267,11 +268,12 @@ export function createGuns(c) {
   // ChatGPT's aim-assist cone (kept): a small, gentle pull towards a target near the crosshair, only while aiming
   function assist(o, dir) { if (!state.aiming) return dir; const sn = state.weapon === 'sniper', lim = Math.cos((sn ? S.sniperAssistAngle : S.assistAngle) * D2R * (mobile ? 1.4 : 1)); let best = null, sc = -1e9;
     for (const T of targets) { if (!T.alive) continue; v3.copy(T.c).sub(o); const dist = v3.length(); if (dist < .5 || dist > rangeOf(state.weapon)) continue; v3.multiplyScalar(1 / dist); const dt = v3.dot(dir);
-      const scr = dt - (sn ? 0 : dist * .00003); if (dt > lim && scr > sc) { sc = scr; best = v3.clone(); } } // through the scope: the target nearest the reticle, not the nearest in metres
+      const scr = dt - (sn ? 0 : dist * .00003); if (dt > lim && scr > sc) { sc = scr; best = v3.clone(); } }
+    const zs = c.zombies && c.zombies(); if (zs) for (const q of zs.assistPoints()) { v3.copy(q.c).sub(o); const dist = v3.length(); if (dist < .5 || dist > rangeOf(state.weapon)) continue; v3.multiplyScalar(1 / dist); const dt = v3.dot(dir), scr = dt - (sn ? 0 : dist * .00003); if (dt > lim && scr > sc) { sc = scr; best = v3.clone(); } } // through the scope: the target nearest the reticle, not the nearest in metres
     if (!best) return dir; const err = Math.acos(Math.min(1, best.dot(dir))) / D2R; // inside a small 'sticky' cone the sights settle on the target; further out it only nudges
     return dir.clone().lerp(best, err < (sn ? S.sniperSticky * (mobile ? 1.8 : 1) : mobile ? 2.4 : 1.4) ? .92 : S.assistStrength).normalize(); }
 
-  function canFire() { const w = state.weapon; if (!w || clock.draw > 0 || state.cycling || clock.cooldown > 0 || H.mountT > 0 || H.dismT > 0 || H.wantOff) return false;
+  function canFire() { const w = state.weapon; if (!w || H.dead || clock.draw > 0 || state.cycling || clock.cooldown > 0 || H.mountT > 0 || H.dismT > 0 || H.wantOff) return false;
     if (H.mounted && Math.abs(horseRel()) > S.horsebackYawLimit * D2R) { state.blocked = true; return false; } return true; }
   function shoot(fan) {
     const w = state.weapon; if (!canFire()) return false;
@@ -286,7 +288,7 @@ export function createGuns(c) {
     clampHorse(dir);
     const maxR = rangeOf(w), aim = cast(o, dir, maxR); state.dbg = { aim: aim.kind, t: +aim.t.toFixed(1), fov: +camera.fov.toFixed(1), scoped: state.scoped, aiming: state.aiming, spread: +spreadDeg(fan).toFixed(3), fan: !!fan }; const m = gun(); m.group.updateMatrixWorld(true); muz.copy(m.muzzle).applyMatrix4(m.group.matrixWorld);
     const bd = aim.p.clone().sub(muz); const L = bd.length(); bd.multiplyScalar(1 / Math.max(L, .001)); const hit = L > .3 ? cast(muz.clone().addScaledVector(bd, .05), bd, L + .5) : aim;
-    const mounted = !!H.mounted, land = () => { impact(hit, bd, w); state.lastHit = { kind: hit.kind, target: hit.T ? hit.T.kind : null, point: hit.p.toArray().map(v => +v.toFixed(2)), mounted, weapon: w, dist: +hit.p.distanceTo(muz).toFixed(1) }; };
+    const mounted = !!H.mounted, land = () => { impact(hit, bd, w); state.lastHit = { kind: hit.kind, target: hit.T ? hit.T.kind : hit.kind === 'zombie' ? hit.Z.kind : null, head: !!hit.head, zr: hit.zr || null, point: hit.p.toArray().map(v => +v.toFixed(2)), mounted, weapon: w, dist: +hit.p.distanceTo(muz).toFixed(1) }; };
     if (w === 'sniper') { const tt = hit.p.distanceTo(muz) / S.sniperVelocity; effects(w, muz, bd, hit.p, false, tt); flights.push({ t: tt, land }); } else { effects(w, muz, bd, hit.p); land(); }
     clock.recoil = 1; const k = w === 'rifle' ? S.recoilRifle : w === 'sniper' ? S.recoilSniper * (state.scoped ? .6 : 1) : S.recoilRevolver; P.pitch += k; clock.rec += k; H.shake = Math.max(H.shake || 0, w === 'sniper' ? .35 : w === 'rifle' ? .25 : .15);
     if (c.send) c.send({ t: 'sh', w: w === 'rifle' ? 2 : w === 'sniper' ? 3 : 1, o: muz.toArray().map(v => +v.toFixed(2)), e: hit.p.toArray().map(v => +v.toFixed(2)) });
@@ -323,6 +325,8 @@ export function createGuns(c) {
         let hm = T.holes[T.hi]; if (!hm) { hm = new THREE.Mesh(new THREE.PlaneGeometry(.05, .05), mats().hole); hm.rotation.y = Math.PI / 2; T.mesh.add(hm); T.holes[T.hi] = hm; } T.hi = (T.hi + 1) % 30; hm.position.set(.027, lp.y, lp.z);
         tone('sine', 220, 120, .25, .12); nz('lowpass', 500, 1, .25, .08); if (fx && fx.debris) fx.debris(p.x, p.y, p.z, 0xc9b48a, 4, .4); }
       return; }
+    if (hit.kind === 'zombie') { const zs = c.zombies && c.zombies(); if (zs) { state.hits++; const r = hit.zr = zs.onHit(hit.Z, w, hit.head, p, d); if (r) { if (r.killed) { state.score += hit.head ? 15 : 10; say(hit.head ? 'Headshot! Zombie down  +15' : 'Zombie down  +10'); } else if (hit.head) say('Headshot!');
+        nz('lowpass', 700, 1, .2, .12); if (hit.head) tone('square', 1600, 900, .05, .08); } } return; }
     if (!fx) return;
     if (hit.kind === 'ground') { fx.debris && fx.debris(p.x, p.y + .03, p.z, 0x7d6a4c, 5, .55); fx.smoke && fx.smoke.emit(p.x, p.y + .05, p.z, 0, .4, 0, .55, .47, .36, .2, 1, .7, -.05, .45); }
     else if (hit.kind === 'rock') { fx.impact && fx.impact(p); fx.debris && fx.debris(p.x, p.y, p.z, 0x8a8478, 4, .6); tone('triangle', 3400, 1200, .05, .08); }
