@@ -16,7 +16,7 @@ export function initTouch(input, look, act, unlockAudio) {
   // one shared look arbiter for every drag surface (left dead space, right half, FIRE)
   const lk = new Map(); // pointerId -> [x, y]; Map keeps start order, the last entry steers
   const lookStart = (id, x, y) => { lk.delete(id); lk.set(id, [x, y]); dbg(); };
-  const lookMove = (id, x, y) => { const p = lk.get(id); if (!p) return; let top = null; for (const k of lk.keys()) top = k; if (top === id) look((x - p[0]) * sens(), (y - p[1]) * sens()); p[0] = x; p[1] = y; dbg(); };
+  const lookMove = (id, x, y) => { const p = lk.get(id); if (!p) return; let top = null; for (const k of lk.keys()) top = k; if (top === id) look((x - p[0]) * sens(), (y - p[1]) * sens(), 'touch'); p[0] = x; p[1] = y; dbg(); };
   const lookEnd = id => { if (lk.delete(id)) dbg(); };
   window.__touchLook = { active: () => [...lk.keys()], zone, inZone }; // for tests / the debug overlay
   joy.addEventListener('pointerdown', e => { e.preventDefault(); unlockAudio();

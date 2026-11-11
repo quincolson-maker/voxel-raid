@@ -221,7 +221,9 @@ const ghost = new THREE.InstancedMesh(new THREE.BoxGeometry(1.02, 1.02, 1.02), n
 const keys = {}; addEventListener('keydown', e => { if (e.code === 'Tab' && G.phase != 'menu') e.preventDefault(); keys[e.code] = true; if (!(e.repeat && G.mode === 'zombies' && e.code === 'KeyE')) onKey(e.code); }); addEventListener('keyup', e => keys[e.code] = false);
 const locked = () => document.pointerLockElement === renderer.domElement;
 document.addEventListener('mousemove', e => { if (!locked()) return; look(e.movementX * .0022, e.movementY * .0022); });
-function look(dx, dy) { const ls = P.lookScale || 1; dx *= ls; dy *= ls; P.swX = (P.swX || 0) + dx; P.swY = (P.swY || 0) + dy; P.yaw -= dx; P.pitch = Math.max(-1.55, Math.min(1.55, P.pitch - dy)); }
+function look(dx, dy, src) { const ls = P.lookScale || 1; dx *= ls; dy *= ls; P.swX = (P.swX || 0) + dx; P.swY = (P.swY || 0) + dy;
+  if (src === 'touch' && P.lookSmooth && G.mode === 'horse') { const q = P.lookPend || (P.lookPend = { x: 0, y: 0 }); q.x += dx; q.y += dy; return; } // in the rifle scope a finger's look is low-pass filtered (drained per frame by hrguns)
+  P.yaw -= dx; P.pitch = Math.max(-1.55, Math.min(1.55, P.pitch - dy)); }
 let mouseL = false; renderer.domElement.addEventListener('mousedown', e => { sfx.init(); if (IS_TOUCH) return; if (!locked()) { renderer.domElement.requestPointerLock(); return; } if (e.button == 0) mouseL = true; if (e.button == 2) { if (building()) place(); else P.adsHeld = true; } });
 addEventListener('mouseup', e => { if (e.button == 0) mouseL = false; if (e.button == 2) P.adsHeld = false; }); addEventListener('contextmenu', e => e.preventDefault());
 const pieces = () => G.mode == 'attack' || G.mode == 'zombies' ? PIECES_ATT : PIECES_DEF;

@@ -20,7 +20,8 @@ export const GUN_SETTINGS = {
   // long-range single-shot buffalo rifle with a full-length scope
   sniperRounds: 1, sniperInterval: .7, reloadSniper: 2.3, sniperRange: 420, sniperVelocity: 560, // m/s: you see the flight time at 300 m
   sniperHipSpread: 2.6, sniperScopeSpread: .25, scopeFov: 8, scopeFovMobile: 10, recoilSniper: .11,
-  scopeSwayFoot: .0032, scopeSwayHorse: .0075, scopeSwayHorseSpeed: .0012, breathHold: 4, breathRecover: .22, // radians / seconds
+  scopeSwayFoot: .0022, scopeSwayHorse: .0052, scopeSwayHorseSpeed: .0009, scopeLookMobile: .85, scopeTouchTau: .05, scopeEyeTau: .12, // sway radians; touch-look / eye smoothing time constants (s)
+  breathHold: 4, breathRecover: .22, // radians / seconds
   sniperAssistAngle: .9, sniperSticky: .35,
 };
 const S = GUN_SETTINGS, D2R = Math.PI / 180, UP = new THREE.Vector3(0, 1, 0), ZERO = new THREE.Vector3();
@@ -404,7 +405,9 @@ export function createGuns(c) {
     crossEl.classList.toggle('aim', state.aiming); crossEl.classList.toggle('no', state.blocked); }
   // ---- per frame (after the rider has been animated for this frame) ----
   function update(dt) {
-    state.upd = (state.upd || 0) + 1; dt = Math.min(dt || 0, .1); for (const k of ['cooldown', 'flash', 'draw']) clock[k] = Math.max(0, clock[k] - dt); clock.sway += dt * (H.mounted ? 1 + Math.abs(H.speed) * .12 : 1); toast -= dt;
+    state.upd = (state.upd || 0) + 1; dt = Math.min(dt || 0, .1);
+    { P.lookSmooth = mobile && state.scopeK > 0; const q = P.lookPend; // drain the filtered finger look (scope on phones); instant otherwise
+      if (q && (q.x || q.y)) { const f = P.lookSmooth ? ease(dt, S.scopeTouchTau) : 1, ax = q.x * f, ay = q.y * f; P.yaw -= ax; P.pitch = Math.max(-1.55, Math.min(1.55, P.pitch - ay)); q.x -= ax; q.y -= ay; if (Math.abs(q.x) + Math.abs(q.y) < 1e-6) q.x = q.y = 0; } } for (const k of ['cooldown', 'flash', 'draw']) clock[k] = Math.max(0, clock[k] - dt); clock.sway += dt * (H.mounted ? 1 + Math.abs(H.speed) * .12 : 1); toast -= dt;
     clock.recoil = Math.max(0, clock.recoil - dt * 6); if (clock.rec > 0) { const r = Math.min(clock.rec, clock.rec * dt * 7 + dt * .01); P.pitch -= r * .8; clock.rec -= r; }
     if (clock.cock > 0) { clock.cock -= dt; if (clock.cock <= 0) click(3600, .1); }
     flash.visible = clock.flash > 0; if (light) light.intensity = clock.flash > 0 ? 14 * clock.flash / .05 : 0;
@@ -443,20 +446,27 @@ export function createGuns(c) {
 
   // ---- scope: after the chase camera is placed, move it to the shooting eye behind the scope, zoom, and add sway + breathing ----
   const eye = new THREE.Vector3(), qS = new THREE.Quaternion(), eS = new THREE.Euler(0, 0, 0, 'YXZ'), fwdS = new THREE.Vector3();
-  function scopeSway() { const m = !!H.mounted, sp = Math.abs(m ? H.speed : H.fv.length()), t = clock.sway;
-    let amp = m ? S.scopeSwayHorse + sp * S.scopeSwayHorseSpeed : S.scopeSwayFoot + sp * .0008; amp *= state.steady ? (mobile ? .4 : .14) : state.winded ? 1.7 : 1;
-    const br = state.steady ? 0 : 1; return [ (Math.sin(t * .83) * .7 + Math.sin(t * 2.3 + 1.3) * .25) * amp, (Math.sin(t * 1.45) * .9 * br + Math.sin(t * 1.1 + .5) * .35) * amp ]; }
+  const sm = { amp: -1, br: 1, eye: new THREE.Vector3(), eyeOn: false }, eyeB = new THREE.Vector3(), eyeO = new THREE.Vector3();
+  const ease = (dt, tau) => 1 - Math.exp(-Math.max(0, dt) / tau); // frame-rate independent low-pass factor
+  function scopeSway(dt) { const m = !!H.mounted, sp = Math.abs(m ? H.speed : H.fv.length()), t = clock.sway;
+    let amp = m ? S.scopeSwayHorse + sp * S.scopeSwayHorseSpeed : S.scopeSwayFoot + sp * .0006; amp *= state.steady ? (mobile ? .3 : .14) : state.winded ? 1.6 : 1;
+    // steadying / breathing changes fade in and out (no step in the picture when the breath is held or let go)
+    if (sm.amp < 0) sm.amp = amp; sm.amp += (amp - sm.amp) * ease(dt, .35); sm.br += ((state.steady ? 0 : 1) - sm.br) * ease(dt, .35); amp = sm.amp;
+    const br = sm.br; return [ (Math.sin(t * .83) * .7 + Math.sin(t * 2.3 + 1.3) * .25) * amp, (Math.sin(t * 1.45) * .9 * br + Math.sin(t * 1.1 + .5) * .35) * amp ]; }
   function scopeCam(dt) {
     const on = state.weapon === 'sniper' && state.aiming && !(H.mountT > 0 || H.dismT > 0) && !state.reloading;
-    state.scopeK += ((on ? 1 : 0) - state.scopeK) * Math.min(1, (dt || .05) * 9); if (on && state.scopeK > .97) state.scopeK = 1; if (!on && state.scopeK < .02) state.scopeK = 0; state.scoped = state.scopeK > .6;
-    if (state.scopeK <= 0) { P.lookScale = 1; return; }
+    dt = Math.min(dt || 0, .1); state.scopeK += ((on ? 1 : 0) - state.scopeK) * ease(dt || .016, 1 / 9); if (on && state.scopeK > .97) state.scopeK = 1; if (!on && state.scopeK < .02) state.scopeK = 0; state.scoped = state.scopeK > .6;
+    if (state.scopeK <= 0) { P.lookScale = 1; sm.amp = -1; sm.eyeOn = false; return; }
     const k = state.scopeK * state.scopeK * (3 - 2 * state.scopeK), rig = c.rig && c.rig(), B = rig && rig.userData.B;
     fwdS.set(-Math.sin(P.yaw) * Math.cos(P.pitch), Math.sin(P.pitch), -Math.cos(P.yaw) * Math.cos(P.pitch));
     if (B && B.Head) { rig.updateMatrixWorld(true); B.Head.getWorldPosition(eye); eye.y += .07; } else if (H.mounted) eye.set(H.mounted.pos.x, H.mounted.pos.y + 2.35, H.mounted.pos.z); else eye.set(P.pos.x, P.pos.y + 1.62, P.pos.z);
+    // the head bobs with the gait: low-pass the head's offset from the body (not its world position, so nothing lags at a gallop)
+    if (H.mounted) eyeB.set(H.mounted.pos.x, H.mounted.pos.y, H.mounted.pos.z); else eyeB.copy(P.pos); eyeO.copy(eye).sub(eyeB);
+    if (!sm.eyeOn) { sm.eye.copy(eyeO); sm.eyeOn = true; } else sm.eye.lerp(eyeO, ease(dt, S.scopeEyeTau)); eye.copy(eyeB).add(sm.eye);
     eye.addScaledVector(fwdS, .32).add(v3.set(Math.cos(P.yaw), 0, -Math.sin(P.yaw)).multiplyScalar(.03)); // the right eye at the eyepiece, a little in front of the face
-    const [sx, sy] = scopeSway(); eS.set(Math.max(-1.5, Math.min(1.5, P.pitch + sy)), P.yaw + sx, 0); qS.setFromEuler(eS);
+    const [sx, sy] = scopeSway(dt); eS.set(Math.max(-1.5, Math.min(1.5, P.pitch + sy)), P.yaw + sx, 0); qS.setFromEuler(eS);
     camera.position.lerp(eye, k); camera.quaternion.slerp(qS, k); H.fovSave = camera.fov; camera.fov += ((mobile ? S.scopeFovMobile : S.scopeFov) - camera.fov) * k; camera.updateProjectionMatrix(); camera.updateMatrixWorld();
-    P.lookScale = 1 - (1 - (mobile ? S.scopeFovMobile : S.scopeFov) / 60) * k; } // slower look in the scope
+    P.lookScale = 1 - (1 - (mobile ? S.scopeFovMobile / 60 * S.scopeLookMobile : S.scopeFov / 60)) * k; } // slower look in the scope (in step with the zoom)
 
   // ---- multiplayer: show other riders' guns and shots (visual only — nobody can hurt anybody) ----
   const fin = (a, n) => Array.isArray(a) && a.length === n && a.every(v => typeof v === 'number' && isFinite(v) && Math.abs(v) < 6000);
