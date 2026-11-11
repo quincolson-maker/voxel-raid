@@ -47,6 +47,8 @@ select,input{background:#1c2540;box-shadow:none}
 #stick.active{opacity:1;border-color:#fffb;background:rgba(0,0,0,.3)}
 #knob{pointer-events:none;position:absolute;left:50%;top:50%;width:54px;height:54px;margin:-27px;border-radius:50%;background:#fffa;box-shadow:0 2px 6px #0008}
 #look{position:absolute;right:0;top:0;width:50%;height:100%;pointer-events:auto}
+#touchDbg{position:fixed;inset:0;pointer-events:none;z-index:40}#touchDbg .tz{position:absolute;border-radius:50%;border:2px dashed #7dff9a;background:rgba(125,255,154,.12);display:flex;align-items:flex-start;justify-content:center}#touchDbg .tz span{margin-top:14px;font:700 11px system-ui;letter-spacing:.12em;color:#7dff9a}
+#touchDbg .tl{position:absolute;left:3%;top:22%;font:700 11px system-ui;letter-spacing:.1em;color:#ffd84a;text-shadow:0 1px 2px #000}#touchDbg .tp{position:absolute;width:34px;height:34px;margin:-17px;border-radius:50%;border:3px solid #fff}#touchDbg .mv{background:rgba(80,230,120,.6)}#touchDbg .lk{background:rgba(255,210,60,.7)}#touchDbg .wt{background:rgba(160,160,160,.5)}
 .tb{position:absolute;pointer-events:auto;width:clamp(48px,11vmin,74px);height:clamp(48px,11vmin,74px);border-radius:50%;background:rgba(20,28,50,.6);border:2px solid #fff8;color:#fff;font-weight:bold;font-size:clamp(10px,2.4vmin,14px);display:flex;align-items:center;justify-content:center;text-align:center;line-height:1}
 .tb.big{width:clamp(70px,17vmin,104px);height:clamp(70px,17vmin,104px);background:rgba(220,60,40,.55);font-size:clamp(12px,3vmin,17px)}
 .tb:active,.tb.down{background:rgba(255,211,74,.6)}
@@ -205,5 +207,5 @@ body.touch #hrGun,.touch #hrGun{right:auto;left:50%;transform:translateX(-50%);b
 <div id="rot"><div class="ph"></div><p>Rotate your phone to landscape</p><button id="rotskip">Play anyway</button></div>
 <div id="ioshint" class="pill">For true fullscreen on iPhone: tap Share → <b>Add to Home Screen</b>, then launch Voxel Raid from your home screen. <button id="ioshintx" style="padding:.2em .6em">OK</button></div>
 <script src="./vendor/peerjs.min.js"></script>
-<script type="module" src="./game.min.js?v=24-buffalo"></script>
+<script type="module" src="./game.min.js?v=25-leftaim"></script>
 </body></html>

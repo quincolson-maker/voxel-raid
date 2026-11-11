@@ -37,7 +37,7 @@ Citadel Ring (centralized core), Honeycomb Grid (compartments), Sentinel Spread 
 - Original low-poly troops (Ember Ranger, Powder Sapper, Bulwark Golem, Bastion Warden) with walk/attack/death animation; modeled defense heads, keep heartstone, roofs; first-person Arc Repeater viewmodel.
 - Particles (muzzle flash, explosions, smoke/fire on damaged buildings, debris chunks), hit markers, damage numbers, synthesized WebAudio SFX.
 - Quality presets Low/Medium/High/Ultra (menu or `?q=`), auto-detect (phones default Low/Medium), adaptive resolution when FPS < 28.
-- Touch controls: left joystick, right-side drag look, FIRE (drag to aim while firing), BUILD, JUMP, RELOAD, PIECE, MAT, SKIP; landscape prompt; fullscreen button. Pointer lock is desktop-only.
+- Touch controls: left joystick (a thumb-sized circle bottom-left), drag look on the right side **or anywhere on the left outside the joystick** (left-thumb aim; two look drags never add up, the newest one steers; works in the scope; `?touchzones=1` shows the zones), FIRE (drag to aim while firing), BUILD, JUMP, RELOAD, PIECE, MAT, SKIP; landscape prompt; fullscreen button. Pointer lock is desktop-only.
 - Bots: buffed raiders, new Bulwark Golem tank, grid A* pathing that routes through the weakest walls.
 
 ## Endless Zombies — Dead Signal
