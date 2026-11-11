@@ -27,6 +27,7 @@ export function makeRawH(EDGE) {
     const vl = 1 - Math.abs(fbm(wx * .0019 + 7.7, wz * .0019 - 3.3, 3)); h -= vl * vl * vl * vl * 24 * sstep(140, 360, r); // long valleys
     const m = sstep(EDGE - 90, EDGE + 330, r);
     if (m > 0) { const R = ridged(wx * .0011 + 1.3, wz * .0011 - .7, r > 900 ? 6 : 5); h += m * (30 + R * (150 + 560 * sstep(600, 2300, r))); }
+    if (r > 600) { const k = sstep(600, 1250, r); h += k * (40 + ridged(wx * .0021 + 4.1, wz * .0021 - 2.6, 4) * 300); } // a taller second range behind the first ridge (outside the walkable area): layered skyline, snow caps
     return h;
   };
 }
@@ -128,19 +129,22 @@ vec3 tri(sampler2D t, vec3 p, vec3 w){ return texture2D(t,p.zy).rgb*w.x+texture2
 float mv=vn(xz*.035)*.55+vn(xz*.17)*.3+vn(xz*.9)*.15; float macro=fbm3(xz*.0035);
 vec2 uvG=xz/3.2; vec3 gA=texture2D(tG,uvG).rgb, gB=texture2D(tG,mat2(.8,-.6,.6,.8)*xz/11.+.37).rgb, g2=texture2D(tG2,xz/4.3).rgb;
 vec3 grass=mix(gA,g2*vec3(.95,1.08,.78),.35+.3*(mv-.5)); grass=mix(grass,gB,smoothstep(15.,90.,dist)*.65);
-grass*=mix(.8,1.12,mv)*vec3(.95,1.05,.82); grass=mix(grass,grass*vec3(1.32,1.08,.62),smoothstep(.52,.78,macro)*.85); grass=mix(grass,grass*vec3(.78,1.02,.8),smoothstep(.45,.2,macro)*.6);
+grass*=mix(.84,1.1,mv)*vec3(.95,1.05,.82); grass=mix(grass,grass*vec3(1.22,1.06,.7),smoothstep(.55,.8,macro)*.55); grass=mix(grass,grass*vec3(.8,1.03,.82),smoothstep(.45,.2,macro)*.5);
+float sunny=clamp(dot(vWN.xz,vec2(-.6,-.55))*3.,0.,1.); grass=mix(grass,grass*vec3(1.18,1.04,.72),sunny*smoothstep(.06,.25,slope)*.6); grass=mix(grass,grass*vec3(.82,1.06,.84),smoothstep(6.,-10.,hgt)*.55); grass*=mix(1.,.86,smoothstep(.1,.32,slope));
 vec3 dirt=texture2D(tD,xz/3.).rgb*vec3(.95,.9,.84); vec3 trail=texture2D(tTr,xz/2.6).rgb*vec3(1.02,.96,.88);
 vec3 tw=pow(abs(vWN),vec3(4.)); tw/=tw.x+tw.y+tw.z; vec3 rock=tri(tR,vWP/7.,tw)*vec3(.92,.9,.88); vec3 rockF=tri(tR,vWP/41.,tw); rock=mix(rock,rockF*vec3(.9,.88,.86),smoothstep(60.,400.,dist)*.7);
-vec3 snow=texture2D(tS,xz/4.).rgb*vec3(.98,1.,1.04);
+vec3 snow=texture2D(tS,xz/4.).rgb*vec3(.98,1.,1.04); rock=mix(rock,vec3(dot(rock,vec3(.3,.4,.3))),.4)*vec3(.9,.9,.95);
 float pen=1.-smoothstep(-1.,1.3,penM(xz)+(vn(xz*.6)-.5)*1.6); float td=trailD(xz); float path=1.-smoothstep(.7,2.1,td+(vn(xz*.5)-.5)*1.4);
 float worn=smoothstep(.7,.92,vn(xz*.08)*.7+vn(xz*.35)*.3)*(1.-smoothstep(200.,400.,r0)); float dm=max(pen*.95,worn*.6);
 float rockW=smoothstep(.2,.38,slope+(mv-.5)*.12)+smoothstep(70.,150.,hgt+(macro-.5)*60.)*.7; rockW=clamp(rockW,0.,1.);
-float snowW=smoothstep(235.,300.,hgt+(macro-.5)*90.)*(1.-smoothstep(.42,.62,slope)); 
-rock*=mix(.74,1.14,vn(vec2(vWP.y*.09,macro*4.+xz.x*.002)))*mix(vec3(1.),vec3(1.08,.98,.88),vn(xz*.01));
-float forest=smoothstep(380.,560.,r0)*(1.-smoothstep(.3,.45,slope))*(1.-smoothstep(90.,170.,hgt))*smoothstep(.35,.6,fbm3(xz*.006+2.));
-vec3 col=mix(grass,dirt,dm); col=mix(col,trail,path*.92); col=mix(col,vec3(.085,.12,.065)*(.65+.7*vn(xz*.11))*(.85+.3*macro),forest*.8); col=mix(col,rock,rockW); col=mix(col,snow,snowW);
+float sLine=250.-smoothstep(900.,2600.,r0)*60.+(vn(xz*.012)-.5)*55.-clamp(-vWN.z,0.,1.)*25.; float snowW=smoothstep(sLine,sLine+45.,hgt+(macro-.5)*70.)*mix(1.,smoothstep(.15,.65,vn(xz*.05+vWP.y*.02)),smoothstep(.45,.78,slope))*(1.-smoothstep(.78,.92,slope)); 
+rock*=mix(.86,1.08,vn(vec2(vWP.y*.07,macro*4.+xz.x*.002)))*mix(vec3(.86,.86,.9),vec3(1.04,.97,.88),vn(xz*.008)); rock*=mix(.62,1.,smoothstep(.25,.6,vn(vWP.xz*.06+vWP.y*.03)))*mix(1.,.8,smoothstep(.55,.9,slope));
+float forest=smoothstep(380.,560.,r0)*(1.-smoothstep(.36,.55,slope))*(1.-smoothstep(110.,175.,hgt+(macro-.5)*50.))*smoothstep(.3,.55,fbm3(xz*.006+2.)); forest=max(forest,smoothstep(380.,520.,r0)*(1.-smoothstep(.45,.62,slope))*(1.-smoothstep(130.,175.,hgt))*smoothstep(25.,60.,hgt)*.85);
+vec3 col=mix(grass,dirt,dm); col=mix(col,trail,path*.92); col=mix(col,vec3(.085,.12,.065)*(.65+.7*vn(xz*.11))*(.85+.3*macro),forest*.8); col=mix(col,rock,rockW);
+float belt=smoothstep(420.,560.,r0)*(1.-smoothstep(.42,.6,slope))*smoothstep(15.,45.,hgt)*(1.-smoothstep(120.,175.,hgt+(macro-.5)*60.))*smoothstep(.25,.5,fbm3(xz*.005+7.)); col=mix(col,vec3(.07,.1,.06)*(.7+.6*vn(xz*.09)),belt*.85); // conifer belt on the lower mountain flanks
+col=mix(col,snow,snowW);
 vec4 gArm=texture2D(tGa,uvG); float ao=mix(gArm.r,1.,max(max(dm,path),rockW)); col*=mix(1.,ao,.8);
-float tRough=mix(mix(mix(gArm.g,.97,dm),.98,path),.84,rockW); tRough=mix(tRough,.5,snowW);
+float tRough=mix(mix(mix(gArm.g,.97,dm),.98,path),.84,rockW); tRough=mix(tRough,.62,snowW); tRough=max(tRough,mix(.6,.96,smoothstep(40.,350.,dist))); // far, grazing terrain must not mirror the bright sky (white valley floors)
 vec3 nG=texture2D(normalMap,vNormalMapUv*1.28).xyz*2.-1., nD=texture2D(tDn,xz/3.).xyz*2.-1., nR=texture2D(tRn,xz/7.).xyz*2.-1., nS=texture2D(tSn,xz/4.).xyz*2.-1.;
 vec3 tN=normalize(mix(mix(mix(nG,nD,max(dm,path)),nR*vec3(1.3,1.3,1.),rockW),nS,snowW)); tN.xy*=1.-smoothstep(60.,260.,dist)*.7;
 #ifdef TERRAIN_HQ
@@ -166,11 +170,17 @@ export function buildTerrain(scene, mat, hAt, HALF, seg, farRings, farSegs) {
   const p = geo.attributes.position, uv = geo.attributes.uv;
   for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i), y = hAt(x, z); p.setY(i, y); uv.setXY(i, x / 2.5, z / 2.5); const ix = Math.round((x + HALF) / step), iz = Math.round((z + HALF) / step); hm[iz * n + ix] = y - BASE; }
   geo.computeVertexNormals(); const inner = new THREE.Mesh(geo, mat); inner.receiveShadow = true; scene.add(inner);
+  { // skirt: a 40 m curtain hanging from the inner square's rim, so no sky shows through where it meets the far ring
+    const sp = [], si = [], sn = []; const rim = []; for (let i = 0; i <= seg; i++) rim.push([-HALF + i * step, -HALF]); for (let i = 1; i <= seg; i++) rim.push([HALF, -HALF + i * step]); for (let i = 1; i <= seg; i++) rim.push([HALF - i * step, HALF]); for (let i = 1; i <= seg; i++) rim.push([-HALF, HALF - i * step]);
+    for (const [x, z] of rim) { const y = hAt(x, z), l = Math.hypot(x, z); sp.push(x, y, z, x, y - 40, z); sn.push(x / l, .3, z / l, x / l, .3, z / l); }
+    for (let i = 0; i < rim.length - 1; i++) { const a = i * 2; si.push(a, a + 1, a + 2, a + 2, a + 1, a + 3); }
+    const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3)); sg.setAttribute('normal', new THREE.Float32BufferAttribute(sn, 3)); sg.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(sp.length / 3 * 2), 2)); sg.setIndex(si);
+    const sk = new THREE.Mesh(sg, mat); sk.material = mat.clone(); sk.material.side = THREE.DoubleSide; sk.material.onBeforeCompile = mat.onBeforeCompile; sk.frustumCulled = false; scene.add(sk); }
   // far ring: polar grid, exponential radial spacing; sunk a little where it overlaps the inner square so the two never fight
   const r0 = HALF * .96, r1 = 4300, pos = [], uvs = [], idx = [];
   for (let j = 0; j <= farRings; j++) { const r = r0 * Math.pow(r1 / r0, j / farRings); for (let i = 0; i <= farSegs; i++) { const a = i / farSegs * Math.PI * 2, x = Math.cos(a) * r, z = Math.sin(a) * r;
     const inSq = Math.max(Math.abs(x), Math.abs(z)) < HALF + 2; pos.push(x, hAt(x, z) - (inSq ? 1.2 : 0), z); uvs.push(x / 2.5, z / 2.5); } }
-  for (let j = 0; j < farRings; j++) for (let i = 0; i < farSegs; i++) { const a = j * (farSegs + 1) + i, b = a + farSegs + 1; idx.push(a, b, a + 1, a + 1, b, b + 1); }
+  for (let j = 0; j < farRings; j++) for (let i = 0; i < farSegs; i++) { const a = j * (farSegs + 1) + i, b = a + farSegs + 1; idx.push(a, a + 1, b, a + 1, b + 1, b); } // CCW from above (the old order faced down, so only far-side slopes drew and valleys showed sky)
   const fg = new THREE.BufferGeometry(); fg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); fg.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2)); fg.setIndex(idx); fg.computeVertexNormals();
   const far = new THREE.Mesh(fg, mat); far.receiveShadow = false; far.frustumCulled = false; scene.add(far);
   const tex = new THREE.DataTexture(THREE.DataUtils ? toHalf(hm) : hm, n, n, THREE.RedFormat, THREE.HalfFloatType); tex.minFilter = tex.magFilter = THREE.LinearFilter; tex.needsUpdate = true;

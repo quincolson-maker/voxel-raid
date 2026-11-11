@@ -13,6 +13,7 @@ import { mulberry, conifer } from './models.js';
 import { ShaderPass } from '../addons/postprocessing/ShaderPass.js';
 import { createGuns } from './hrguns.js';
 import { createHrZombies } from './hrzombies.js';
+import { createFlora } from './hrflora.js';
 import { makeRawH, trailSegments, segDist as segD, createSky, terrainMaterial as terrainMat2, loadTerrainTextures, buildTerrain, createGrass, loadRockModels } from './hrworld.js';
 const $ = id => document.getElementById(id);
 const S = 800, EDGE = 360;                // map size (m) and walkable half-extent
@@ -324,8 +325,8 @@ export function createHorseRider(ctx) {
   function buildWorld() {
     const T = loadTerrainTextures(GX.renderer, HQ), mat = terrainMat2(T, PEN, SEG, BASE, HQ);
     const seg = Q.shadow >= 2048 && !mobile ? 400 : HQ ? 320 : mobile ? 160 : 240;
-    H.terrain = buildTerrain(scene, mat, hAt, 500, seg, HQ ? 110 : 48, HQ ? 448 : 160); H.ground3d = H.terrain.inner;
-    buildTrees(); buildRocks(); buildGrass(); buildPen();
+    H.terrain = buildTerrain(scene, mat, hAt, 500, seg, HQ ? 110 : 72, HQ ? 448 : 256); H.ground3d = H.terrain.inner;
+    buildTrees(); buildRocks(); buildFlora(); buildGrass(); buildPen();
   }
   // woods: conifers + broadleaf trees, instanced, with a near (detailed) / far (low-poly) LOD swapped around the player
   function buildTrees() {
@@ -352,6 +353,12 @@ export function createHorseRider(ctx) {
       im.setColorAt(n[key]++, t.conif ? col.setHSL(.27 + t.hue * .06, .34 + t.hue * .1, .2 + t.hue * .06) : col.setHSL(.2 + t.hue * .09, .42 + t.hue * .15, .24 + t.hue * .08)); }
     for (const k in n) { const im = T[k]; im.count = n[k]; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; }
   }
+  // sagebrush, bunchgrass, cacti and the far woods on the mountain slopes (src/hrflora.js)
+  function buildFlora() {
+    const needle = foliage(new THREE.MeshStandardMaterial({ roughness: .95, vertexColors: true, color: 0x7f9478 }), 3.4);
+    H.flora = createFlora(scene, { hAt, BASE, EDGE, mobile, HQ, farTree: softFoliage(farConifer(), y => y, .6), needle, obst: H.obst,
+      avoid: (x, z) => Math.abs(x - PEN.x) < PEN.hw + 22 && Math.abs(z - PEN.z) < PEN.hd + 22 || Math.hypot(x - SPAWN.x, z - SPAWN.z) < 8 || clearing(x, z, 3) || trailDist(x, z) < 2.6 || inRange(x, z, 3) });
+  }
   // CC0 scanned boulders (Poly Haven), instanced in three shapes; icosahedron stand-ins if the models fail to load
   function buildRocks() {
     const nR = Math.round(Q.trees * (mobile || !HQ ? .35 : .7)), list = [];
@@ -359,7 +366,13 @@ export function createHorseRider(ctx) {
       const s = .45 + rnd() * rnd() * 3.2, k = rnd() < .45 ? 0 : rnd() < .5 ? 1 : 2; list.push({ x, z, s, k, ry: rnd() * 6.28, tilt: (rnd() - .5) * .25 }); if (s > .8) H.obst.push([x, z, s * .62, s * 1.3]); }
     const place = shapes => { for (let k = 0; k < shapes.length; k++) { const L = list.filter(r => r.k % shapes.length === k), im = new THREE.InstancedMesh(shapes[k].geo, shapes[k].mat, Math.max(1, L.length));
       L.forEach((r, i) => { m4.compose(v3.set(r.x, hAt(r.x, r.z) - r.s * .12, r.z), qq.setFromEuler(new THREE.Euler(r.tilt, r.ry, r.tilt * .6)), sc3.set(r.s * 1.5, r.s * (shapes[k].h ? 1.5 : .7), r.s * 1.5)); im.setMatrixAt(i, m4); });
-      im.count = L.length; im.castShadow = im.receiveShadow = true; im.computeBoundingSphere(); scene.add(im); (H.rockMeshes = H.rockMeshes || []).push(im); } };
+      im.count = L.length; im.castShadow = im.receiveShadow = true; im.computeBoundingSphere(); scene.add(im); (H.rockMeshes = H.rockMeshes || []).push(im); }
+      // small stones scattered through the grass (no collision, no shadow casting)
+      const nP = mobile ? 260 : HQ ? 1100 : 600, S = 2, pg = [new THREE.IcosahedronGeometry(.5, 1).translate(0, .25, 0), new THREE.DodecahedronGeometry(.5, 0).translate(0, .22, 0)]; // low-poly stand-ins (the scanned boulders are far too dense to scatter by the thousand)
+      const pm = shapes[0].mat.clone(); if (pm.color) pm.color.multiplyScalar(.55); const ims = pg.map(g => { const im = new THREE.InstancedMesh(g, pm, Math.ceil(nP / S)); im.count = 0; im.receiveShadow = true; scene.add(im); return im; });
+      for (let i = 0; i < nP * 3 && ims.reduce((n, m) => n + m.count, 0) < nP; i++) { const x = (rnd() - .5) * 2 * EDGE, z = (rnd() - .5) * 2 * EDGE; if (Math.hypot(x - PEN.x, z - PEN.z) < 18 || trailDist(x, z) < 1.5 || inRange(x, z, 1)) continue;
+        const im = ims[i % S]; if (im.count >= Math.ceil(nP / S)) continue; const s = .12 + rnd() * rnd() * .45; m4.compose(v3.set(x, hAt(x, z) - s * .25, z), qq.setFromEuler(new THREE.Euler(rnd() * .6, rnd() * 6.28, rnd() * .6)), sc3.set(s, s * (.5 + rnd() * .6), s)); im.setMatrixAt(im.count++, m4); }
+      for (const im of ims) { im.computeBoundingSphere(); im.instanceMatrix.needsUpdate = true; } H.pebbles = ims.reduce((n, m) => n + m.count, 0); };
     loadRockModels().then(place).catch(e => { console.warn('rock models failed', e); const rg = new THREE.IcosahedronGeometry(.5, 2); rg.translate(0, .3, 0); place([{ geo: rg, mat: pbr('rock', { color: 0xb0aca4 }), h: 0 }]); });
   }
   // GPU grass: tufts on a camera-following grid (count / radius from the quality tier), sways in the wind, wildflowers, fades out by distance
