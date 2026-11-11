@@ -21,7 +21,9 @@ const clearing = (x, z, m = 0) => Math.abs(x - PEN.x) < 11 + m && z > PEN.z && z
 const MOUNT_R = 2.8, COOLDOWN = .45;
 const sstep = (a, b, t) => { t = Math.min(1, Math.max(0, (t - a) / (b - a))); return t * t * (3 - 2 * t); };
 const rawH = makeRawH(EDGE);
-const RANGE = { x: PEN.x - PEN.hw - 8, z: PEN.z + 1 }, inRange = (x, z, m = 0) => x < RANGE.x + 3 + m && x > RANGE.x - 66 - m && Math.abs(z - RANGE.z) < 9 + m; // shooting range west of the pen
+const RANGE = { x: PEN.x - PEN.hw - 8, z: PEN.z + 1, lane: [-Math.cos(.7), Math.sin(.7)] }; // shooting range west of the pen; the long-range lane (steel at 150-300 m) runs off south-west where the ground stays in view
+const inLane = (x, z, m) => { const ex = x - RANGE.x + 1, ez = z - RANGE.z, t = ex * RANGE.lane[0] + ez * RANGE.lane[1]; return t > 20 && t < 312 + m && Math.abs(ex * RANGE.lane[1] - ez * RANGE.lane[0]) < 13 + m; };
+const inRange = (x, z, m = 0) => (x < RANGE.x + 3 + m && x > RANGE.x - 66 - m && Math.abs(z - RANGE.z) < 9 + m) || inLane(x, z, m);
 const SEG = trailSegments(PEN, SPAWN), trailDist = (x, z) => { let d = 1e9; for (const g of SEG) d = Math.min(d, segD(x, z, g)); return d; };
 const BASE = rawH(PEN.x, PEN.z);
 export function hAt(x, z) { const d = Math.hypot(x - PEN.x, z - PEN.z); return BASE + (rawH(x, z) - BASE) * sstep(24, 60, d); }
@@ -554,7 +556,7 @@ export function createHorseRider(ctx) {
     if (H.mountT > 0) { H.mountT = Math.max(0, H.mountT - dt); mountPose(h, 1 - H.mountT / MOUNT_T); }
     const busy = H.mountT > 0 || H.dismT > 0 || H.wantOff;
     // gait selection (keyboard): tap Shift = one gait up, hold Shift = gallop flat out (stamina), C = one gait down
-    if (keys.ShiftLeft || keys.ShiftRight) H.shiftT += dt; else H.shiftT = 0;
+    if ((keys.ShiftLeft || keys.ShiftRight) && !H.scoped) H.shiftT += dt; else H.shiftT = 0; // in the scope Shift holds your breath instead
     const ref = free || H.recenter ? h.yaw : P.yaw; // steering is camera-relative; while looking around it is relative to the horse
     let target = 0, want = null, brake = false;
     if (!busy) {
@@ -621,7 +623,7 @@ export function createHorseRider(ctx) {
   }
   // discrete key presses (no auto-repeat): Shift = one gait up while riding, C = one gait down / on foot toggles first person
   addEventListener('keydown', e => { if (!H.on || e.repeat || !document.body.classList.contains('horse-mode')) return;
-    if (H.mounted) { if (/^Shift/.test(e.code)) H.cruise = Math.min(4, H.cruise + 1); else if (e.code === 'KeyC') H.cruise = Math.max(1, H.cruise - 1); }
+    if (H.mounted) { if (/^Shift/.test(e.code) && !H.scoped) H.cruise = Math.min(4, H.cruise + 1); else if (e.code === 'KeyC') H.cruise = Math.max(1, H.cruise - 1); }
     else if (e.code === 'KeyC') { H.fp = !H.fp; msg(H.fp ? 'First-person view (C to switch back)' : 'Third-person view', 1.2); } });
   addEventListener('wheel', e => { if (!H.on || !document.body.classList.contains('horse-mode')) return; H.zoom = Math.max(.5, Math.min(1.5, H.zoom * (e.deltaY > 0 ? 1.08 : 1 / 1.08))); }, { passive: true }); // camera zoom
   function tick(dt) {
@@ -668,7 +670,8 @@ export function createHorseRider(ctx) {
   function camClear(from, to) { // pull the camera in front of tree trunks / rocks between it and the subject
     const dx = to.x - from.x, dz = to.z - from.z; for (let t = .3; t <= 1.001; t += .175) { const x = from.x + dx * t, z = from.z + dz * t;
       for (const [ox, oz, or] of H.obst) if (Math.abs(ox - x) < or + .35 && Math.abs(oz - z) < or + .35 && Math.hypot(ox - x, oz - z) < or + .3) { to.x = from.x + dx * (t - .2); to.z = from.z + dz * (t - .2); to.y = from.y + (to.y - from.y) * (t - .2); return; } } }
-  function syncCamera(dt) {
+  function syncCamera(dt) { if (H.fovSave) { camera.fov = H.fovSave; H.fovSave = 0; camera.updateProjectionMatrix(); } camRig(dt); if (guns) guns.scopeCam(dt); } // the scope takes over after the rig
+  function camRig(dt) {
     const h = H.mounted;
     if (!h && (H.fp || !real())) { if (camera.fov !== 75) { camera.fov = 75; camera.updateProjectionMatrix(); } camera.position.set(P.pos.x, P.pos.y + 1.62 + (H.ground ? Math.abs(Math.cos(P.bob)) * .04 : 0), P.pos.z); camera.rotation.set(P.pitch, P.yaw, 0, 'YXZ'); H.camInit = false; return; }
     let fov, k;

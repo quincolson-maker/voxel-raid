@@ -17,6 +17,11 @@ export const GUN_SETTINGS = {
   swayWalk: .22, swayHorse: .45, swayHorseSpeed: .12, hipSpread: 1.7, adsSpreadMultiplier: .43, fanSpread: 3.4, // degrees
   horsebackYawLimit: 110,                           // fire to the front and sides of the horse, never over its rump
   recoilRevolver: .045, recoilRifle: .06,
+  // long-range single-shot buffalo rifle with a full-length scope
+  sniperRounds: 1, sniperInterval: .7, reloadSniper: 2.3, sniperRange: 420, sniperVelocity: 560, // m/s: you see the flight time at 300 m
+  sniperHipSpread: 2.6, sniperScopeSpread: .25, scopeFov: 8, scopeFovMobile: 10, recoilSniper: .11,
+  scopeSwayFoot: .0032, scopeSwayHorse: .0075, scopeSwayHorseSpeed: .0012, breathHold: 4, breathRecover: .22, // radians / seconds
+  sniperAssistAngle: .9, sniperSticky: .35,
 };
 const S = GUN_SETTINGS, D2R = Math.PI / 180, UP = new THREE.Vector3(0, 1, 0), ZERO = new THREE.Vector3();
 
@@ -45,6 +50,8 @@ function mats() {
     brass: P({ color: 0xc9a050, metalness: 1, roughness: .26 }), walnut: P({ color: 0xd8b8a0, map: walnut, roughness: .42, clearcoat: .45, clearcoatRoughness: .3 }), dark: new THREE.MeshBasicMaterial({ color: 0x050505 }),
     lead: new THREE.MeshStandardMaterial({ color: 0x8a8d90, metalness: .6, roughness: .5 }), tin: P({ color: 0xd8dadc, metalness: 1, roughness: .22 }), label: new THREE.MeshStandardMaterial({ map: label, roughness: .55, metalness: .2 }),
     board: new THREE.MeshStandardMaterial({ map: bull, roughness: .85 }), wood: new THREE.MeshStandardMaterial({ color: 0x7a5a3a, roughness: .9 }), hole: new THREE.MeshBasicMaterial({ map: hole, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }),
+    splash: new THREE.MeshBasicMaterial({ color: 0x55585c, transparent: true, opacity: .85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }),
+    steel: P({ color: 0xe9e5da, roughness: .55, metalness: .25 }), chain: new THREE.MeshStandardMaterial({ color: 0x3a3632, metalness: .8, roughness: .5 }),
     flash: new THREE.MeshBasicMaterial({ map: flash, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, side: THREE.DoubleSide }),
     glass: [0x2e6b3c, 0x7a4a16, 0xa8c8c0].map(c => P({ color: c, roughness: .06, metalness: 0, transparent: true, opacity: .62, clearcoat: 1, envMapIntensity: 1.6 })) };
   return MATS;
@@ -115,6 +122,57 @@ export function buildRifle() {
   return { group: g, muzzle: new THREE.Vector3(0, BY, -.762), lever, hammer: ham, kind: 'rifle' };
 }
 
+// Long-range single-shot "buffalo rifle" in the style of the 1870s falling-block rifles (Sharps 1874 family): heavy 30" octagon
+// barrel, case-hardened receiver + side hammer + lock plate, falling breech block worked by the trigger-guard lever, double set
+// triggers, walnut forend with an ebony schnabel tip, straight-wrist buttstock with a crescent butt plate, and a full-length
+// brass tube scope in two mounts (rear mount with windage / elevation knobs). Original procedural model — no outside assets.
+export function buildSharps() {
+  const M = mats(), g = new THREE.Group(); g.name = 'BuffaloRifle'; const BY = .04, SY = .089; // bore / scope axis above the hand
+  if (!M.ebony) { M.ebony = new THREE.MeshPhysicalMaterial({ color: 0x15100c, roughness: .32, clearcoat: .6, clearcoatRoughness: .25 });
+    M.lens = new THREE.MeshPhysicalMaterial({ color: 0x1c2c3a, roughness: .04, metalness: .35, clearcoat: 1, envMapIntensity: 2 });
+    const ct = M.caseH.map.clone(); ct.repeat.set(4, 4); ct.needsUpdate = true; M.caseS = M.caseH.clone(); M.caseS.map = ct; // case colours at the scale of a small receiver
+    const wt = M.walnut.map.clone(); wt.repeat.set(2.2, 3.5); wt.needsUpdate = true; M.walnutS = M.walnut.clone(); M.walnutS.map = wt; }
+  // receiver (case-hardened colours) + lock plates both sides
+  g.add(mesh(ext(prof([[-.016, -.03], [.112, -.03], [.12, -.018], [.12, .058], [.108, .065], [.004, .065], [-.012, .057], [-.02, .03], [-.019, 0]]), .034, .0016, 10), M.caseS));
+  for (const s of [1, -1]) { const lp = mesh(ext(prof([[-.1, .012], [-.02, .004], [.0, .01], [.0, .048], [-.02, .054], [-.085, .046], [-.11, .03]]), .004, .0008, 8), M.caseS); lp.position.x = s * .0175; g.add(lp); }
+  // falling breech block (moves down with the lever) and the side hammer
+  const block = new THREE.Group(); block.add(mesh(new THREE.BoxGeometry(.022, .034, .028), M.blued, 0, .046, -.03)); g.add(block);
+  const ham = new THREE.Group(); ham.position.set(.021, .04, .002);
+  ham.add(mesh(ext(prof([[-.006, -.012], [.008, -.012], [.006, .016], [-.004, .03], [-.026, .034], [-.03, .028], [-.014, .02], [-.008, .004]]), .007, .0008), M.caseS)); g.add(ham);
+  // heavy octagon barrel (slight taper), bore, globe front sight, barrel key escutcheons, under-rib
+  const oct = tube(.0158, .76, 8, .0142); oct.rotateZ(Math.PI / 8); g.add(mesh(oct, M.blued, 0, BY, -.498));
+  g.add(mesh(new THREE.CircleGeometry(.0062, 16), M.dark, 0, BY, -.8795)).rotation.y = Math.PI;
+  g.add(mesh(tube(.0055, .022, 12), M.blued, 0, BY + .021, -.855)); g.add(mesh(new THREE.BoxGeometry(.006, .006, .02), M.blued, 0, BY + .0155, -.855));
+  g.add(mesh(tube(.0035, .3, 8), M.blued, 0, BY - .02, -.27));
+  // walnut forend with an ebony schnabel tip, brass key escutcheons
+  g.add(mesh(ext(prof([[.12, -.01], [.4, -.006], [.41, .004], [.41, .036], [.12, .036]]), .036, .005, 8), M.walnutS));
+  g.add(mesh(ext(prof([[.41, -.006], [.425, -.004], [.434, .01], [.432, .036], [.41, .036]]), .0355, .004, 8), M.ebony));
+  for (const s of [1, -1]) g.add(mesh(new THREE.CylinderGeometry(.006, .006, .002, 12).rotateZ(Math.PI / 2), M.brass, s * .0195, .016, -.3));
+  // straight-wrist buttstock, crescent butt plate, sling swivels
+  g.add(mesh(ext(prof([[-.012, .058], [-.018, .0], [-.026, -.024], [-.07, -.02], [-.12, -.03], [-.2, -.062], [-.3, -.092], [-.398, -.112], [-.384, -.045], [-.398, .022], [-.37, .028], [-.24, .03], [-.12, .036], [-.06, .046], [-.03, .056]]), .042, .006, 14), M.walnutS));
+  g.add(mesh(ext(prof([[-.41, -.118], [-.396, -.045], [-.41, .026], [-.398, .022], [-.384, -.045], [-.398, -.112]]), .044, .001, 12), M.caseS));
+  for (const [z, y] of [[-.33, -.006], [.25, -.078]]) { const t = new THREE.TorusGeometry(.009, .0018, 6, 14); t.rotateY(Math.PI / 2); g.add(mesh(t, M.blued, 0, y - .008, z)); }
+  // trigger-guard lever (pivots at the front of the receiver; swings down to drop the block) + double set triggers
+  const lever = new THREE.Group(); lever.position.set(0, -.028, -.1);
+  lever.add(mesh(new THREE.BoxGeometry(.008, .006, .1), M.caseH, 0, -.004, .05));
+  const bow = new THREE.TorusGeometry(.028, .0034, 6, 16, Math.PI); bow.rotateY(Math.PI / 2); const bw = mesh(bow, M.caseH, 0, -.004, .05); bw.rotation.x = Math.PI; lever.add(bw);
+  const loop = new THREE.TorusGeometry(.02, .0042, 6, 18); loop.rotateY(Math.PI / 2); lever.add(mesh(loop, M.caseH, 0, -.03, .125));
+  lever.add(mesh(new THREE.BoxGeometry(.007, .006, .05), M.caseH, 0, -.006, .14)); g.add(lever);
+  for (const z of [.03, .046]) g.add(mesh(ext(prof([[-.003, -.028], [.002, -.028], [-.002, -.046], [-.008, -.05], [-.006, -.04]]), .004, .0004), M.blued, 0, 0, z));
+  // full-length brass tube scope: eyepiece bell, objective, bands, rear mount with knobs, front mount on the barrel
+  g.add(mesh(tube(.0095, .76, 20), M.brass, 0, SY, -.33));
+  const ep = new THREE.LatheGeometry([[.0095, 0], [.0125, .012], [.0138, .04], [.0138, .055], [.0128, .058]].map(p => new THREE.Vector2(p[0], p[1])), 20); ep.rotateX(Math.PI / 2); g.add(mesh(ep, M.brass, 0, SY, .05));
+  g.add(mesh(new THREE.CircleGeometry(.0112, 18), M.lens, 0, SY, .107));
+  g.add(mesh(tube(.0118, .03, 20, .0122), M.brass, 0, SY, -.722)); const fl = mesh(new THREE.CircleGeometry(.0106, 18), M.lens, 0, SY, -.7375); fl.rotation.y = Math.PI; g.add(fl);
+  for (const z of [.0, -.16, -.48, -.69]) g.add(mesh(tube(.0104, .005, 20), M.brass, 0, SY, z));
+  const mount = (z, by, h, knobs) => { g.add(mesh(new THREE.BoxGeometry(.018, .008, .034), M.blued, 0, by + .004, z)); g.add(mesh(new THREE.BoxGeometry(.008, h, .012), M.blued, 0, by + .008 + h / 2, z));
+    const ring = new THREE.TorusGeometry(.0112, .0026, 6, 18); g.add(mesh(ring, M.blued, 0, SY, z));
+    if (knobs) { const kn = new THREE.CylinderGeometry(.0042, .0042, .008, 12); g.add(mesh(kn, M.brass, 0, SY - .021, z)); g.add(mesh(kn.clone().rotateZ(Math.PI / 2), M.brass, .016, SY - .016, z)); } };
+  mount(-.035, .061, SY - .061 - .02, true); mount(-.58, BY + .0145, SY - BY - .0145 - .02, false);
+  g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  return { group: g, muzzle: new THREE.Vector3(0, BY, -.88), lever, block, hammer: ham, kind: 'sniper' };
+}
+
 // ---------------- shooting range: bottles on a rail, tin cans on a stump, bullseye boards ----------------
 function lathe(pts, seg = 16) { return new THREE.LatheGeometry(pts.map(p => new THREE.Vector2(p[0], p[1])), seg); }
 function buildRange(scene, hAt, R, obst) {
@@ -135,6 +193,16 @@ function buildRange(scene, hAt, R, obst) {
   for (const [d, dz, s] of [[30, -3, .55], [42, 2.5, .6], [58, -1, .7]]) { const x = R.x - d, z = R.z + dz, y = hAt(x, z); post(x + .06, z - s * .7, 1.3 + s, .05); post(x + .06, z + s * .7, 1.3 + s, .05);
     const disc = new THREE.CylinderGeometry(s, s, .05, 32); disc.rotateZ(Math.PI / 2); const b = new THREE.Mesh(disc, [M.wood, M.board, M.wood]); b.position.set(x, y + 1.1 + s, z); b.castShadow = b.receiveShadow = true; grp.add(b);
     T.push({ kind: 'board', mesh: b, c: b.position, n: new THREE.Vector3(1, 0, 0), r: s, alive: true, holes: [], hi: 0 }); }
+  // long-range painted steel gongs (150-300 m) hung on chains from timber frames, raised so the hills never hide them from the line
+  const E = { x: R.x - 1, z: R.z }; E.y = hAt(E.x, E.z) + 1.6; const [lx, lz] = R.lane || [-1, 0], nx = -lx, nz = -lz, th = Math.atan2(-nz, nx), px = -nz, pz = nx; // the lane runs off south-west where the ground stays in view
+  for (const [d, off, r] of [[150, -4, .45], [200, 5, .5], [245, -6, .55], [300, 3, .65]]) { const x = E.x + lx * d + px * off, z = E.z + lz * d + pz * off, g0 = hAt(x, z); let need = g0 + 1.2 + r;
+    for (let s = .03; s < .97; s += .01) { const gx = E.x + (x - E.x) * s, gz = E.z + (z - E.z) * s, gy = hAt(gx, gz) + .35; need = Math.max(need, E.y + (gy - E.y) / s); }
+    const cy = Math.min(need, g0 + 9), top = cy + r + .55, w2 = r + .5; post(x - px * w2, z - pz * w2, top - g0 + .05, .07); post(x + px * w2, z + pz * w2, top - g0 + .05, .07);
+    const bar = mesh(new THREE.BoxGeometry(.12, .12, r * 2 + 1.2), M.wood, x, top, z); bar.rotation.y = th; grp.add(bar);
+    const piv = new THREE.Group(); piv.position.set(x, top - .06, z); piv.rotation.y = th; grp.add(piv); const L = top - .06 - cy;
+    for (const s of [-1, 1]) piv.add(mesh(new THREE.CylinderGeometry(.008, .008, L - r * .7, 4), M.chain, 0, -(L - r * .7) / 2, s * r * .55));
+    const pg = new THREE.CylinderGeometry(r, r, .03, 28); pg.rotateZ(Math.PI / 2); const plate = mesh(pg, M.steel, 0, -L, 0); piv.add(plate);
+    T.push({ kind: 'gong', mesh: piv, plate, c: new THREE.Vector3(x, cy, z), n: new THREE.Vector3(nx, 0, nz), r, d, alive: true, holes: [], hi: 0, sw: 0, sv: 0 }); }
   // a small painted sign at the shooting line
   const sign = canvasTex(256, 96, (x, w, h) => { x.fillStyle = '#6a4a2a'; x.fillRect(0, 0, w, h); x.fillStyle = '#f0e0b8'; x.font = 'bold 34px Georgia'; x.textAlign = 'center'; x.fillText('SHOOTING', w / 2, 42); x.fillText('RANGE', w / 2, 82); });
   const sp = mesh(new THREE.PlaneGeometry(1, .38), new THREE.MeshStandardMaterial({ map: sign, roughness: .9 }), R.x - .6, hAt(R.x - .6, R.z - 4) + 1.35, R.z - 4); sp.rotation.y = -Math.PI / 2; grp.add(sp); post(R.x - .55, R.z - 4, 1.2, .05);
@@ -152,25 +220,27 @@ function raySeg(o, d, ax, az, bx, bz, y0, y1) { const ex = bx - ax, ez = bz - az
 // c: { scene, camera, P, H, hAt, sfx, fx, msg, mobile, input, keys, rig(), aimBone, twistBone, RANGE, BASE, dev, send(m), renderer }
 export function createGuns(c) {
   const { scene, camera, P, H, hAt, sfx, fx, mobile, input, keys } = c;
-  const state = { weapon: null, last: 'revolver', aiming: false, ammo: { revolver: S.revolverRounds, rifle: S.rifleRounds }, cocked: true, chambered: true, reloading: false, cycling: false, shots: 0, hits: 0, score: 0, lastHit: null, blocked: false, draw: 0, aimK: 0 };
+  const state = { weapon: null, last: 'revolver', aiming: false, ammo: { revolver: S.revolverRounds, rifle: S.rifleRounds, sniper: S.sniperRounds }, cocked: true, chambered: true, reloading: false, cycling: false, shots: 0, hits: 0, score: 0, lastHit: null, blocked: false, draw: 0, aimK: 0, scopeK: 0, breath: 1, winded: false, steady: false, scoped: false, scopeT: 0 };
   const clock = { cooldown: 0, reload: 0, lever: 0, cock: 0, flash: 0, recoil: 0, rec: 0, sway: 0, idle: 0, draw: 0 };
-  const models = { revolver: buildRevolver(), rifle: buildRifle() }; for (const m of Object.values(models)) { m.group.visible = false; scene.add(m.group); }
+  const models = { revolver: buildRevolver(), rifle: buildRifle(), sniper: buildSharps() }; for (const m of Object.values(models)) { m.group.visible = false; scene.add(m.group); }
   const range = buildRange(scene, hAt, c.RANGE, H.obst); const targets = range.T;
   const flash = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mats().flash), flash2 = flash.clone(); flash2.rotation.y = Math.PI / 2; flash.add(flash2); flash.visible = false; flash.renderOrder = 5; scene.add(flash);
   const light = mobile ? null : new THREE.PointLight(0xffb060, 0, 9, 2); if (light) scene.add(light); // always in the scene (intensity 0) so firing never recompiles shaders
   const v1 = new THREE.Vector3(), v2 = new THREE.Vector3(), v3 = new THREE.Vector3(), q1 = new THREE.Quaternion(), m1 = new THREE.Matrix4(), aimDir = new THREE.Vector3(0, 0, -1), muz = new THREE.Vector3();
   const remote = new Map(); let fireHeld = false, firePend = false, lastFire = false, aimHeld = false, reloadHeld = false, toast = 0, toastTxt = '';
-  const gun = () => state.weapon && models[state.weapon], maxAmmo = w => w === 'rifle' ? S.rifleRounds : S.revolverRounds;
+  const gun = () => state.weapon && models[state.weapon], maxAmmo = w => w === 'rifle' ? S.rifleRounds : w === 'sniper' ? S.sniperRounds : S.revolverRounds, rangeOf = w => w === 'rifle' ? S.rifleRange : w === 'sniper' ? S.sniperRange : S.revolverRange;
+  const flights = []; // buffalo-rifle bullets in the air (impact after the flight time)
   const tone = (...a) => { if (sfx.ctx) sfx.tone(...a); }, nz = (...a) => { if (sfx.ctx) sfx.nz(...a); };
   const click = (f = 3200, v = .14) => nz('highpass', f, .7, v, .03);
   const say = t => { toastTxt = t; toast = 1.6; };
 
-  function draw(w) { if (w !== 'revolver' && w !== 'rifle') return false; if (H.mountT > 0 || H.dismT > 0) return false; if (state.weapon === w) return true;
-    state.weapon = w; state.last = w; state.reloading = false; state.cycling = false; clock.cooldown = .15; clock.draw = S.drawTime; state.cocked = true; state.chambered = state.ammo.rifle > 0;
+  function draw(w) { if (!models[w]) return false; if (H.mountT > 0 || H.dismT > 0) return false; if (state.weapon === w) return true;
+    state.weapon = w; state.last = w; state.reloading = false; state.cycling = false; clock.cooldown = .15; clock.draw = S.drawTime; state.cocked = true; state.chambered = state.ammo.rifle > 0; state.breath = 1; state.winded = false;
     click(2400, .12); setTimeout(() => click(4200, .08), 120); syncUI(); return true; }
   function holster() { if (!state.weapon) return; state.weapon = null; state.aiming = false; state.reloading = false; input.ads = false; click(1800, .1); syncUI(); }
-  function cycle() { if (!state.weapon) draw(state.last || 'revolver'); else if (state.weapon === 'revolver') draw('rifle'); else holster(); } // phone: holstered -> six-shooter -> rifle -> holstered
-  function reload() { const w = state.weapon; if (!w || state.reloading || state.cycling || state.ammo[w] >= maxAmmo(w)) return false; state.reloading = true; clock.reload = w === 'rifle' ? S.reloadRifle : S.reloadRevolver; click(1500, .1); return true; }
+  const ORDER = ['revolver', 'rifle', 'sniper'];
+  function cycle() { if (!state.weapon) draw('revolver'); else if (state.weapon === 'sniper') holster(); else draw(ORDER[ORDER.indexOf(state.weapon) + 1]); } // phone: holstered -> six-shooter -> rifle -> buffalo rifle -> holstered
+  function reload() { const w = state.weapon; if (!w || state.reloading || state.cycling || state.ammo[w] >= maxAmmo(w)) return false; state.reloading = true; clock.reload = w === 'rifle' ? S.reloadRifle : w === 'sniper' ? S.reloadSniper : S.reloadRevolver; state.rlStep = 0; click(1500, .1); return true; }
 
   // ChatGPT's horseback arc clamp (kept): a direction behind the horse is turned back to the limit; returns whether it was clamped
   function clampHorse(dir) { const h = H.mounted; if (!h) return false; const fx_ = -Math.sin(h.yaw), fz = -Math.cos(h.yaw), hx = dir.x, hz = dir.z, l = Math.hypot(hx, hz); if (l < 1e-4) return false;
@@ -180,7 +250,7 @@ export function createGuns(c) {
 
   // world ray: targets, horses (block, no damage), trees / rocks / posts, fence rails, terrain heightfield
   function cast(o, d, maxT) { let best = { t: maxT, kind: null };
-    for (const T of targets) { if (!T.alive) continue; let t; if (T.kind === 'board') { const dn = d.x * T.n.x + d.y * T.n.y + d.z * T.n.z; if (Math.abs(dn) < 1e-4) continue; t = ((T.c.x - o.x) * T.n.x + (T.c.y - o.y) * T.n.y + (T.c.z - o.z) * T.n.z) / dn;
+    for (const T of targets) { if (!T.alive) continue; let t; if (T.n) { const dn = d.x * T.n.x + d.y * T.n.y + d.z * T.n.z; if (Math.abs(dn) < 1e-4) continue; t = ((T.c.x - o.x) * T.n.x + (T.c.y - o.y) * T.n.y + (T.c.z - o.z) * T.n.z) / dn;
         if (t <= 0 || t >= best.t) continue; v3.copy(d).multiplyScalar(t).add(o); if (v3.distanceTo(T.c) > T.r) continue; } else t = raySphere(o, d, T.c, T.r);
       if (t > 0 && t < best.t) best = { t, kind: 'target', T }; }
     for (const h of H.horses) { if (h === H.mounted) continue; const fx_ = -Math.sin(h.yaw), fz = -Math.cos(h.yaw);
@@ -192,13 +262,14 @@ export function createGuns(c) {
     best.p = new THREE.Vector3().copy(d).multiplyScalar(best.t).add(o); return best; }
 
   function spreadDeg(fan) { const m = !!H.mounted, sp = Math.abs(m ? H.speed : H.fv.length()); let s = m ? S.swayHorse + sp * S.swayHorseSpeed : sp * S.swayWalk;
+    if (state.weapon === 'sniper') { s += state.aiming ? 0 : S.sniperHipSpread; if (state.aiming) s *= S.sniperScopeSpread * (state.steady ? .5 : 1); return s; }
     s += state.aiming ? 0 : S.hipSpread; if (state.aiming) s *= S.adsSpreadMultiplier; if (fan) s += S.fanSpread; return s; }
   // ChatGPT's aim-assist cone (kept): a small, gentle pull towards a target near the crosshair, only while aiming
-  function assist(o, dir) { if (!state.aiming) return dir; const lim = Math.cos(S.assistAngle * D2R * (mobile ? 1.4 : 1)); let best = null, sc = -1e9;
-    for (const T of targets) { if (!T.alive) continue; v3.copy(T.c).sub(o); const dist = v3.length(); if (dist < .5 || dist > (state.weapon === 'rifle' ? S.rifleRange : S.revolverRange)) continue; v3.multiplyScalar(1 / dist); const dt = v3.dot(dir);
-      if (dt > lim && dt - dist * .00003 > sc) { sc = dt - dist * .00003; best = v3.clone(); } }
+  function assist(o, dir) { if (!state.aiming) return dir; const sn = state.weapon === 'sniper', lim = Math.cos((sn ? S.sniperAssistAngle : S.assistAngle) * D2R * (mobile ? 1.4 : 1)); let best = null, sc = -1e9;
+    for (const T of targets) { if (!T.alive) continue; v3.copy(T.c).sub(o); const dist = v3.length(); if (dist < .5 || dist > rangeOf(state.weapon)) continue; v3.multiplyScalar(1 / dist); const dt = v3.dot(dir);
+      const scr = dt - (sn ? 0 : dist * .00003); if (dt > lim && scr > sc) { sc = scr; best = v3.clone(); } } // through the scope: the target nearest the reticle, not the nearest in metres
     if (!best) return dir; const err = Math.acos(Math.min(1, best.dot(dir))) / D2R; // inside a small 'sticky' cone the sights settle on the target; further out it only nudges
-    return dir.clone().lerp(best, err < (mobile ? 2.4 : 1.4) ? .92 : S.assistStrength).normalize(); }
+    return dir.clone().lerp(best, err < (sn ? S.sniperSticky * (mobile ? 1.8 : 1) : mobile ? 2.4 : 1.4) ? .92 : S.assistStrength).normalize(); }
 
   function canFire() { const w = state.weapon; if (!w || clock.draw > 0 || state.cycling || clock.cooldown > 0 || H.mountT > 0 || H.dismT > 0 || H.wantOff) return false;
     if (H.mounted && Math.abs(horseRel()) > S.horsebackYawLimit * D2R) { state.blocked = true; return false; } return true; }
@@ -206,37 +277,49 @@ export function createGuns(c) {
     const w = state.weapon; if (!canFire()) return false;
     if (state.ammo[w] <= 0) { click(900, .2); clock.cooldown = .25; if (!state.reloading) reload(); return false; }
     if (state.reloading) state.reloading = false; // firing interrupts the reload (one round at a time)
-    state.ammo[w]--; state.shots++; clock.cooldown = w === 'revolver' ? (fan ? S.fanInterval : S.revolverInterval) : S.rifleInterval;
-    if (w === 'revolver') clock.cock = clock.cooldown * .85; else { state.chambered = false; if (state.ammo.rifle > 0) { state.cycling = true; clock.lever = S.leverDuration; } }
+    state.ammo[w]--; state.shots++; clock.cooldown = w === 'revolver' ? (fan ? S.fanInterval : S.revolverInterval) : w === 'sniper' ? S.sniperInterval : S.rifleInterval;
+    if (w === 'revolver') clock.cock = clock.cooldown * .85; else if (w === 'sniper') state.cocked = false; else { state.chambered = false; if (state.ammo.rifle > 0) { state.cycling = true; clock.lever = S.leverDuration; } }
     // crosshair ray from the camera (skip the player in front of a third-person camera), then the real bullet from the muzzle
     camera.getWorldDirection(v1); const o = camera.position.clone(), eye = H.mounted ? H.mounted.pos : P.pos; const skip = Math.max(0, v2.copy(eye).sub(o).dot(v1) + .6);
     o.addScaledVector(v1, skip); let dir = assist(o, v1.clone()); const sw = swayVec(); dir.x += sw.x; dir.y += sw.y; dir.z += sw.z; dir.normalize();
     const sp = spreadDeg(fan) * D2R, r = Math.random() * sp, a = Math.random() * 6.283; const rt = v2.crossVectors(dir, UP).normalize(), up2 = v3.crossVectors(rt, dir).normalize(); dir.addScaledVector(rt, Math.cos(a) * Math.tan(r)).addScaledVector(up2, Math.sin(a) * Math.tan(r)).normalize();
     clampHorse(dir);
-    const maxR = w === 'rifle' ? S.rifleRange : S.revolverRange, aim = cast(o, dir, maxR); state.dbg = { aim: aim.kind, t: +aim.t.toFixed(1) }; const m = gun(); m.group.updateMatrixWorld(true); muz.copy(m.muzzle).applyMatrix4(m.group.matrixWorld);
+    const maxR = rangeOf(w), aim = cast(o, dir, maxR); state.dbg = { aim: aim.kind, t: +aim.t.toFixed(1), fov: +camera.fov.toFixed(1), scoped: state.scoped, aiming: state.aiming, spread: +spreadDeg(fan).toFixed(3), fan: !!fan }; const m = gun(); m.group.updateMatrixWorld(true); muz.copy(m.muzzle).applyMatrix4(m.group.matrixWorld);
     const bd = aim.p.clone().sub(muz); const L = bd.length(); bd.multiplyScalar(1 / Math.max(L, .001)); const hit = L > .3 ? cast(muz.clone().addScaledVector(bd, .05), bd, L + .5) : aim;
-    effects(w, muz, bd, hit.p); impact(hit, bd); state.lastHit = { kind: hit.kind, target: hit.T ? hit.T.kind : null, point: hit.p.toArray().map(v => +v.toFixed(2)), mounted: !!H.mounted, weapon: w };
-    clock.recoil = 1; const k = w === 'rifle' ? S.recoilRifle : S.recoilRevolver; P.pitch += k; clock.rec += k; H.shake = Math.max(H.shake || 0, w === 'rifle' ? .25 : .15);
-    if (c.send) c.send({ t: 'sh', w: w === 'rifle' ? 2 : 1, o: muz.toArray().map(v => +v.toFixed(2)), e: hit.p.toArray().map(v => +v.toFixed(2)) });
-    if (H.mounted && H.speed < .5) H.mounted.g.userData.spook = .4; // the horse flinches a little at the report
+    const mounted = !!H.mounted, land = () => { impact(hit, bd, w); state.lastHit = { kind: hit.kind, target: hit.T ? hit.T.kind : null, point: hit.p.toArray().map(v => +v.toFixed(2)), mounted, weapon: w, dist: +hit.p.distanceTo(muz).toFixed(1) }; };
+    if (w === 'sniper') { const tt = hit.p.distanceTo(muz) / S.sniperVelocity; effects(w, muz, bd, hit.p, false, tt); flights.push({ t: tt, land }); } else { effects(w, muz, bd, hit.p); land(); }
+    clock.recoil = 1; const k = w === 'rifle' ? S.recoilRifle : w === 'sniper' ? S.recoilSniper * (state.scoped ? .6 : 1) : S.recoilRevolver; P.pitch += k; clock.rec += k; H.shake = Math.max(H.shake || 0, w === 'sniper' ? .35 : w === 'rifle' ? .25 : .15);
+    if (c.send) c.send({ t: 'sh', w: w === 'rifle' ? 2 : w === 'sniper' ? 3 : 1, o: muz.toArray().map(v => +v.toFixed(2)), e: hit.p.toArray().map(v => +v.toFixed(2)) });
+    if (H.mounted && H.speed < .5) H.mounted.g.userData.spook = w === 'sniper' ? .7 : .4; // the horse flinches a little at the report
     return true; }
 
-  function effects(w, p, d, end, remoteShot) {
-    flash.position.copy(p).addScaledVector(d, .06); flash.lookAt(camera.position); flash.scale.setScalar((w === 'rifle' ? .34 : .26) * (.8 + Math.random() * .4)); flash.rotation.z = Math.random() * 6.28; flash.visible = true; clock.flash = .05;
+  function effects(w, p, d, end, remoteShot, tt) {
+    const big = w === 'sniper';
+    flash.position.copy(p).addScaledVector(d, .06); flash.lookAt(camera.position); flash.scale.setScalar((big ? .55 : w === 'rifle' ? .34 : .26) * (.8 + Math.random() * .4)); flash.rotation.z = Math.random() * 6.28; flash.visible = true; clock.flash = .05;
     if (light) { light.position.copy(p); light.intensity = 14; }
-    if (fx) { fx.tracer && fx.tracer(p.clone().addScaledVector(d, .4), end, 0xffd890, .05); fx.muzzle && fx.muzzle(p, [1, .75, .4], 1.2);
+    if (fx && big) { fx.tracer && fx.tracer(p.clone().addScaledVector(d, .4), end, 0xfff0c0, Math.max(.06, tt || p.distanceTo(end) / S.sniperVelocity)); fx.muzzle && fx.muzzle(p, [1, .78, .45], 2);
+      const f0 = !remoteShot && state.scoped ? 1.4 : .1, wx = -d.z * .9, wz = d.x * .9; // a light cross-wind carries the cloud off the line of sight
+      if (fx.smoke) { for (let i = 0; i < 9; i++) { const f = f0 + i * .32, sp = 2.6 - i * .26; fx.smoke.emit(p.x + d.x * f, p.y + d.y * f + .02 * i, p.z + d.z * f, d.x * sp + wx + (Math.random() - .5) * .5, .25 + Math.random() * .3, d.z * sp + wz + (Math.random() - .5) * .5, .8, .78, .74, .3 + i * .09, 2.6 + i * .35, 1.1, -.03, .42); }
+        for (let i = 0; i < 4; i++) fx.smoke.emit(p.x - d.x * .5 - wx * .4, p.y - .3, p.z - d.z * .5 - wz * .4, wx + (Math.random() - .5) * .6, .15, wz + (Math.random() - .5) * .6, .76, .74, .7, .45, 3.2, 1, -.02, .28); } } // big black-powder cloud that hangs around the shooter
+    else if (fx) { fx.tracer && fx.tracer(p.clone().addScaledVector(d, .4), end, 0xffd890, .05); fx.muzzle && fx.muzzle(p, [1, .75, .4], 1.2);
       if (fx.smoke) for (let i = 0; i < 3; i++) fx.smoke.emit(p.x + d.x * (.15 + i * .3), p.y + d.y * (.15 + i * .3), p.z + d.z * (.15 + i * .3), d.x * (1.6 - i * .4) + (Math.random() - .5) * .3, .2 + Math.random() * .2, d.z * (1.6 - i * .4) + (Math.random() - .5) * .3, .78, .76, .72, .18 + i * .08, 1.4 + i * .4, .8, -.04, .32); } // black-powder smoke
-    const shot = () => sfx.shot(w === 'rifle' ? [1300, 95, .8] : [1650, 120, .65]); if (remoteShot && sfx.at) sfx.at(p, shot, .6); else if (sfx.shot) shot(); }
+    const shot = () => { sfx.shot(big ? [800, 55, 1] : w === 'rifle' ? [1300, 95, .8] : [1650, 120, .65]); if (big) { tone('sine', 90, 38, .7, .5); nz('lowpass', 420, .8, .45, .9); setTimeout(() => nz('lowpass', 520, .7, .18, .7), 420); setTimeout(() => nz('lowpass', 380, .7, .1, .9), 1100); } }; // deep boom + valley echoes
+    if (remoteShot && sfx.at) sfx.at(p, shot, .6); else if (sfx.shot) shot(); }
 
-  function impact(hit, d) {
-    const p = hit.p;
+  function impact(hit, d, w) {
+    const p = hit.p, heavy = w === 'sniper', dist = p.distanceTo(camera.position), ring = (fn) => setTimeout(fn, Math.min(1500, dist / 343 * 1000)); // a far hit is heard after the speed of sound
     if (hit.kind === 'target') { const T = hit.T; state.hits++;
+      if (T.kind === 'gong') { T.sv -= (heavy ? 3.2 : 1.6) / Math.max(.4, T.r); const pts = Math.round(T.d / 10) * (heavy ? 1 : 2); state.score += pts; say(`Steel at ${T.d} m!  +${pts}`);
+        ring(() => { tone('sine', 640 + T.r * 200, 600, .5, .9); tone('sine', 1490, 1400, .18, .6); tone('triangle', 2210, 2150, .08, .4); });
+        if (fx) { fx.impact && fx.impact(p, [1, .95, .8]); fx.smoke && fx.smoke.emit(p.x + .1, p.y, p.z, .3, .4, 0, .85, .82, .78, .25, 1.2, .8, 0, .4); } // lead splash
+        let hm = T.holes[T.hi]; if (!hm) { hm = new THREE.Mesh(new THREE.CircleGeometry(.04, 10), mats().splash); hm.rotation.y = Math.PI / 2; T.plate.add(hm); T.holes[T.hi] = hm; } T.hi = (T.hi + 1) % 12; const lp = T.plate.worldToLocal(p.clone()); hm.position.set(.016, lp.y, lp.z);
+        return; }
       if (T.kind === 'bottle') { T.alive = false; T.mesh.visible = false; T.t = 0; if (fx) { fx.debris && fx.debris(p.x, p.y, p.z, T.col, 10, .8); fx.impact && fx.impact(p, [.8, 1, .9]); }
         for (let i = 0; i < 4; i++) setTimeout(() => tone('sine', 2600 + Math.random() * 2600, 1800, .08, .12), i * 35); state.score += 5; say('Bottle smashed  +5');
         if (targets.every(t => t.kind !== 'bottle' || !t.alive)) setTimeout(() => { for (const t of targets) if (t.kind === 'bottle') { t.alive = true; t.mesh.visible = true; } say('Fresh bottles on the rail'); }, 3000); }
-      else if (T.kind === 'can') { T.fly = true; T.t = 0; T.v.set(d.x * 4.5 + (Math.random() - .5), 3.2 + Math.random() * 1.6, d.z * 4.5 + (Math.random() - .5)); T.w.set(Math.random() * 20 - 10, Math.random() * 8, Math.random() * 20 - 10);
+      else if (T.kind === 'can') { T.fly = true; T.t = 0; const kk = heavy ? 2.2 : 1; T.v.set(d.x * 4.5 * kk + (Math.random() - .5), (3.2 + Math.random() * 1.6) * kk, d.z * 4.5 * kk + (Math.random() - .5)); T.w.set(Math.random() * 20 - 10, Math.random() * 8, Math.random() * 20 - 10);
         tone('triangle', 2300, 1500, .12, .25); tone('square', 900, 700, .04, .1); if (fx && fx.impact) fx.impact(p, [1, .9, .7]); state.score += 3; say('Ping!  +3'); }
-      else { const lp = T.mesh.worldToLocal(p.clone()), rr = Math.hypot(lp.y, lp.z) / T.r, pts = rr < .12 ? 10 : rr < .27 ? 8 : rr < .45 ? 6 : rr < .62 ? 4 : 2; state.score += pts; say(pts === 10 ? "Bull's-eye!  +10" : 'Hit  +' + pts);
+      else { const lp = T.mesh.worldToLocal(p.clone()), rr = Math.hypot(lp.y, lp.z) / T.r, pts = rr < .12 ? 10 : rr < .27 ? 8 : rr < .45 ? 6 : rr < .62 ? 4 : 2, q = heavy ? pts * 2 : pts; state.score += q; say(pts === 10 ? `Bull's-eye!  +${q}` : 'Hit  +' + q);
         let hm = T.holes[T.hi]; if (!hm) { hm = new THREE.Mesh(new THREE.PlaneGeometry(.05, .05), mats().hole); hm.rotation.y = Math.PI / 2; T.mesh.add(hm); T.holes[T.hi] = hm; } T.hi = (T.hi + 1) % 30; hm.position.set(.027, lp.y, lp.z);
         tone('sine', 220, 120, .25, .12); nz('lowpass', 500, 1, .25, .08); if (fx && fx.debris) fx.debris(p.x, p.y, p.z, 0xc9b48a, 4, .4); }
       return; }
@@ -245,7 +328,10 @@ export function createGuns(c) {
     else if (hit.kind === 'rock') { fx.impact && fx.impact(p); fx.debris && fx.debris(p.x, p.y, p.z, 0x8a8478, 4, .6); tone('triangle', 3400, 1200, .05, .08); }
     else if (hit.kind === 'tree' || hit.kind === 'wood') { fx.debris && fx.debris(p.x, p.y, p.z, 0x6a4a2a, 5, .5); nz('bandpass', 900, 2, .12, .05); }
   }
-  function updateTargets(dt) { for (const T of targets) {
+  function updateTargets(dt) {
+  for (let i = flights.length - 1; i >= 0; i--) { const f = flights[i]; if ((f.t -= dt) <= 0) { flights.splice(i, 1); f.land(); } }
+  for (const T of targets) {
+    if (T.kind === 'gong') { if (T.sv || T.sw) { T.sv -= (T.sw * 9 + T.sv * .7) * dt; T.sw += T.sv * dt; if (Math.abs(T.sw) < 1e-4 && Math.abs(T.sv) < 1e-3) T.sw = T.sv = 0; T.mesh.rotation.z = T.sw; } continue; }
     if (T.kind === 'bottle' && !T.alive && (T.t += dt) > 20) { T.alive = true; T.mesh.visible = true; }
     if (T.kind === 'can') { if (T.fly) { T.v.y -= 9.8 * dt; T.mesh.position.addScaledVector(T.v, dt); T.mesh.rotation.x += T.w.x * dt; T.mesh.rotation.y += T.w.y * dt; T.mesh.rotation.z += T.w.z * dt;
         const g = hAt(T.mesh.position.x, T.mesh.position.z) + .035; if (T.mesh.position.y < g) { T.mesh.position.y = g; if (Math.abs(T.v.y) > 1.2) { T.v.y *= -.32; T.v.x *= .55; T.v.z *= .55; T.w.multiplyScalar(.5); tone('triangle', 1700, 1100, .05, .08); } else { T.fly = false; T.v.set(0, 0, 0); T.mesh.rotation.set(Math.PI / 2, T.mesh.rotation.y, 0); } } }
@@ -268,21 +354,22 @@ export function createGuns(c) {
       ik(root, B, 'Right', tgt, new THREE.Vector3().copy(right).multiplyScalar(.6).add(v3.set(0, -1, 0))); }
     else { const grip = k > .01 ? sh.clone().addScaledVector(dir, .34).addScaledVector(UP, -.05).addScaledVector(right, -.07) : sh.clone().addScaledVector(fwd, .25).addScaledVector(UP, -.35).addScaledVector(right, .05);
       const tgt = sh.clone().lerp(grip, 1); tgt.copy(sh.clone().addScaledVector(fwd, .25).addScaledVector(UP, -.35).addScaledVector(right, .05).lerp(grip.clone(), k)); ik(root, B, 'Right', tgt, new THREE.Vector3().copy(right).add(v3.set(0, -.8, 0)));
-      if (k > .3) { m1.lookAt(ZERO, dir, UP); q1.setFromRotationMatrix(m1); const fore = tgt.clone().add(new THREE.Vector3(0, -.01, -.36).applyQuaternion(q1)); ik(root, B, 'Left', fore, v3.set(0, -1, 0).addScaledVector(right, -.5).clone()); } }
+      if (k > .3) { m1.lookAt(ZERO, dir, UP); q1.setFromRotationMatrix(m1); const fore = tgt.clone().add(new THREE.Vector3(0, -.01, w === 'sniper' ? -.42 : -.36).applyQuaternion(q1)); ik(root, B, 'Left', fore, v3.set(0, -1, 0).addScaledVector(right, -.5).clone()); } }
     root.updateMatrixWorld(true); const hand = B.RightHand.getWorldPosition(new THREE.Vector3());
-    m1.lookAt(ZERO, gd, UP); g.quaternion.setFromRotationMatrix(m1); g.position.copy(hand).add(new THREE.Vector3(0, -.01, -.035).applyQuaternion(g.quaternion)); g.scale.setScalar(1.3); g.visible = true; return true; } // a touch over life-size so it reads from the chase camera
-  function poseFP(model, k) { const g = model.group; camera.updateMatrixWorld(); const w = model.kind; const off = w === 'rifle' ? [.11 * (1 - k), -.11 + .065 * k - .04 * (1 - k), -.32 - .05 * k] : [.16 * (1 - k), -.2 + .135 * k, -.4 - .05 * k];
+    m1.lookAt(ZERO, gd, UP); g.quaternion.setFromRotationMatrix(m1); g.position.copy(hand).add(new THREE.Vector3(0, -.01, -.035).applyQuaternion(g.quaternion)); g.scale.setScalar(w === 'sniper' ? 1.15 : 1.3); g.visible = true; return true; } // a touch over life-size so it reads from the chase camera
+  function poseFP(model, k) { const g = model.group; camera.updateMatrixWorld(); const w = model.kind; const off = w !== 'revolver' ? [.11 * (1 - k), -.11 + .065 * k - .04 * (1 - k), -.32 - .05 * k] : [.16 * (1 - k), -.2 + .135 * k, -.4 - .05 * k];
     g.position.set(...off).applyMatrix4(camera.matrixWorld); g.quaternion.copy(camera.quaternion); g.scale.setScalar(1); if (k < 1) { q1.setFromAxisAngle(v1.set(1, 0, 0), -.35 * (1 - k)); g.quaternion.multiply(q1); } g.visible = true; }
   function animParts(m, rec, cock, lever) { if (m.kind === 'revolver') { m.hammer.rotation.x = cock ? -.55 : 0; m.cylinder.rotation.z = (state.shots % 6) * Math.PI / 3 * -1; m.group.rotateX(rec * .35); }
+    else if (m.kind === 'sniper') { m.lever.rotation.x = lever * .75; m.block.position.y = -.024 * lever; m.hammer.rotation.x = state.cocked || lever > 0 ? -.5 : 0; m.group.rotateX(rec * .2); m.group.translateZ(rec * .06); }
     else { m.lever.rotation.x = lever * .95; m.hammer.rotation.x = -.45; m.group.rotateX(rec * .15); m.group.translateZ(rec * .04); } }
 
   const swV = new THREE.Vector3();
-  function swayVec() { const m = !!H.mounted, sp = Math.abs(m ? H.speed : H.fv.length()), amp = (m ? .0025 + sp * .0011 : .0006 + sp * .0005) * (state.aiming ? 1 : 2) * (state.weapon === 'rifle' ? .8 : 1);
+  function swayVec() { if (state.weapon === 'sniper' && state.scoped) return swV.set(0, 0, 0); const m = !!H.mounted, sp = Math.abs(m ? H.speed : H.fv.length()), amp = (m ? .0025 + sp * .0011 : .0006 + sp * .0005) * (state.aiming ? 1 : 2) * (state.weapon === 'rifle' ? .8 : state.weapon === 'sniper' ? 1.3 : 1);
     camera.getWorldDirection(v1); const rt = v2.crossVectors(v1, UP).normalize(); return swV.copy(rt).multiplyScalar(Math.sin(clock.sway * 1.7) * amp).addScaledVector(UP, Math.sin(clock.sway * 2.9 + 1) * amp * .8); }
 
   // ---- input (only while Horse Rider runs; nothing global outside the mode) ----
   const onKey = e => { if (!H.on || e.repeat || (e.target && /INPUT|TEXTAREA/.test(e.target.tagName))) return;
-    if (e.code === 'Digit1') draw('revolver'); else if (e.code === 'Digit2') draw('rifle'); else if (e.code === 'KeyQ') { if (state.weapon) draw(state.weapon === 'revolver' ? 'rifle' : 'revolver'); else draw(state.last); }
+    if (e.code === 'Digit1') draw('revolver'); else if (e.code === 'Digit2') draw('rifle'); else if (e.code === 'Digit3') draw('sniper'); else if (e.code === 'KeyQ') { if (state.weapon) draw(ORDER[(ORDER.indexOf(state.weapon) + 1) % 3]); else draw(state.last); }
     else if (e.code === 'KeyX') holster(); else if (e.code === 'KeyR') { reloadHeld = true; reload(); } };
   const onKeyUp = e => { if (e.code === 'KeyR') reloadHeld = false; };
   const okPointer = () => H.on && !mobile && (document.pointerLockElement || c.dev);
@@ -291,15 +378,19 @@ export function createGuns(c) {
   addEventListener('keydown', onKey); addEventListener('keyup', onKeyUp); c.renderer.domElement.addEventListener('mousedown', onDown); addEventListener('mouseup', onUp); addEventListener('blur', () => { fireHeld = aimHeld = reloadHeld = false; });
 
   // ---- HUD + phone buttons ----
-  const $ = id => document.getElementById(id); let hudEl = null, crossEl = null;
-  function syncUI() { document.body.classList.toggle('hr-gun', !!state.weapon); const b = $('tGun'); if (b) b.innerHTML = !state.weapon ? '🔫<small>DRAW</small>' : state.weapon === 'revolver' ? '🔫<small>RIFLE</small>' : '🔫<small>HOLSTER</small>'; if (!state.weapon) input.ads = false; }
+  const $ = id => document.getElementById(id); let hudEl = null, crossEl = null, scopeEl = null;
+  function syncUI() { document.body.classList.toggle('hr-gun', !!state.weapon); const b = $('tGun'); if (b) b.innerHTML = !state.weapon ? '🔫<small>DRAW</small>' : state.weapon === 'revolver' ? '🔫<small>RIFLE</small>' : state.weapon === 'rifle' ? '🔭<small>BUFFALO</small>' : '🔫<small>HOLSTER</small>'; if (!state.weapon) input.ads = false; }
   if (mobile && $('tGun')) { const b = $('tGun'); b.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); cycle(); }); }
   if (mobile && $('tFire')) $('tFire').addEventListener('pointerdown', () => { if (H.on && state.weapon) firePend = true; }); // a quick tap between two frames still fires
   function hud() {
     if (!hudEl) { hudEl = document.createElement('div'); hudEl.id = 'hrGun'; document.body.appendChild(hudEl); crossEl = document.createElement('div'); crossEl.id = 'hrCross'; crossEl.innerHTML = '<i></i>'; document.body.appendChild(crossEl); }
-    const w = state.weapon; hudEl.hidden = !w && toast <= 0; crossEl.hidden = !w;
+    const w = state.weapon; hudEl.hidden = !w && toast <= 0; crossEl.hidden = !w || state.scopeK > .5;
+    if (!scopeEl) { scopeEl = document.createElement('div'); scopeEl.id = 'hrScope'; scopeEl.innerHTML = '<div class="ret"><i class="h"></i><i class="v"></i><i class="dot"></i><i class="s1"></i><i class="s2"></i><i class="s3"></i></div><div class="br"><b></b></div><div class="tip"></div>'; document.body.appendChild(scopeEl); }
+    const so = state.scopeK > .75; scopeEl.classList.toggle('on', so); document.body.classList.toggle('hr-scoped', so);
+    if (so) { scopeEl.querySelector('.br b').style.width = (state.breath * 100).toFixed(0) + '%'; scopeEl.classList.toggle('steady', state.steady); scopeEl.classList.toggle('winded', state.winded);
+      scopeEl.querySelector('.tip').textContent = state.reloading ? 'reloading…' : mobile ? '' : state.winded ? 'out of breath' : state.steady ? 'holding breath' : 'hold Shift to steady'; }
     if (w) { const n = state.ammo[w], mx = maxAmmo(w); let pips = ''; for (let i = 0; i < mx; i++) pips += `<b class="${i < n ? 'f' : ''}"></b>`;
-      hudEl.innerHTML = `<span class="w">${w === 'revolver' ? 'SIX-SHOOTER' : 'LEVER RIFLE'}</span><span class="pips ${w}">${pips}</span>${state.reloading ? '<span class="rl">reloading…</span>' : n === 0 ? `<span class="rl">${mobile ? 'empty — reloading' : 'R to reload'}</span>` : ''}<span class="sc">🎯 ${state.hits} · ${state.score} pts</span>${toast > 0 ? `<em>${toastTxt}</em>` : ''}`;
+      hudEl.innerHTML = `<span class="w">${w === 'revolver' ? 'SIX-SHOOTER' : w === 'rifle' ? 'LEVER RIFLE' : 'BUFFALO RIFLE'}</span><span class="pips ${w === 'revolver' ? 'revolver' : 'rifle'}">${pips}</span>${state.reloading ? '<span class="rl">reloading…</span>' : n === 0 ? `<span class="rl">${mobile || w === 'sniper' ? 'reloading…' : 'R to reload'}</span>` : ''}<span class="sc">🎯 ${state.hits} · ${state.score} pts</span>${toast > 0 ? `<em>${toastTxt}</em>` : ''}`;
       }
     else if (toast > 0) hudEl.innerHTML = `<em>${toastTxt}</em>`;
   }
@@ -314,13 +405,21 @@ export function createGuns(c) {
     if (clock.cock > 0) { clock.cock -= dt; if (clock.cock <= 0) click(3600, .1); }
     flash.visible = clock.flash > 0; if (light) light.intensity = clock.flash > 0 ? 14 * clock.flash / .05 : 0;
     updateTargets(dt);
-    const w = state.weapon; if (w && (H.mountT > 0 || H.dismT > 0)) { for (const m of Object.values(models)) m.group.visible = false; state.aiming = false; H.gunAim = false; H.gunFace = null; return; }
-    if (!w) { for (const m of Object.values(models)) m.group.visible = false; state.aiming = false; state.aimK += (0 - state.aimK) * Math.min(1, dt * 10); H.aimK = state.aimK; H.gunFace = null; return; }
-    state.aiming = !!(aimHeld || input.ads); state.blocked = H.mounted ? Math.abs(horseRel()) > S.horsebackYawLimit * D2R : false;
+    const w = state.weapon; if (w && (H.mountT > 0 || H.dismT > 0)) { for (const m of Object.values(models)) m.group.visible = false; state.aiming = false; H.scoped = false; H.gunAim = false; H.gunFace = null; return; }
+    if (!w) { for (const m of Object.values(models)) m.group.visible = false; state.aiming = false; H.scoped = false; state.aimK += (0 - state.aimK) * Math.min(1, dt * 10); H.aimK = state.aimK; H.gunFace = null; return; }
+    state.aiming = !!(aimHeld || input.ads);
+    const scoping = w === 'sniper' && state.aiming; state.scopeT = scoping ? state.scopeT + dt : 0;
+    const wantSteady = scoping && (mobile ? state.scopeT > .7 : !!(keys.ShiftLeft || keys.ShiftRight)); // phones settle by themselves after a moment in the scope
+    if (wantSteady && !state.winded && (mobile || state.breath > 0)) { state.steady = true; if (!mobile) { state.breath = Math.max(0, state.breath - dt / S.breathHold); if (state.breath <= 0) { state.winded = true; state.steady = false; } } }
+    else { state.steady = false; state.breath = Math.min(1, state.breath + dt * S.breathRecover); if (state.winded && state.breath > .45) state.winded = false; }
+    H.scoped = scoping; state.blocked = H.mounted ? Math.abs(horseRel()) > S.horsebackYawLimit * D2R : false;
     state.aimK += ((state.aiming ? 1 : 0) - state.aimK) * Math.min(1, dt * 12); H.aimK = state.aimK;
     if (H.mounted && state.aiming) { H.lookT = 0; H.recenter = true; } // aiming from the saddle = free look; the horse keeps its line
-    H.gunFace = !H.mounted && (state.aiming || clock.cooldown > 0) ? P.yaw + (w === 'rifle' ? .3 : .12) : null;
-    if (state.reloading) { clock.reload -= dt; if (clock.reload <= 0) { state.ammo[w] = Math.min(maxAmmo(w), state.ammo[w] + 1); click(2000 + Math.random() * 400, .12); state.reloading = false; // exactly one cartridge per cycle
+    H.gunFace = !H.mounted && (state.aiming || clock.cooldown > 0) ? P.yaw + (w !== 'revolver' ? .3 : .12) : null;
+    if (state.reloading && w === 'sniper') { const ph = 1 - clock.reload / S.reloadSniper; // lever down + block drops, case out, fresh cartridge in, lever up
+      if (state.rlStep === 0 && ph > .08) { state.rlStep = 1; click(1400, .16); } if (state.rlStep === 1 && ph > .25) { state.rlStep = 2; click(2600, .1); if (fx && fx.shell) { const g = models.sniper.group; v3.set(0, .05, -.03).applyMatrix4(g.matrixWorld); fx.shell(v3.clone(), new THREE.Vector3(.2, 1.4, 1.6).applyQuaternion(g.quaternion)); } }
+      if (state.rlStep === 2 && ph > .6) { state.rlStep = 3; click(1900, .12); } if (state.rlStep === 3 && ph > .88) { state.rlStep = 4; click(3200, .14); state.cocked = true; } }
+    if (state.reloading) { clock.reload -= dt; if (clock.reload <= 0) { state.ammo[w] = Math.min(maxAmmo(w), state.ammo[w] + 1); click(2000 + Math.random() * 400, .12); state.reloading = false; if (w === 'sniper') state.cocked = true; // exactly one cartridge per cycle
         if (state.ammo[w] < maxAmmo(w) && (reloadHeld || mobile || state.autoRl)) reload(); else { state.autoRl = false; if (w === 'rifle' && !state.chambered) { state.cycling = true; clock.lever = S.leverDuration; } } } }
     if (state.cycling) { clock.lever -= dt; if (clock.lever <= 0) { state.cycling = false; state.chambered = state.ammo.rifle > 0; click(2600, .1); if (fx && fx.shell) { const m = models.rifle; v3.set(.03, .03, -.1).applyMatrix4(m.group.matrixWorld); fx.shell(v3.clone(), new THREE.Vector3(1.2, 2, .3).applyQuaternion(m.group.quaternion)); } }
       else if (Math.abs(clock.lever - S.leverDuration * .5) < dt) click(1700, .1); }
@@ -329,21 +428,40 @@ export function createGuns(c) {
     if (state.ammo[w] === 0 && !state.reloading && !state.cycling && clock.cooldown <= 0) { state.autoRl = true; reload(); }
     if (mobile && clock.idle > 2.5 && !state.reloading && state.ammo[w] < maxAmmo(w) && !state.aiming) { state.autoRl = true; reload(); }
     // pose the gun
-    const m = models[w], other = models[w === 'revolver' ? 'rifle' : 'revolver']; other.group.visible = false; const k = Math.min(1, state.aimK + (clock.cooldown > 0 ? .7 : 0)) * (1 - clock.draw / S.drawTime * .9);
+    const m = models[w]; for (const [kk, o] of Object.entries(models)) if (kk !== w) o.group.visible = false; const k = Math.min(1, state.aimK + (clock.cooldown > 0 ? .7 : 0)) * (1 - clock.draw / S.drawTime * .9);
     camera.getWorldDirection(aimDir); const lim = H.mounted && clampHorse(aimDir); state.clamped = !!lim;
     const rig = c.rig && c.rig();
     if (H.fp && !H.mounted) poseFP(m, k); else if (!rig || !poseOn(rig, w, m, aimDir, k, !!H.mounted, horseRel())) poseFP(m, k);
-    animParts(m, clock.recoil, clock.cock <= 0, state.cycling ? Math.sin((1 - clock.lever / S.leverDuration) * Math.PI) : 0); m.group.updateMatrixWorld(true); cross();
+    let lv = state.cycling ? Math.sin((1 - clock.lever / S.leverDuration) * Math.PI) : 0;
+    if (w === 'sniper' && state.reloading) { const ph = 1 - clock.reload / S.reloadSniper; lv = ph < .15 ? ph / .15 : ph > .82 ? Math.max(0, (1 - ph) / .18) : 1; }
+    animParts(m, clock.recoil, clock.cock <= 0, lv); m.group.updateMatrixWorld(true); if (state.scopeK > .5) m.group.visible = false; cross();
   }
+
+  // ---- scope: after the chase camera is placed, move it to the shooting eye behind the scope, zoom, and add sway + breathing ----
+  const eye = new THREE.Vector3(), qS = new THREE.Quaternion(), eS = new THREE.Euler(0, 0, 0, 'YXZ'), fwdS = new THREE.Vector3();
+  function scopeSway() { const m = !!H.mounted, sp = Math.abs(m ? H.speed : H.fv.length()), t = clock.sway;
+    let amp = m ? S.scopeSwayHorse + sp * S.scopeSwayHorseSpeed : S.scopeSwayFoot + sp * .0008; amp *= state.steady ? (mobile ? .4 : .14) : state.winded ? 1.7 : 1;
+    const br = state.steady ? 0 : 1; return [ (Math.sin(t * .83) * .7 + Math.sin(t * 2.3 + 1.3) * .25) * amp, (Math.sin(t * 1.45) * .9 * br + Math.sin(t * 1.1 + .5) * .35) * amp ]; }
+  function scopeCam(dt) {
+    const on = state.weapon === 'sniper' && state.aiming && !(H.mountT > 0 || H.dismT > 0) && !state.reloading;
+    state.scopeK += ((on ? 1 : 0) - state.scopeK) * Math.min(1, (dt || .05) * 9); if (on && state.scopeK > .97) state.scopeK = 1; if (!on && state.scopeK < .02) state.scopeK = 0; state.scoped = state.scopeK > .6;
+    if (state.scopeK <= 0) { P.lookScale = 1; return; }
+    const k = state.scopeK * state.scopeK * (3 - 2 * state.scopeK), rig = c.rig && c.rig(), B = rig && rig.userData.B;
+    fwdS.set(-Math.sin(P.yaw) * Math.cos(P.pitch), Math.sin(P.pitch), -Math.cos(P.yaw) * Math.cos(P.pitch));
+    if (B && B.Head) { rig.updateMatrixWorld(true); B.Head.getWorldPosition(eye); eye.y += .07; } else if (H.mounted) eye.set(H.mounted.pos.x, H.mounted.pos.y + 2.35, H.mounted.pos.z); else eye.set(P.pos.x, P.pos.y + 1.62, P.pos.z);
+    eye.addScaledVector(fwdS, .32).add(v3.set(Math.cos(P.yaw), 0, -Math.sin(P.yaw)).multiplyScalar(.03)); // the right eye at the eyepiece, a little in front of the face
+    const [sx, sy] = scopeSway(); eS.set(Math.max(-1.5, Math.min(1.5, P.pitch + sy)), P.yaw + sx, 0); qS.setFromEuler(eS);
+    camera.position.lerp(eye, k); camera.quaternion.slerp(qS, k); H.fovSave = camera.fov; camera.fov += ((mobile ? S.scopeFovMobile : S.scopeFov) - camera.fov) * k; camera.updateProjectionMatrix(); camera.updateMatrixWorld();
+    P.lookScale = 1 - (1 - (mobile ? S.scopeFovMobile : S.scopeFov) / 60) * k; } // slower look in the scope
 
   // ---- multiplayer: show other riders' guns and shots (visual only — nobody can hurt anybody) ----
   const fin = (a, n) => Array.isArray(a) && a.length === n && a.every(v => typeof v === 'number' && isFinite(v) && Math.abs(v) < 6000);
-  function remoteShot(id, msg) { if (!msg || !fin(msg.o, 3) || !fin(msg.e, 3) || (msg.w !== 1 && msg.w !== 2)) return; const R = remote.get(id) || {}; const now = performance.now(); if (R.t && now - R.t < 90) return; R.t = now; remote.set(id, R);
-    const o = new THREE.Vector3(...msg.o), e = new THREE.Vector3(...msg.e); if (o.distanceTo(camera.position) > 400) return; const d = e.clone().sub(o).normalize(); effects(msg.w === 2 ? 'rifle' : 'revolver', o, d, e, true); state.remoteShots = (state.remoteShots || 0) + 1; }
-  function netState() { return { g: state.weapon === 'revolver' ? 1 : state.weapon === 'rifle' ? 2 : 0, a: state.aiming ? 1 : 0, ap: +P.pitch.toFixed(2) }; }
+  function remoteShot(id, msg) { if (!msg || !fin(msg.o, 3) || !fin(msg.e, 3) || (msg.w !== 1 && msg.w !== 2 && msg.w !== 3)) return; const R = remote.get(id) || {}; const now = performance.now(); if (R.t && now - R.t < 90) return; R.t = now; remote.set(id, R);
+    const o = new THREE.Vector3(...msg.o), e = new THREE.Vector3(...msg.e); if (o.distanceTo(camera.position) > 400) return; const d = e.clone().sub(o).normalize(); effects(msg.w === 3 ? 'sniper' : msg.w === 2 ? 'rifle' : 'revolver', o, d, e, true); state.remoteShots = (state.remoteShots || 0) + 1; }
+  function netState() { return { g: state.weapon === 'revolver' ? 1 : state.weapon === 'rifle' ? 2 : state.weapon === 'sniper' ? 3 : 0, a: state.aiming ? 1 : 0, ap: +P.pitch.toFixed(2) }; }
   function poseRemote(av, s, root, mounted) { // av: remote avatar; s: last net state
-    if (!av.guns) { av.guns = { revolver: { ...models.revolver, group: models.revolver.group.clone() }, rifle: { ...models.rifle, group: models.rifle.group.clone() } }; for (const m of Object.values(av.guns)) { m.group.visible = false; scene.add(m.group); } }
-    const w = s && s.g === 1 ? 'revolver' : s && s.g === 2 ? 'rifle' : null; for (const [k, m] of Object.entries(av.guns)) if (k !== w) m.group.visible = false; if (!w || !root || !root.visible) { if (w) av.guns[w].group.visible = false; return; }
+    if (!av.guns) { av.guns = { revolver: { ...models.revolver, group: models.revolver.group.clone() }, rifle: { ...models.rifle, group: models.rifle.group.clone() }, sniper: { ...models.sniper, group: models.sniper.group.clone() } }; for (const m of Object.values(av.guns)) { m.group.visible = false; scene.add(m.group); } }
+    const w = s && s.g === 1 ? 'revolver' : s && s.g === 2 ? 'rifle' : s && s.g === 3 ? 'sniper' : null; for (const [k, m] of Object.entries(av.guns)) if (k !== w) m.group.visible = false; if (!w || !root || !root.visible) { if (w) av.guns[w].group.visible = false; return; }
     const yaw = typeof s.yw === 'number' ? s.yw : 0, pt = typeof s.ap === 'number' ? Math.max(-1.2, Math.min(1.2, s.ap)) : 0, dir = new THREE.Vector3(-Math.sin(yaw) * Math.cos(pt), Math.sin(pt), -Math.cos(yaw) * Math.cos(pt));
     if (!poseOn(root, w, av.guns[w], dir, s.a ? 1 : 0, mounted, 0)) av.guns[w].group.visible = false; }
   function disposeRemote(av) { if (av.guns) for (const m of Object.values(av.guns)) scene.remove(m.group); }
@@ -351,5 +469,5 @@ export function createGuns(c) {
   function aimAt(p, sync) { for (let i = 0; i < 4; i++) { if (sync) sync(0); const d = v1.copy(p).sub(camera.position).normalize(); camera.getWorldDirection(v2);
       P.yaw += Math.atan2(-d.x, -d.z) - Math.atan2(-v2.x, -v2.z); P.yaw = Math.atan2(Math.sin(P.yaw), Math.cos(P.yaw)); P.pitch += Math.asin(Math.max(-1, Math.min(1, d.y))) - Math.asin(Math.max(-1, Math.min(1, v2.y))); } }
 
-  return { state, settings: S, models, targets, range, update, hud, draw, holster, cycle, reload, shoot, netState, remoteShot, poseRemote, disposeRemote, aimAt, cast, syncUI };
+  return { state, settings: S, models, targets, range, update, scopeCam, hud, draw, holster, cycle, reload, shoot, netState, remoteShot, poseRemote, disposeRemote, aimAt, cast, syncUI };
 }

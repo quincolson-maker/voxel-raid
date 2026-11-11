@@ -100,6 +100,9 @@ async function page(br, mobile, errors, tag) {
     await c.evaluate(() => { __horse.guns.draw('revolver'); __P.yaw = __horse.state.mounted.yaw; }); await until(c, () => { const g = __horse.guns; return g.state.weapon === 'revolver' && g.shoot(false); }, null, 30000);
     await until(h, () => (__horse.guns.state.remoteShots || 0) >= 1, null, 20000); R.hostSeesShot = true;
     await until(h, () => { const r = __hnet.state.remotes.get('P2'); return !!(r && r.av.guns && r.av.guns.revolver.group.visible); }, null, 20000); R.hostSeesGun = true;
+    await c.evaluate(() => __horse.guns.draw('sniper')); await until(c, () => { const g = __horse.guns; return g.state.weapon === 'sniper' && g.shoot(false); }, null, 30000);
+    await until(h, () => (__horse.guns.state.remoteShots || 0) >= 2, null, 20000); R.hostSeesBuffaloShot = true;
+    await until(h, () => { const r = __hnet.state.remotes.get('P2'); return !!(r && r.av.guns && r.av.guns.sniper && r.av.guns.sniper.group.visible); }, null, 20000); R.hostSeesBuffaloRifle = true;
     await c.evaluate(() => __horse.guns.holster());
     assert.ok(R.hostAvatar.sitterOnHorse && R.hostAvatar.walkerHidden);
     step('dismount releases the horse for everyone');

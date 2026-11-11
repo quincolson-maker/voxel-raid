@@ -142,11 +142,20 @@ select,input{border-radius:1px;background:#11161a;border:1px solid #fff2}
 .horse-mode #vitals,.horse-mode #hotbar,.horse-mode #right,.horse-mode #cross,.horse-mode #zHud,.horse-mode #feed,.horse-mode #scope,.horse-mode #dbar{display:none!important}.horse-mode .bar{display:none}
 .horse-mode #tFire,.horse-mode #tAds,.horse-mode #tReload,.horse-mode #tSwap{display:none!important}.touch.horse-mode #hrPrompt{top:auto;bottom:40%}
 #tGun{display:none!important}.horse-mode #tGun{display:flex!important}.horse-mode.hr-gun #tFire,.horse-mode.hr-gun #tAds{display:flex!important}
-#hrGun{position:fixed;right:22px;bottom:22px;z-index:20;pointer-events:none;font:600 12px/1.25 system-ui,sans-serif;color:#f3e6c8;text-shadow:0 1px 2px #000;display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+#hrGun{position:fixed;right:22px;bottom:22px;z-index:26;pointer-events:none;font:600 12px/1.25 system-ui,sans-serif;color:#f3e6c8;text-shadow:0 1px 2px #000;display:flex;flex-direction:column;align-items:flex-end;gap:4px}
 #hrGun .w{letter-spacing:.14em;font-size:11px;opacity:.85}#hrGun .pips{display:flex;gap:3px}#hrGun .pips b{width:9px;height:9px;border-radius:50%;border:1.5px solid #e9d39a;opacity:.55}#hrGun .pips b.f{background:#d9b25c;opacity:1}
 #hrGun .pips.rifle b{width:4px;height:14px;border-radius:2px}#hrGun .rl{color:#ffcf7a}#hrGun .sc{opacity:.8}#hrGun em{font-style:normal;font-size:15px;color:#fff3cf}
 body.touch #hrGun,.touch #hrGun{right:auto;left:50%;transform:translateX(-50%);bottom:58px;top:auto;align-items:center}
 #hrCross{position:fixed;left:50%;top:50%;z-index:19;pointer-events:none;transform:translate(-50%,-50%)}#hrCross i{display:block;width:10px;height:10px;border-radius:50%;border:1.5px solid rgba(255,245,220,.75);box-shadow:0 0 2px #000;transform:translate(-50%,-50%);position:absolute;transition:width .12s,height .12s}
+#hrScope{position:fixed;inset:0;z-index:25;pointer-events:none;opacity:0;transition:opacity .12s;--R:min(45vh,45vw);background:radial-gradient(circle at 50% 50%,rgba(0,0,0,0) 0,rgba(0,0,0,0) calc(var(--R) - 26px),rgba(20,14,6,.55) calc(var(--R) - 6px),#050403 var(--R),#000 100%)}
+#hrScope.on{opacity:1}#hrScope .ret{position:absolute;left:50%;top:50%;width:calc(var(--R)*2);height:calc(var(--R)*2);transform:translate(-50%,-50%)}
+#hrScope .ret i{position:absolute;background:#0b0906;display:block}#hrScope .ret .h{left:0;right:0;top:50%;height:1.2px;margin-top:-.6px;background:linear-gradient(90deg,#0b0906 0 30%,rgba(11,9,6,.95) 30% 70%,#0b0906 70%)}
+#hrScope .ret .v{top:0;bottom:0;left:50%;width:1.2px;margin-left:-.6px}#hrScope .ret .dot{left:50%;top:50%;width:4px;height:4px;margin:-2px 0 0 -2px;border-radius:50%}
+#hrScope .ret .s1,#hrScope .ret .s2,#hrScope .ret .s3{left:50%;height:1.2px;width:14px;margin-left:-7px}#hrScope .ret .s1{top:calc(50% + var(--R)*.12)}#hrScope .ret .s2{top:calc(50% + var(--R)*.24);width:20px;margin-left:-10px}#hrScope .ret .s3{top:calc(50% + var(--R)*.36)}
+#hrScope .ret::before,#hrScope .ret::after{content:'';position:absolute;background:#0b0906}#hrScope .ret::before{left:0;width:30%;top:50%;height:6px;margin-top:-3px;box-shadow:calc(var(--R)*1.4) 0 0 #0b0906}#hrScope .ret::after{top:70%;height:30%;left:50%;width:6px;margin-left:-3px}
+#hrScope .br{position:absolute;left:50%;bottom:calc(50% - var(--R) - 22px);width:120px;height:4px;margin-left:-60px;background:rgba(255,255,255,.15);border-radius:2px;overflow:hidden}#hrScope .br b{display:block;height:100%;background:#e9d39a}
+#hrScope.steady .br b{background:#9fe0a0}#hrScope.winded .br b{background:#ff7a5a}#hrScope .tip{position:absolute;left:50%;bottom:calc(50% - var(--R) - 44px);transform:translateX(-50%);font:600 11px system-ui,sans-serif;letter-spacing:.12em;color:#e9d9b0;text-transform:uppercase;white-space:nowrap}
+.touch #hrScope .br{display:none}body.hr-scoped #hrCross{display:none}
 #hrCross::after{content:'';position:absolute;left:-1.5px;top:-1.5px;width:3px;height:3px;border-radius:50%;background:#fff;box-shadow:0 0 2px #000}#hrCross.aim i{border-color:#fff}#hrCross.no{opacity:.35}#hrCross.no i{border-color:#ff6a50}
 #hrStam{position:fixed;left:50%;bottom:15%;width:150px;height:6px;margin-left:-75px;border-radius:3px;background:rgba(10,8,4,.5);box-shadow:0 0 0 1px #0006;overflow:hidden;pointer-events:none;opacity:0;transition:opacity .5s;z-index:20}#hrStam i{display:block;height:100%;background:linear-gradient(90deg,#c98a2e,#f2dc9a);transition:width .2s}#hrStam.low i{background:linear-gradient(90deg,#a3301e,#e07a4a)}body:not(.horse-mode) #hrStam{display:none}.touch.horse-mode #hrStam{bottom:auto;top:24%}
 </style>
@@ -196,5 +205,5 @@ body.touch #hrGun,.touch #hrGun{right:auto;left:50%;transform:translateX(-50%);b
 <div id="rot"><div class="ph"></div><p>Rotate your phone to landscape</p><button id="rotskip">Play anyway</button></div>
 <div id="ioshint" class="pill">For true fullscreen on iPhone: tap Share → <b>Add to Home Screen</b>, then launch Voxel Raid from your home screen. <button id="ioshintx" style="padding:.2em .6em">OK</button></div>
 <script src="./vendor/peerjs.min.js"></script>
-<script type="module" src="./game.min.js?v=23-guns"></script>
+<script type="module" src="./game.min.js?v=24-buffalo"></script>
 </body></html>

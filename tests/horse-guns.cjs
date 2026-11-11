@@ -2,6 +2,8 @@
 // input (1 / DRAW button), aims (RMB / AIM), shoots a bottle on foot with a real click / FIRE tap, reloads one round at a
 // time (R / phone auto-reload), switches to the lever rifle (2 / button) and knocks a can over, then mounts a horse and
 // hits a bullseye board from the saddle, checks the horseback yaw limit and holsters. Saves shot-horserider-guns-*.png.
+// Buffalo rifle (key 3 / third DRAW tap): scope view (zoom + overlay), Shift holds breath (and no longer changes gait in the
+// saddle), single shot with flight time onto 150-300 m steel, slow reload, scoped shot from the saddle. Saves shot-horserider-sniper-*.png.
 const puppeteer = require('puppeteer-core');
 const assert = require('node:assert/strict');
 const base = process.argv[2] || 'http://localhost:8767';
@@ -11,7 +13,7 @@ const ignorable = t => /pointer ?lock|requestPointerLock|fullscreen|favicon|WebG
 (async () => {
   const br = await puppeteer.launch({ executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', headless: true, protocolTimeout: 120000, args });
   const out = {};
-  try { for (const mobile of [false, true]) {
+  try { for (const mobile of (process.env.ONLY ? [process.env.ONLY === 'mobile'] : [false, true])) {
     const tag = mobile ? 'mobile' : 'desktop', errors = [], R = (out[tag] = {});
     const p = await br.newPage(); p.on('pageerror', e => errors.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !ignorable(m.text())) errors.push(m.text()); });
     await p.setViewport(mobile ? { width: 844, height: 390, deviceScaleFactor: 1, isMobile: true, hasTouch: true, isLandscape: true } : { width: 1280, height: 720 });
@@ -72,6 +74,42 @@ const ignorable = t => /pointer ?lock|requestPointerLock|fullscreen|favicon|WebG
     assert.equal(R.rifleShot.hit.target, 'can', 'rifle knocks the can'); assert.equal(R.rifleShot.ammo, 9); assert.ok(R.rifleShot.lever, 'lever cycles after the shot');
     await frames(2); await p.screenshot({ path: `shot-horserider-guns-rifle-can-${tag}.png` });
     if (mobile) await p.tap('#tAds'); else await p.mouse.up({ button: 'right' });
+    // ---- buffalo rifle on foot: in hand, scope, hold breath, 300 m steel, slow single-shot reload ----
+    const gongs = () => G(() => __horse.guns.targets.filter(t => t.kind === 'gong').map(t => t.d));
+    R.gongs = await gongs(); assert.deepEqual(R.gongs, [150, 200, 245, 300], 'long-range steel at 150-300 m');
+    if (mobile) await p.tap('#tGun'); else await p.keyboard.press('Digit3');
+    await p.waitForFunction(() => __horse.guns.state.weapon === 'sniper', { timeout: 5000 }); R.sniperDrawn = true;
+    if (mobile) R.gunLabel = await p.$eval('#tGun', e => e.textContent); // next tap holsters
+    await G(() => { const H = __horse, x = H.PEN.x - H.PEN.hw - 9, z = H.PEN.z + 1, g = H.guns.targets.filter(t => t.kind === 'gong')[3]; __P.pos.set(x, H.hAt(x, z), z); __P.yaw = Math.atan2(-(g.c.x - x), -(g.c.z - z)); __P.pitch = 0; });
+    await frames(10); await G(() => { __horse.state.bodyYaw = __P.yaw; __P.yaw += 1.9; }); await frames(3);
+    R.sniperVisible = await G(() => __horse.guns.models.sniper.group.visible); assert.ok(R.sniperVisible, 'buffalo rifle in hand');
+    await p.screenshot({ path: `shot-horserider-sniper-inhand-${tag}.png` }); await G(() => { __P.yaw -= 1.9; }); await frames(2);
+    if (mobile) await p.tap('#tAds'); else await p.mouse.down({ button: 'right' });
+    await p.waitForFunction(() => __horse.guns.state.scopeK > .95, { timeout: 90000 });
+    if (!mobile) await p.keyboard.down('ShiftLeft');
+    await p.waitForFunction(() => __horse.guns.state.steady, { timeout: 90000 }); // Shift on desktop, automatic after a moment on phones
+    await G(() => { const G = __horse.guns; G.aimAt(G.targets.filter(t => t.kind === 'gong')[3].c, __horse.syncCamera); }); await frames(2);
+    R.scope = await G(() => ({ fov: +__cam.fov.toFixed(1), overlay: document.getElementById('hrScope').classList.contains('on'), cross: getComputedStyle(document.getElementById('hrCross')).display, gunHidden: !__horse.guns.models.sniper.group.visible, steady: __horse.guns.state.steady, lookScale: +(__P.lookScale || 1).toFixed(2) }));
+    assert.ok(R.scope.fov <= 10.5 && R.scope.overlay && R.scope.cross === 'none' && R.scope.gunHidden && R.scope.lookScale < .3, 'scope zoom + overlay + reticle, slower look');
+    await p.screenshot({ path: `shot-horserider-sniper-scope-${tag}.png` });
+    R.preShot = await G(() => { const G = __horse.guns, c = __cam, d = c.getWorldDirection(c.position.clone()); const r = G.cast(c.position.clone(), d, 420); return { kind: r.kind, t: +r.t.toFixed(1), aiming: G.state.aiming, steady: G.state.steady, yaw: +__P.yaw.toFixed(4), pitch: +__P.pitch.toFixed(4), cd: d.toArray().map(v => +v.toFixed(4)) }; });
+    const sh0 = await G(() => __horse.guns.state.shots);
+    if (mobile) await p.tap('#tFire'); else { await p.mouse.down({ button: 'left' }); await sleep(80); await p.mouse.up({ button: 'left' }); }
+    await p.waitForFunction(n => __horse.guns.state.shots > n, { timeout: 90000 }, sh0);
+    R.inFlight = await G(() => __horse.guns.state.lastHit && __horse.guns.state.lastHit.weapon === 'sniper'); assert.ok(!R.inFlight, 'the bullet takes time to get there');
+    await p.waitForFunction(() => __horse.guns.state.lastHit && __horse.guns.state.lastHit.weapon === 'sniper', { timeout: 90000 });
+    R.longShot = await G(() => ({ hit: __horse.guns.state.lastHit, ammo: __horse.guns.state.ammo.sniper, dbg: __horse.guns.state.dbg }));
+    assert.equal(R.longShot.hit.target, 'gong', '300 m steel hit'); assert.ok(R.longShot.hit.dist > 280); assert.equal(R.longShot.ammo, 0, 'single shot');
+    await p.screenshot({ path: `shot-horserider-sniper-longrange-hit-${tag}.png` });
+    R.gongSwing = await G(() => Math.abs(__horse.guns.targets.filter(t => t.kind === 'gong')[3].sw) > 0); assert.ok(R.gongSwing, 'the steel swings');
+    if (!mobile) await p.keyboard.up('ShiftLeft');
+    await p.waitForFunction(() => __horse.guns.state.reloading, { timeout: 90000 }); R.slowReload = await G(() => __horse.guns.settings.reloadSniper); assert.ok(R.slowReload >= 2);
+    await p.waitForFunction(() => __horse.guns.state.ammo.sniper === 1 && !__horse.guns.state.reloading, { timeout: 120000 }); R.reloaded = true;
+    if (mobile) await p.tap('#tAds'); else await p.mouse.up({ button: 'right' });
+    await p.waitForFunction(() => __horse.guns.state.scopeK === 0, { timeout: 60000 });
+    // back to the lever rifle for the saddle test (phone: holster -> six-shooter -> rifle)
+    if (mobile) { for (let i = 0; i < 3; i++) { await p.tap('#tGun'); await frames(1); } } else await p.keyboard.press('Digit2');
+    await p.waitForFunction(() => __horse.guns.state.weapon === 'rifle', { timeout: 10000 });
     // mount a horse (gun goes away during the mount animation), ride it out to the boards, shoot from the saddle
     await G(() => { const H = __horse, h = H.state.horses[2]; h.pos.set(H.PEN.x, h.pos.y, H.PEN.z + 3); h.yaw = 0; __P.pos.set(H.PEN.x + 1.6, H.hAt(H.PEN.x + 1.6, H.PEN.z + 3), H.PEN.z + 3); });
     await frames(1); assert.ok(await G(() => __horse.use()), 'mounts');
@@ -87,6 +125,26 @@ const ignorable = t => /pointer ?lock|requestPointerLock|fullscreen|favicon|WebG
     R.mountedShot = await G(() => ({ hit: __horse.guns.state.lastHit, score: __horse.guns.state.score }));
     assert.equal(R.mountedShot.hit.target, 'board', 'mounted shot hits the bullseye board'); assert.equal(R.mountedShot.hit.mounted, true);
     await frames(2); await p.screenshot({ path: `shot-horserider-guns-mounted-${tag}.png` });
+    // ---- buffalo rifle from the saddle: scoped, more sway, Shift steadies instead of changing gait ----
+    if (mobile) await p.tap('#tAds'); else await p.mouse.up({ button: 'right' });
+    if (mobile) await p.tap('#tGun'); else await p.keyboard.press('Digit3');
+    await p.waitForFunction(() => __horse.guns.state.weapon === 'sniper', { timeout: 5000 });
+    await G(() => { const H = __horse, h = H.state.mounted, x = H.PEN.x - H.PEN.hw - 10, z = H.PEN.z + 1, g = H.guns.targets.filter(t => t.kind === 'gong')[0]; h.pos.set(x, H.hAt(x, z), z); h.yaw = Math.atan2(-(g.c.x - x), -(g.c.z - z)); H.state.speed = 0; __P.yaw = h.yaw - .25; __P.pitch = -.05; });
+    await frames(8); await p.screenshot({ path: `shot-horserider-sniper-mounted-${tag}.png` });
+    if (mobile) await p.tap('#tAds'); else await p.mouse.down({ button: 'right' });
+    await p.waitForFunction(() => __horse.guns.state.scopeK > .95, { timeout: 90000 });
+    const cr0 = await G(() => __horse.state.cruise);
+    if (!mobile) await p.keyboard.down('ShiftLeft');
+    await p.waitForFunction(() => __horse.guns.state.steady, { timeout: 90000 });
+    R.shiftGait = await p.evaluate(c0 => ({ c0, c: __horse.state.cruise, shiftT: __horse.state.shiftT, scoped: __horse.state.scoped }), cr0); R.shiftNoGait = R.shiftGait.c === R.shiftGait.c0 && !R.shiftGait.shiftT; assert.ok(R.shiftNoGait, 'Shift in the scope holds breath, not a gait change');
+    await G(() => { const H = __horse; H.state.speed = 0; H.guns.aimAt(H.guns.targets.filter(t => t.kind === 'gong')[0].c, H.syncCamera); }); await frames(1);
+    await p.screenshot({ path: `shot-horserider-sniper-mounted-scope-${tag}.png` });
+    const sh1 = await G(() => __horse.guns.state.shots);
+    if (mobile) await p.tap('#tFire'); else { await p.mouse.down({ button: 'left' }); await sleep(80); await p.mouse.up({ button: 'left' }); }
+    await p.waitForFunction(n => __horse.guns.state.shots > n, { timeout: 90000 }, sh1);
+    await p.waitForFunction(() => __horse.guns.state.lastHit.weapon === 'sniper' && __horse.guns.state.lastHit.mounted, { timeout: 90000 });
+    R.mountedLong = await G(() => __horse.guns.state.lastHit); assert.equal(R.mountedLong.target, 'gong', 'scoped hit from the saddle'); assert.ok(R.mountedLong.dist > 140);
+    if (!mobile) await p.keyboard.up('ShiftLeft');
     // horseback yaw limit: no shooting straight back over the horse's rump
     await frames(10); await G(() => { const H = __horse; __P.yaw = H.state.mounted.yaw + Math.PI; }); await frames(2);
     R.blocked = await G(() => { const g = __horse.guns, n = g.state.shots; const r = g.shoot(false); return { fired: r, shots: g.state.shots - n, blocked: g.state.blocked }; });
