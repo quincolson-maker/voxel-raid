@@ -181,6 +181,7 @@ export function createTown(c) {
     else { h += `<h3>GENERAL STORE</h3><div class="pt">${pts} points</div><div class="row"><span class="nm">Black windbreaker · HORSE RIDER on the back</span>` + (T.jacket ? `<button data-a="wear">${T.wear ? 'TAKE OFF' : 'WEAR'}</button>` : `<button data-a="jacket" ${pts < TOWN_PRICES.jacket ? 'disabled' : ''}>BUY ${TOWN_PRICES.jacket}</button>`) + '</div>'; }
     shopEl.innerHTML = h; }
   function buyJacket() { const g = H.guns; if (T.jacket) return; if (g.pts() < TOWN_PRICES.jacket) { msg('Not enough points', 1.5); return; } g.state.spent += TOWN_PRICES.jacket; T.jacket = true; T.wear = true; save(); c.jacket && c.jacket(true); msg('Black HORSE RIDER windbreaker — looking sharp', 3); }
+  T.save = () => save();
   function save() { try { localStorage.setItem('hr_v33_town', JSON.stringify({ jacket: !!T.jacket, wear: !!T.wear })); if (H.guns) H.guns.save && H.guns.save(); } catch (_) {} }
   try { const sv = JSON.parse(localStorage.getItem('hr_v33_town') || sessionStorage.getItem('hr_v33_town') || 'null'); if (sv) { T.jacket = !!sv.jacket; T.wear = !!sv.wear; } } catch (_) {}
   addEventListener('keydown', e => { if (e.code === 'Escape' && T.ui) closeUI(); });
