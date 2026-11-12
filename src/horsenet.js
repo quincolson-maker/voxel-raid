@@ -83,24 +83,25 @@ export function createHorseNet({ horse, P, msg }) {
       case 'left': if (isClient()) removeRemote(m.id); break;
     }
   }
-  const lobbyList = () => !LOBBY_URL ? Promise.resolve([]) : fetch(LOBBY_URL + '/lobbies', { cache: 'no-store' }).then(r => r.json()).then(j => Array.isArray(j.lobbies) ? j.lobbies : []).catch(() => []);
+  const lobbyList = () => !LOBBY_URL ? Promise.resolve([]) : fetch(LOBBY_URL + '/lobbies', { cache: 'no-store', signal: AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined }).then(r => r.json()).then(j => Array.isArray(j.lobbies) ? j.lobbies : []).catch(() => []);
   async function tryJoin(code) {
     reset(); S.status = 'joining ' + code;
     try { await net.join(code); } catch (_) { reset(); return false; }
-    const ok = await new Promise(res => { hiWait = res; setTimeout(() => { if (hiWait) { hiWait = null; res(null); } }, 8000); });
+    const ok = await new Promise(res => { hiWait = res; setTimeout(() => { if (hiWait) { hiWait = null; res(null); } }, 6000); });
     if (!ok) { reset(); return false; }
     S.code = code; voice.start(S.remotes.size + 1 <= VOICE_MESH ? [...S.remotes.keys()] : []); msg('Joined a Horse Rider lobby — voice is on', 3); return true;
   }
   async function host() {
     reset(); S.role = 'host'; S.me = H.me = 'P1'; S.status = 'hosting';
     try { S.code = await net.host(); } catch (e) { reset(); S.status = 'offline'; msg('Multiplayer unavailable — riding solo', 3); return false; }
-    advertise(); voice.start([]); msg('Horse Rider lobby open — other riders join automatically', 3); return true;
+    try { localStorage.setItem('hr_mycode', S.code); } catch (_) {} advertise(); voice.start([]); msg('Horse Rider lobby open — other riders join automatically', 3); return true;
   }
   // HORSE RIDER tap (or a lobby row): join an open Horse Rider lobby with a free slot, else host one
   async function auto(prefer) {
     if (!enabled() || S.busy) return; S.busy = true;
     try { const list = (await lobbyList()).filter(l => l.mode === 'horse' && l.players < l.max).sort((a, b) => b.players - a.players || (a.code < b.code ? -1 : 1));
-      const cands = [...(prefer ? [prefer] : []), ...list.map(l => l.code).filter(c => c !== prefer)];
+      let mine = null; try { mine = localStorage.getItem('hr_mycode'); } catch (_) {} // v34: skip the lobby I hosted before closing the app (stale)
+      const cands = [...(prefer ? [prefer] : []), ...list.map(l => l.code).filter(c => c !== prefer && c !== mine)];
       for (const c of cands.slice(0, 3)) if (await tryJoin(c)) return true;
       return await host();
     } finally { S.busy = false; }
@@ -120,6 +121,8 @@ export function createHorseNet({ horse, P, msg }) {
       const st = { t: 'p', x: +x.toFixed(2), y: +(h ? h.pos.y : P.pos.y).toFixed(2), z: +z.toFixed(2), yw: +(h ? P.yaw : (H.bodyYaw ?? P.yaw)).toFixed(3), m: h ? h.id : -1, hy: h ? +h.yaw.toFixed(3) : 0, sp: +(h ? H.speed : S.footSp).toFixed(2) };
       if (horse.gunNet) Object.assign(st, horse.gunNet()); st.n = callsign().slice(0, 14); if (H.dead) st.dd = 1; if (isHost()) st.id = 'P1'; net.send(st); }
     if (isHost() && net.open && S.herdT <= 0) { S.herdT = .25; net.send({ t: 'herd', h: horse.herd() }); }
+    // v34: never stay offline: retry the lobby in the background (cold lobby server, PeerJS hiccup, came back from the background)
+    if (S.role === 'solo' && enabled() && !S.busy && (S.retryT = (S.retryT ?? 15) - dt) <= 0) { S.retryT = 15; auto(); }
     // a lone host merges into an older open Horse Rider lobby (two players hosted at the same moment)
     if (isHost() && !S.remotes.size && LOBBY_URL && (S.mergeT -= dt) <= 0) { S.mergeT = 10;
       lobbyList().then(list => { const o = list.filter(l => l.mode === 'horse' && l.code !== S.code && l.players < l.max && l.code < S.code)[0]; if (o && isHost() && !S.remotes.size) auto(o.code); }); }

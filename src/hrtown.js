@@ -181,15 +181,15 @@ export function createTown(c) {
     else { h += `<h3>GENERAL STORE</h3><div class="pt">${pts} points</div><div class="row"><span class="nm">Black windbreaker · HORSE RIDER on the back</span>` + (T.jacket ? `<button data-a="wear">${T.wear ? 'TAKE OFF' : 'WEAR'}</button>` : `<button data-a="jacket" ${pts < TOWN_PRICES.jacket ? 'disabled' : ''}>BUY ${TOWN_PRICES.jacket}</button>`) + '</div>'; }
     shopEl.innerHTML = h; }
   function buyJacket() { const g = H.guns; if (T.jacket) return; if (g.pts() < TOWN_PRICES.jacket) { msg('Not enough points', 1.5); return; } g.state.spent += TOWN_PRICES.jacket; T.jacket = true; T.wear = true; save(); c.jacket && c.jacket(true); msg('Black HORSE RIDER windbreaker — looking sharp', 3); }
-  function save() { try { sessionStorage.setItem('hr_v33_town', JSON.stringify({ jacket: !!T.jacket, wear: !!T.wear })); if (H.guns) H.guns.save && H.guns.save(); } catch (_) {} }
-  try { const sv = JSON.parse(sessionStorage.getItem('hr_v33_town') || 'null'); if (sv) { T.jacket = !!sv.jacket; T.wear = !!sv.wear; } } catch (_) {}
+  function save() { try { localStorage.setItem('hr_v33_town', JSON.stringify({ jacket: !!T.jacket, wear: !!T.wear })); if (H.guns) H.guns.save && H.guns.save(); } catch (_) {} }
+  try { const sv = JSON.parse(localStorage.getItem('hr_v33_town') || sessionStorage.getItem('hr_v33_town') || 'null'); if (sv) { T.jacket = !!sv.jacket; T.wear = !!sv.wear; } } catch (_) {}
   addEventListener('keydown', e => { if (e.code === 'Escape' && T.ui) closeUI(); });
 
   // ---- drinks: the more you drink the worse it gets; it wears off slowly (each drink adds time) ----
   function drink() { const g = H.guns; if (g.pts() < TOWN_PRICES.drink) { msg('A whiskey is ' + TOWN_PRICES.drink + ' points', 1.5); return; } g.state.spent += TOWN_PRICES.drink; save();
-    T.drinks++; T.drunk += 1; msg(T.drunk < 2 ? 'Whiskey. Smooth.' : T.drunk < 4 ? 'Another one… the room is moving' : T.drunk < 6 ? 'You are properly drunk' : T.drunk < 8 ? 'Barkeep is cutting you off soon…' : 'Too much…', 2); if (sfx.tone && sfx.ctx) sfx.tone('sine', 300, 180, .2, .2); }
+    T.drinks++; T.drunk += 1; msg(T.drunk < 2 ? 'Whiskey. Smooth.' : T.drunk < 4 ? 'Another one… the room is moving' : T.drunk < 6 ? 'You are properly drunk' : T.drunk < 8 ? 'You can barely walk straight' : T.drunk < 11 ? 'Everything is spinning… three of everything' : T.drunk < 13 ? 'Barkeep: "Last one, partner."' : 'Too much…', 2); if (sfx.tone && sfx.ctx) sfx.tone('sine', 300, 180, .2, .2); }
   T.tick = dt => { if (T.passT > 0) { T.passT -= dt; T.black = Math.min(1, (T.black || 0) + dt * 1.5); if (T.passT <= 0) wake(); }
-    else { T.black = Math.max(0, (T.black || 0) - dt * .5); if (T.drunk >= 8 && !H.mounted) passOut(); }
+    else { T.black = Math.max(0, (T.black || 0) - dt * .5); if (T.drunk >= T.PASS && !H.mounted) passOut(); }
     T.drunk = Math.max(0, T.drunk - dt / 75); // 75 s per drink: three drinks stay with you ~3.75 minutes, it stacks
     ck.tick(dt);
     if (T.drunk > 1.2 && (T.hicT = (T.hicT || 3) - dt) <= 0) { T.hicT = 2 + Math.random() * Math.max(1.5, 9 - T.drunk); T.hic = .25; if (sfx.tone && sfx.ctx) { sfx.tone('square', 520, 260, .06, .06); sfx.tone('sine', 260, 180, .1, .08); } }
@@ -198,7 +198,7 @@ export function createTown(c) {
   function passOut() { T.passT = 5; T.passes = (T.passes || 0) + 1; msg('You passed out…', 4); if (H.guns) H.guns.holster(); closeUI(); }
   function wake() { const s = T.town; if (s) { const [x, z] = toW(s, -6, -4.2); P.pos.set(x, T.floorAt(x, z, 1e9), z); } T.drunk = 3.2; msg('You wake up outside the saloon. Your head is pounding.', 4); }
   T.npcs = []; T.dressNPC = mk => { if (T.npcs.length || !T.npcAt) return; for (const [[x, z], y, rot] of T.npcAt) { const W = mk(); if (!W) return; W.m.position.set(x, y, z); W.m.rotation.y = rot + Math.PI; scene.add(W.m); W.start && W.start(); T.npcs.push(W); } };
-  T.level = () => T.drunk; // 0 sober .. 8+ (passes out)
+  T.level = () => T.drunk; T.PASS = 14; // 0 sober .. 14+ (passes out; v34 raised from 8)
 
   // ---- darts: 301 against the bartender (skill varies) or another rider (host-authoritative over the co-op link) ----
   let dEl = null, cv = null, ctx2 = null; const D = { aim: [0, 0], ptr: [0, 0], t: 0, flying: null };

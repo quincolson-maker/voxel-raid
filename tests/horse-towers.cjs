@@ -9,16 +9,22 @@ const base = process.argv[2] || 'http://localhost:8767';
   await p.goto(base + '/?dev=1&solo=1&q=low&norender=1', { waitUntil: 'load', timeout: 300000 });
   await p.waitForFunction(() => window.__horse && __horse.state.horses.length >= 4 && __horse.guns && __horse.state.models === 'real', { timeout: 600000 });
   const R = await p.evaluate(() => { const H = __horse.state, T = H.town2, g = __horse.guns, k = __coop.keys, o = {}, step = s => { for (let i = 0; i < s * 20; i++) __sim(.05); };
-    sessionStorage.clear(); H.zombies.clear(); H.zombies.state.spawnT = 1e9; o.places = H.places; o.towerY = T.towers.map(t => Math.round(t.y0)); o.snowLine = 355;
-    // 1) climb lookout 1 on foot by its stairs
-    const t1 = T.towers.find(t => t.kind === 'armory'), W = (x, z) => [t1.cx + x, t1.cz + z], A = 3.95, B = 5.05;
-    let [sx, sz] = W(-4.6, A); __P.pos.set(sx, __horse.hAt(sx, sz), sz); H.fv.set(0, 0);
-    const route = [[-3.4, A], [3.5, A], [3.6, B], [-3.5, B], [-3.6, A], [3.5, A], [3.6, B], [-3.5, B], [-3.4, 4.4], [-3.2, 2.6], [-3.1, 1.6], [-1.8, 1.6], [.6, -.4], [1.2, -.7]]; const trace = [];
-    for (const [x, z] of route) { const [wx, wz] = W(x, z); for (let i = 0; i < 200; i++) { const dx = wx - __P.pos.x, dz = wz - __P.pos.z; if (Math.hypot(dx, dz) < .25) break; __P.yaw = Math.atan2(-dx, -dz); k.KeyW = true; k.AltLeft = true; __sim(.05); } trace.push(+(__P.pos.y - t1.y0).toFixed(2)); } k.KeyW = false; k.AltLeft = false; step(.3);
-    o.climb = { trace, top: +(__P.pos.y - t1.y0).toFixed(2), spot: H.spot && H.spot.kind };
+    sessionStorage.clear(); localStorage.removeItem('hr_v33'); localStorage.removeItem('hr_v33_town'); H.zombies.clear(); H.zombies.state.spawnT = 1e9; o.places = H.places; o.towerY = T.towers.map(t => Math.round(t.y0)); o.snowLine = 355;
+    // 1) v34: walk to each lookout on foot from 15 m out on four sides, climb all four flights to the cab, then walk back down
+    const goTo = (wx, wz, max = 260) => { for (let i = 0; i < max; i++) { const dx = wx - __P.pos.x, dz = wz - __P.pos.z; if (Math.hypot(dx, dz) < .25) return true; __P.yaw = Math.atan2(-dx, -dz); k.KeyW = true; k.AltLeft = true; __sim(.05); } return false; };
+    const A = 4.6, B = 5.7, UP = [[-4.6, A], [-3.2, A], [3.5, A], [3.6, B], [-3.5, B], [-3.6, A], [3.5, A], [3.6, B], [-3.3, B], [-3.3, 4.2], [-2.8, 3.2], [-2.8, 3.0], [-1.0, 3.0], [-1.0, 1.8], [.6, -.2]];
+    o.approach = []; o.climbs = [];
+    for (const t of T.towers) { const W = (x, z) => T.toW(t, x, z);
+      for (const [sx, sz, via] of [[-19.6, A, []], [15, 0, [[8, -8], [-8, -8], [-8, A]]], [0, -15, [[-8, -8], [-8, A]]], [0, 21, [[-8, 10], [-8, A]]]]) { const [x0, z0] = W(sx, sz); __P.pos.set(x0, __horse.hAt(x0, z0), z0); H.fv.set(0, 0); step(.2);
+        let ok = true; for (const [x, z] of [...via, [-6.5, A], [-4.6, A]]) { const [wx, wz] = W(x, z); ok = goTo(wx, wz) && ok; } k.KeyW = false; o.approach.push([t.kind, sx, sz, ok, +(__P.pos.y - t.y0).toFixed(2)]); }
+      const tr = []; for (const [x, z] of UP) { const [wx, wz] = W(x, z); goTo(wx, wz); tr.push(+(__P.pos.y - t.y0).toFixed(2)); } k.KeyW = false; step(.3);
+      const top = +(__P.pos.y - t.y0).toFixed(2), spot = H.spot && H.spot.kind; const dn = []; for (const [x, z] of [...UP].reverse()) { const [wx, wz] = W(x, z); goTo(wx, wz); dn.push(+(__P.pos.y - t.y0).toFixed(2)); }
+      { const [wx, wz] = W(-8, A); goTo(wx, wz); } k.KeyW = false; step(.3); o.climbs.push({ kind: t.kind, rot: +t.rot.toFixed(2), up: tr, top, spot, down: dn, bottom: +(__P.pos.y - __horse.hAt(__P.pos.x, __P.pos.z)).toFixed(2) }); }
+    const t1 = T.towers.find(t => t.kind === 'armory'), W = (x, z) => T.toW(t1, x, z); for (const [x, z] of UP) { const [wx, wz] = W(x, z); goTo(wx, wz); } k.KeyW = false; k.AltLeft = false; step(.3);
+    o.climb = { top: +(__P.pos.y - t1.y0).toFixed(2), spot: H.spot && H.spot.kind }; { const [x, z] = W(1.2, -.7); __P.pos.x = x; __P.pos.z = z; } step(.3); o.climb.spot = H.spot && H.spot.kind;
     H.cd = 0; o.tookTommy = __horse.use() && g.state.owned.tommy; step(.5); { const [x, z] = W(-1.4, -.9); __P.pos.x = x; __P.pos.z = z; } step(.3); H.cd = 0; o.goldSpot = H.spot && H.spot.kind; o.tookGold = __horse.use() && g.state.owned.gold; step(.5);
     // 2) lookout 2: the upgrade station (buy a tier, buy a gun)
-    const t2 = T.towers.find(t => t.kind === 'station'); __P.pos.set(t2.cx, t2.y0 + 16, t2.cz - .8); step(.3); H.cd = 0; o.shopSpot = H.spot && H.spot.kind; g.state.owned.gold = false; g.state.score = 10000; g.state.spent = 0; o.shopOpened = __horse.use() && !document.getElementById('hrShop').hidden;
+    const t2 = T.towers.find(t => t.kind === 'station'), [s2x, s2z] = T.toW(t2, 0, -.8); __P.pos.set(s2x, t2.y0 + 16, s2z); step(.3); H.cd = 0; o.shopSpot = H.spot && H.spot.kind; g.state.owned.gold = false; g.state.score = 10000; g.state.spent = 0; o.shopOpened = __horse.use() && !document.getElementById('hrShop').hidden;
     const click = sel => { const b = document.querySelector(sel); if (!b) return false; b.click(); return true; };
     o.buyGold = click('#hrShop button[data-a="buy"][data-w="gold"]') && g.state.owned.gold; o.ptsAfterGold = g.pts(); o.upgrade = click('#hrShop button[data-a="up"][data-w="revolver"]') && g.tier('revolver') === 1; o.ptsAfterUp = g.pts(); o.mag = g.maxAmmo('revolver'); click('#hrShop button[data-a="x"]');
     // 3) town: safe zone, jacket, drinks, darts
@@ -31,7 +37,7 @@ const base = process.argv[2] || 'http://localhost:8767';
     // walking around drunk (level ~6): stumbles; more drinks -> passes out, wakes outside, still hungover
     { const s0 = H.stumbles || 0; for (let i = 0; i < 200; i++) { __P.yaw += .03; k.KeyW = true; __sim(.05); } k.KeyW = false; o.stumbles = (H.stumbles || 0) - s0; o.falls = H.falls || 0; }
     o.swayDrunk = +T.dartSway().toFixed(1); o.swaySober = +sw0.toFixed(1);
-    H.fv.set(0, 0); __P.pos.set(bx, tn.y0 + .45, bz); step(.4); o.preLv = [T.level(), H.spot && H.spot.kind, H.fallT, H.guns.pts(), __P.pos.y - tn.y0, H.mounted, T.spots.filter(q => q.kind === "drink").map(q => [q.y - tn.y0, Math.hypot(__P.pos.x - q.x, __P.pos.z - q.z)]), H.uiOpen, T.passT]; for (let i = 0; i < 4; i++) { H.cd = 0; __horse.use(); } o.postLv = T.level(); step(.3); o.passed = T.passT > 0; step(6); o.woke = T.passT <= 0 && T.level() > 2.9 && T.level() < 3.3; o.wakeDist = +Math.hypot(__P.pos.x - bx, __P.pos.z - bz).toFixed(1);
+    H.fv.set(0, 0); __P.pos.set(bx, tn.y0 + .45, bz); step(.4); o.preLv = [T.level(), H.spot && H.spot.kind, H.fallT, H.guns.pts(), __P.pos.y - tn.y0, H.mounted, T.spots.filter(q => q.kind === "drink").map(q => [q.y - tn.y0, Math.hypot(__P.pos.x - q.x, __P.pos.z - q.z)]), H.uiOpen, T.passT]; for (let i = 0; i < 9; i++) { H.cd = 0; __horse.use(); } o.postLv = T.level(); step(.3); o.passed = T.passT > 0; step(6); o.woke = T.passT <= 0 && T.level() > 2.9 && T.level() < 3.3; o.wakeDist = +Math.hypot(__P.pos.x - bx, __P.pos.z - bz).toFixed(1);
     // darts scoring + a game against the bartender
     o.scores = [[0, 0], [0, 10], [0, 103], [0, 166], [0, 135], [0, 180], [135, 0], [-103, 0], [0, -103]].map(([x, y]) => T.dartScore(x, y).label);
     { const G = T.newGame('P1', 'P2'); G.s[0] = 40; G.start = 40; const r1 = T.applyDart(G, 60); const busted = G.s[0] === 40 && G.turn === 1; G.turn = 0; G.darts = 0; G.start = 40; G.s[0] = 40; const r2 = T.applyDart(G, 40); o.rules = { bust: r1 === 'bust' && busted, win: r2 === 'win' && G.win === 0 }; }
@@ -51,6 +57,8 @@ const base = process.argv[2] || 'http://localhost:8767';
     o.loopErr = window.__loopErr ? String(window.__loopErr) : null; return o; });
   R.errors = errors; console.log(JSON.stringify(R, null, 1));
   assert.ok(R.towerY.every(y => y > R.snowLine), 'lookouts above the snow line');
+  for (const c of R.climbs) { assert.ok(c.top > 15.5, c.kind + ': climbed the stairs to the cab'); assert.ok(['tommy', 'shop'].includes(c.spot), c.kind + ': item / station reachable in the cab'); assert.ok(c.bottom < .3, c.kind + ': walked back down to the ground'); }
+  for (const a of R.approach) assert.ok(a[3] && Math.abs(a[4]) < .7, `${a[0]} entry reached on foot from ${a[1]},${a[2]}`);
   assert.ok(R.climb.top > 15.5, 'climbed the stairs to the cab'); assert.ok(R.tookTommy && R.tookGold, 'took the Tommy gun and the Golden Buffalo');
   assert.ok(R.shopOpened && R.buyGold && R.ptsAfterGold === 7000 && R.upgrade && R.ptsAfterUp === 6700 && R.mag > 6, 'upgrade station: buy a gun, buy a tier');
   assert.ok(R.jacket && R.jacketParts && R.netJacket === 1, 'jacket bought, worn and synced');

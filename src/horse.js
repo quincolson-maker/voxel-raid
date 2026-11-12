@@ -297,7 +297,9 @@ function strawTex(spiral) { const c = document.createElement('canvas'); c.width 
 const DRUNK = { uniforms: { tDiffuse: { value: null }, uK: { value: 0 }, uT: { value: 0 } }, vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
   fragmentShader: 'uniform sampler2D tDiffuse; uniform float uK, uT; varying vec2 vUv; void main(){ vec2 uv = vUv + vec2(sin(vUv.y * 9. + uT * 1.3), cos(vUv.x * 7. + uT)) * .004 * uK; vec2 o = vec2(sin(uT * .7), cos(uT * .53)) * .018 * uK; float b = .004 * uK;' +
     ' vec4 a = texture2D(tDiffuse, uv); vec4 bl = (texture2D(tDiffuse, uv + vec2(b, 0.)) + texture2D(tDiffuse, uv - vec2(b, 0.)) + texture2D(tDiffuse, uv + vec2(0., b)) + texture2D(tDiffuse, uv - vec2(0., b))) * .25; vec4 g = (texture2D(tDiffuse, uv + o) + texture2D(tDiffuse, uv - o)) * .5;' +
-    ' gl_FragColor = mix(mix(a, bl, min(1., uK * 1.4)), g, min(.5, uK * .55)); }' };
+    ' vec2 o2 = vec2(cos(uT * .61), sin(uT * .9)) * .03 * max(0., uK - 1.); vec4 g3 = texture2D(tDiffuse, uv + o2);' +
+    ' vec4 c = mix(mix(a, bl, min(1., uK * 1.4)), g, min(.5, uK * .55)); c = mix(c, g3, min(.33, max(0., uK - 1.) * .5));' + // v34: past 8 drinks a third image
+    ' float vg = smoothstep(.18, .72, length(vUv - .5)) * clamp(uK - .9, 0., 1.) * .9; gl_FragColor = vec4(c.rgb * (1. - vg), c.a); }' }; // and tunnel vision
 const GRADE = { uniforms: { tDiffuse: { value: null }, uAmt: { value: 1 } }, vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
   fragmentShader: `uniform sampler2D tDiffuse; uniform float uAmt; varying vec2 vUv;
 void main(){ vec4 c=texture2D(tDiffuse,vUv); vec3 x=c.rgb; float l=dot(x,vec3(.2126,.7152,.0722));
@@ -685,6 +687,7 @@ export function createHorseRider(ctx) {
     let fA = fwdIn, tA = sideIn; if (stick > .05) { const dz = .14, m = Math.min(1, (stick - dz) / (1 - dz)), k = m > 0 ? m / stick : 0; fA = -input.mz * k; tA = input.mx * k; tA = Math.sign(tA) * Math.pow(Math.abs(tA), 1.35); } // phone stick: deadzone + response curve
     if ((H.drunkK || 0) > 1 && Math.abs(H.speed) > .5) tA = Math.max(-1, Math.min(1, tA + Math.sin(H.t * .55 + 1.3) * Math.min(.5, (H.drunkK - 1) * .08))); // drunk: the horse wanders off line
     H.turnIn = tA; H.fwdIn = fA;
+    if ((H.drunkK || 0) > 8 && H.speed > 10.5 && fA > .2 && !H.mountT && !H.dismT && Math.random() < dt * (H.drunkK - 8) * .035) H.throwNow = true; // v34: very drunk at a gallop: you can fall off
     let target = 0, brake = false, coast = false;
     if (!busy) {
       if (fA < -.25) { brake = true; H.backT = Math.abs(H.speed) < .6 ? (H.backT || 0) + dt : 0; target = H.backT > .45 ? -1.6 : 0; }
@@ -747,7 +750,8 @@ export function createHorseRider(ctx) {
     H.fv.x += (mx - H.fv.x) * Math.min(1, dt * 9); H.fv.y += (mz - H.fv.y) * Math.min(1, dt * 9); // momentum: ease into and out of a run
     { const dk = H.drunkK || 0, vv = Math.hypot(H.fv.x, H.fv.y); if (dk > 2.5 && vv > 1 && H.ground && !(H.fallT > 0)) { // drunk on foot: stumbles, then falls over
       if (Math.random() < dt * (dk - 2.5) * .22) { const a = Math.random() * TAU; H.fv.x += Math.cos(a) * 2.2; H.fv.y += Math.sin(a) * 2.2; H.shake = Math.max(H.shake, .3); H.stumbles = (H.stumbles || 0) + 1; }
-      if (dk > 4.5 && Math.random() < dt * (dk - 4.5) * .12) { H.fallT = 2.2; H.falls = (H.falls || 0) + 1; H.fv.set(0, 0); msg('You fell over', 1.5); } } }
+      // v34: trips only while you are pushing on and running fast; the chance climbs with every drink; down 1.5-3 s, then you get up
+      if (l > .12 && vv > 5 && dk > 3 && Math.random() < dt * (dk - 3) * .045 * Math.min(1.6, (vv - 4.5) / 2.7)) { H.fallD = H.fallT = 1.5 + Math.random() * 1.5; H.falls = (H.falls || 0) + 1; H.trips = (H.trips || 0) + 1; H.fallYaw = Math.random() < .5 ? -1 : 1; H.fv.set(0, 0); H.shake = Math.max(H.shake, .5); msg(dk > 10 ? 'You faceplant in the dirt' : 'You tripped and fell', 1.5); } } }
     const v = H.fv.length(), ox0 = P.pos.x, oz0 = P.pos.z, gy0 = hAt(ox0, oz0), onS = town2 && town2.onStruct(ox0, oz0, P.pos.y); H.curY = P.pos.y; moveCircle(P.pos, H.fv.x * dt, H.fv.y * dt, .35, null); H.curY = null;
     if (!onS && !(town2 && town2.onStruct(P.pos.x, P.pos.z, P.pos.y)) && slopeGate(P.pos, ox0, oz0, gy0, 1.3, .35, null)) H.fv.multiplyScalar(.9); // scrambling up: only up to ~52 degrees
     const g0 = town2 ? town2.floorAt(P.pos.x, P.pos.z, P.pos.y) : hAt(P.pos.x, P.pos.z); if (jump && H.ground) { H.vy = 7; H.ground = false; }
@@ -763,6 +767,8 @@ export function createHorseRider(ctx) {
   addEventListener('wheel', e => { if (!H.on || !document.body.classList.contains('horse-mode') || H.scoped) return; H.zoom = Math.max(.5, Math.min(1.5, H.zoom * (e.deltaY > 0 ? 1.08 : 1 / 1.08))); }, { passive: true }); // camera zoom
   function tick(dt) {
     if (!H.on) return; H.t += dt; TREE_WIND.value += dt; H.cd = Math.max(0, H.cd - dt); H.shake = Math.max(0, H.shake - dt * 1.6);
+    if (H.throwNow) { H.throwNow = false; const hh = H.mounted; if (hh && dismount()) { H.remountH = hh; H.fallD = H.fallT = 1.6 + Math.random() * 1.2; H.falls = (H.falls || 0) + 1; H.thrown = (H.thrown || 0) + 1; H.fv.set(0, 0); H.shake = Math.max(H.shake, .6); msg('You fell off your horse!', 2); } }
+    if (H.remountH && !(H.fallT > 0)) { const hh = H.remountH; H.remountH = null; if (!H.mounted && !H.ridden.has(hh) && Math.hypot(hh.pos.x - P.pos.x, hh.pos.z - P.pos.z) < 6) { H.cd = 0; if (nearestHorse() === hh) use(); } } // v34: get up and climb back on
     const h = H.mounted;
     let fwdIn = 0, sideIn = 0; if (keys.KeyW || keys.ArrowUp) fwdIn += 1; if (keys.KeyS || keys.ArrowDown) fwdIn -= 1; if (keys.KeyD || keys.ArrowRight) sideIn += 1; if (keys.KeyA || keys.ArrowLeft) sideIn -= 1;
     let stick = Math.min(1, Math.hypot(input.mx || 0, input.mz || 0)); if (stick > .05) { fwdIn = -input.mz; sideIn = input.mx; }
@@ -815,9 +821,14 @@ export function createHorseRider(ctx) {
     const dx = to.x - from.x, dz = to.z - from.z; for (let t = .3; t <= 1.001; t += .175) { const x = from.x + dx * t, z = from.z + dz * t;
       for (const [ox, oz, or] of obstNear(x, z)) if (Math.abs(ox - x) < or + .35 && Math.abs(oz - z) < or + .35 && Math.hypot(ox - x, oz - z) < or + .3) { to.x = from.x + dx * (t - .2); to.z = from.z + dz * (t - .2); to.y = from.y + (to.y - from.y) * (t - .2); return; } } }
   function syncCamera(dt) { if (H.fovSave) { camera.fov = H.fovSave; H.fovSave = 0; camera.updateProjectionMatrix(); } camRig(dt); if (guns) guns.scopeCam(dt); } // the scope takes over after the rig
+  function drunkCam(h) { // v33/34 drunk sway, double / triple vision, tunnel vision, hiccups and the fall-over camera
+    { const dk = H.drunkK || 0; if (dk > .05) { const t = H.t, k = Math.min(2.8, dk / 5); camera.rotateZ(Math.sin(t * .55) * .09 * k + Math.sin(t * 1.3) * .02 * k); camera.rotateY(Math.sin(t * .43 + 1) * .03 * k); camera.rotateX(Math.sin(t * .71) * .025 * k); }
+      { const k = Math.min(1.9, Math.pow(dk / 6, 1.3)); if (H.drunkPass) { H.drunkPass.enabled = k > .03; H.drunkPass.uniforms.uK.value = k; H.drunkPass.uniforms.uT.value = H.t; } else { const f = k > .03 ? `blur(${(Math.min(1, k) * 2.2).toFixed(1)}px)` : ''; if (GX.renderer.domElement.style.filter !== f) GX.renderer.domElement.style.filter = f; } }
+      if (town2 && town2.hic > 0) camera.position.y += Math.sin(town2.hic * 25) * .04; if (H.fallT > 0 && !h) { const D = H.fallD || 2.2, e = Math.min(1, (D - H.fallT) * 4) * Math.min(1, H.fallT * 1.6); camera.position.y -= 1.25 * e; camera.rotateZ((H.fallYaw || 1) * .75 * e); camera.rotateX(-.25 * e); } }
+  }
   function camRig(dt) {
     const h = H.mounted;
-    if (!h && (H.fp || !real())) { if (camera.fov !== 75) { camera.fov = 75; camera.updateProjectionMatrix(); } camera.position.set(P.pos.x, P.pos.y + 1.62 + (H.ground ? Math.abs(Math.cos(P.bob)) * .04 : 0), P.pos.z); camera.rotation.set(P.pitch, P.yaw, 0, 'YXZ'); H.camInit = false; return; }
+    if (!h && (H.fp || !real())) { if (camera.fov !== 75) { camera.fov = 75; camera.updateProjectionMatrix(); } camera.position.set(P.pos.x, P.pos.y + 1.62 + (H.ground ? Math.abs(Math.cos(P.bob)) * .04 : 0), P.pos.z); camera.rotation.set(P.pitch, P.yaw, 0, 'YXZ'); H.camInit = false; drunkCam(h); return; }
     let fov, k;
     const ak = H.aimK || 0;
     if (!h) { const pitch = Math.max(-.85, Math.min(.6, P.pitch)), dist = 2.75 * Math.min(1.3, H.zoom) * (1 - .45 * ak), rx = Math.cos(P.yaw), rz = -Math.sin(P.yaw), v = H.fv.length();
@@ -835,9 +846,7 @@ export function createHorseRider(ctx) {
     camera.position.copy(look).add(camPos); camera.position.y = Math.max(camera.position.y, hAt(camera.position.x, camera.position.z) + .4); if (H.shake > 0) camera.position.add(tmp.set((Math.random() - .5), (Math.random() - .5), (Math.random() - .5)).multiplyScalar(H.shake * .12)); camera.lookAt(look);
     { const cp = h ? Math.max(-.7, Math.min(.35, P.pitch)) : Math.max(-.85, Math.min(.6, P.pitch)), ex = Math.max(-1.553, Math.min(1.553, P.pitch)) - cp; if (Math.abs(ex) > 1e-4) camera.rotateX(ex); } // v33: the camera keeps its orbit, the view tilts on to look straight up / down (+-89 deg)
     if (h) camera.rotateZ(H.roll * .3);
-    { const dk = H.drunkK || 0; if (dk > .05) { const t = H.t, k = Math.min(1.6, dk / 5); camera.rotateZ(Math.sin(t * .55) * .09 * k + Math.sin(t * 1.3) * .02 * k); camera.rotateY(Math.sin(t * .43 + 1) * .03 * k); camera.rotateX(Math.sin(t * .71) * .025 * k); }
-      { const k = Math.min(1, Math.pow(dk / 6, 1.3)); if (H.drunkPass) { H.drunkPass.enabled = k > .03; H.drunkPass.uniforms.uK.value = k; H.drunkPass.uniforms.uT.value = H.t; } else { const f = k > .03 ? `blur(${(k * 2.2).toFixed(1)}px)` : ''; if (GX.renderer.domElement.style.filter !== f) GX.renderer.domElement.style.filter = f; } }
-      if (town2 && town2.hic > 0) camera.position.y += Math.sin(town2.hic * 25) * .04; if (H.fallT > 0 && !h) { camera.position.y -= Math.min(1.1, (2.2 - H.fallT) * 2.5) * Math.min(1, H.fallT * 2); camera.rotateZ(.5 * Math.min(1, H.fallT)); } }
+    drunkCam(h);
     if (Math.abs(camera.fov - fov) > .05) { camera.fov += (fov - camera.fov) * Math.min(1, (dt || 1) * 3); camera.updateProjectionMatrix(); }
     updateReins();
   }
