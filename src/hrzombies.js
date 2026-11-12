@@ -58,7 +58,7 @@ export function createHrZombies(c) {
     for (const [ox, oz, or] of (H.obstNear ? H.obstNear(x, z) : [])) if (Math.hypot(ox - x, oz - z) < or + .8) return false; return true; }
   function nearSpot() { const ps = players(); if (!ps.length) return null; for (let i = 0; i < 24; i++) { const q = ps[(rnd() * ps.length) | 0], a = rnd() * Math.PI * 2, d = 40 + rnd() * 50, x = q.x + Math.cos(a) * d, z = q.z + Math.sin(a) * d; if (goodGround(x, z) && ps.every(p => Math.hypot(p.x - x, p.z - z) > 35)) return [x, z]; } return null; }
   Z.goodGround = goodGround; Z.nearSpot = nearSpot;
-  function relocate(o, why) { const at = nearSpot(); if (!at) return false; o.pos.set(at[0], hAt(at[0], at[1]), at[1]); o.prog = null; o.stuckT = 0; o.farT = 0; o.tp = (o.tp || 0) + 1; Z.relocs = (Z.relocs || 0) + 1; Z.lastReloc = why; return true; }
+  function relocate(o, why) { const at = nearSpot(); if (!at) return false; o.pos.set(at[0], hAt(at[0], at[1]), at[1]); o.yaw = Math.atan2(at[0] - PEN.x, at[1] - PEN.z); o.sp = 0; o.push = null; o.tgt = null; o.prog = null; o.stuckT = 0; o.farT = 0; o.tp = (o.tp || 0) + 1; Z.relocs = (Z.relocs || 0) + 1; Z.lastReloc = why; return true; }
   Z.relocate = relocate;
   function spawn(kind, at, id) {
     kind = ZKINDS[kind] ? kind : 'walker'; const K = ZKINDS[kind], B = makeBody(kind), g = new THREE.Group(); g.add(B.m); B.m.rotation.y = Math.PI; B.m.position.set(0, 0, 0); B.m.scale.setScalar(K.s); scene.add(g);
@@ -161,7 +161,7 @@ export function createHrZombies(c) {
     if (host) { // waves: a steady trickle that thickens; capped (phones lower)
       if ((Z.waveT += dt) > ZSET.waveSecs) { Z.waveT = 0; Z.wave++; c.msg && c.msg(`Wave ${Z.wave} — more of the dead are coming down from the mountains`, 3); }
       const live = Z.list.filter(o => o.alive).length; if (Z.wasRole === 'client') Z.spawnT = Math.min(Z.spawnT, 1); // just became the host: keep the horde coming
-      Z.spawnT -= dt; if (Z.spawnT <= 0 && live < Z.cap) { Z.spawnT = live < Z.cap * .5 ? .4 : Math.max(.75, (7 - Z.wave * .7) / 3) * (rnd() * .5 + .75); spawn(pickKind()); } }
+      Z.spawnT -= dt; if (Z.spawnT <= 0 && live < Z.cap) { Z.spawnT = live < Z.cap * .5 ? .4 : Math.min(1.2, Math.max(.75, (7 - Z.wave * .7) / 3) * (rnd() * .5 + .75)); spawn(pickKind()); } }
     Z.wasRole = Z.role();
     const cam = c.camera.position;
     for (const o of [...Z.list]) { o.anim += dt; o.flinch = Math.max(0, o.flinch - dt * 2.5);
