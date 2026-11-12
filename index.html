@@ -154,6 +154,29 @@ body.hr-scoped #hud,body.hr-scoped #hrZ,body.hr-scoped #hrGun,body.hr-scoped #nu
 #hrScope .br{position:absolute;left:50%;bottom:calc(50% - var(--R) - 22px);width:120px;height:4px;margin-left:-60px;background:rgba(255,255,255,.15);border-radius:2px;overflow:hidden}#hrScope .br b{display:block;height:100%;background:#e9d39a}
 #hrScope.steady .br b{background:#9fe0a0}#hrScope.winded .br b{background:#ff7a5a}#hrScope .tip{position:absolute;left:50%;bottom:calc(50% - var(--R) - 44px);transform:translateX(-50%);font:600 11px system-ui,sans-serif;letter-spacing:.12em;color:#e9d9b0;text-transform:uppercase;white-space:nowrap}
 .touch #hrScope .br{display:none}body.hr-scoped #hrCross{display:none}
+#hrScope .pops{position:absolute;left:calc(50% + 34px);top:calc(50% - 64px);display:flex;flex-direction:column-reverse;gap:2px;font:800 19px/1.1 system-ui,sans-serif;color:#ffe9a8;text-shadow:0 0 3px #000,0 1px 2px #000,0 0 8px #000a;white-space:nowrap}
+#hrScope .pops b{animation:hrPop 1.4s ease-out forwards}#hrScope .pops b.k{color:#9dff7a;font-size:21px}#hrScope .pops b.h{color:#ff8a5a}
+@keyframes hrPop{0%{opacity:0;transform:translateY(8px) scale(1.3)}12%{opacity:1;transform:none}75%{opacity:1}100%{opacity:0;transform:translateY(-14px)}}
+#hrScope .hx{position:absolute;left:50%;top:50%;width:30px;height:30px;margin:-15px 0 0 -15px;opacity:0}#hrScope .hx i{position:absolute;width:9px;height:2.5px;background:#fff;box-shadow:0 0 2px #000;left:50%;top:50%}
+#hrScope .hx i:nth-child(1){transform:translate(-14px,-10px) rotate(45deg)}#hrScope .hx i:nth-child(2){transform:translate(5px,-10px) rotate(-45deg)}#hrScope .hx i:nth-child(3){transform:translate(-14px,8px) rotate(-45deg)}#hrScope .hx i:nth-child(4){transform:translate(5px,8px) rotate(45deg)}
+#hrScope .hx.on{animation:hrHx .35s ease-out}#hrScope .hx.hd i{background:#ff6a4a}@keyframes hrHx{0%{opacity:1;transform:scale(1.4)}100%{opacity:0;transform:scale(1)}}
+#hrScope .pts{position:absolute;left:50%;top:calc(50% - var(--R) + 18px);transform:translateX(-50%);font:700 13px system-ui,sans-serif;letter-spacing:.08em;color:#f3e6c8;text-shadow:0 1px 2px #000;white-space:nowrap}
+#hrScope .zm{display:none;position:absolute;right:calc(50% - var(--R) - 70px);top:50%;transform:translateY(-50%);flex-direction:column;align-items:center;gap:8px;pointer-events:auto}
+#hrScope.gold .zm{display:flex}#hrScope .zm button{width:52px;height:52px;min-width:0;max-width:52px;padding:0;flex:none;line-height:1;border-radius:50%;border:2px solid #f3d27a;background:rgba(20,16,8,.75);color:#ffe9a8;font:800 26px system-ui;touch-action:none}#hrScope .zm span{font:700 13px system-ui;color:#ffe9a8;text-shadow:0 1px 2px #000}
+#hrGun .cnt{font:700 15px system-ui,sans-serif;letter-spacing:.06em}
+#hrLB{position:fixed;right:12px;top:64px;z-index:24;pointer-events:none;font:600 12px/1.35 system-ui,sans-serif;color:#f3e6c8;background:rgba(12,12,14,.42);border-radius:8px;padding:5px 8px;min-width:120px;text-shadow:0 1px 2px #000}
+#hrLB b{display:block;letter-spacing:.14em;font-size:10px;opacity:.75;margin-bottom:2px}#hrLB div{display:flex;gap:8px;justify-content:space-between}#hrLB div.me{color:#ffe08a}#hrLB span.r{opacity:.65;width:14px}#hrLB span.n{flex:1}
+body.hr-scoped #hrLB,body.hr-scoped #hrTags{display:none}
+#hrTags{position:fixed;inset:0;pointer-events:none;z-index:20}#hrTags .t{position:absolute;left:0;top:0;transform:translate(-50%,-100%);font:800 13px/1 system-ui,sans-serif;padding:3px 7px;border-radius:10px;background:rgba(10,12,14,.6);white-space:nowrap;text-shadow:0 1px 2px #000;border:1.5px solid currentColor}
+#hrTags .t small{font-weight:600;opacity:.8;margin-left:4px}#hrTags .t.edge{border-radius:50%;padding:5px 6px;transform:translate(-50%,-50%)}#hrTags .t.edge::after{content:'';position:absolute;left:50%;top:50%;width:0;height:0;border:7px solid transparent;border-left-color:currentColor;transform:translate(14px,-50%) rotate(var(--a,0deg));transform-origin:-14px 50%}
+#hrCheck[hidden],#hrDarts[hidden],#hrShop[hidden]{display:none!important}
+#hrCheck,#hrDarts{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:40;background:rgba(18,12,8,.95);border:2px solid #c9a050;border-radius:14px;padding:10px;color:#f3e6c8;font:600 14px system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:auto}
+#hrCheck canvas,#hrDarts canvas{width:min(360px,62vh);height:min(360px,62vh);touch-action:none;border-radius:8px;cursor:crosshair}#hrCheck .sb,#hrDarts .sb{text-align:center;max-width:360px}#hrCheck .bt,#hrDarts .bt{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+#hrCheck button,#hrDarts button{min-height:40px;min-width:80px;border-radius:9px;border:1.5px solid #c9a050;background:#2a241a;color:#ffe9a8;font:700 13px system-ui;touch-action:manipulation}
+#hrShop{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:40;background:rgba(18,16,12,.94);border:2px solid #c9a050;border-radius:14px;color:#f3e6c8;font:600 14px system-ui,sans-serif;padding:14px 16px;width:min(560px,94vw);max-height:90vh;overflow:auto;pointer-events:auto}
+#hrShop h3{margin:0 0 4px;letter-spacing:.12em;font-size:15px;color:#ffd77a}#hrShop .pt{margin-bottom:8px;opacity:.9}#hrShop .row{display:flex;align-items:center;gap:6px;margin:6px 0;flex-wrap:wrap}#hrShop .row .nm{flex:1;min-width:120px}
+#hrShop button{min-height:42px;min-width:84px;border-radius:9px;border:1.5px solid #c9a050;background:#2a241a;color:#ffe9a8;font:700 13px system-ui;touch-action:manipulation}#hrShop button:disabled{opacity:.4}#hrShop button.b{border-color:#cd7f32}#hrShop button.s{border-color:#c0c0c0}#hrShop button.g{border-color:#ffd700}#hrShop .x{position:absolute;right:10px;top:8px;min-width:42px}
+
 #hrCross::after{content:'';position:absolute;left:-1.5px;top:-1.5px;width:3px;height:3px;border-radius:50%;background:#fff;box-shadow:0 0 2px #000}#hrCross.aim i{border-color:#fff}#hrCross.no{opacity:.35}#hrCross.no i{border-color:#ff6a50}
 #hrStam{position:fixed;left:50%;bottom:15%;width:150px;height:6px;margin-left:-75px;border-radius:3px;background:rgba(10,8,4,.5);box-shadow:0 0 0 1px #0006;overflow:hidden;pointer-events:none;opacity:0;transition:opacity .5s;z-index:20}#hrStam i{display:block;height:100%;background:linear-gradient(90deg,#c98a2e,#f2dc9a);transition:width .2s}#hrStam.low i{background:linear-gradient(90deg,#a3301e,#e07a4a)}body:not(.horse-mode) #hrStam{display:none}.touch.horse-mode #hrStam{bottom:auto;top:24%}
 </style>
@@ -179,5 +202,5 @@ body.hr-scoped #hud,body.hr-scoped #hrZ,body.hr-scoped #hrGun,body.hr-scoped #nu
 <div id="rot"><div class="ph"></div><p>Rotate your phone to landscape</p><button id="rotskip">Play anyway</button></div>
 <div id="ioshint" class="pill">For true fullscreen on iPhone: tap Share → <b>Add to Home Screen</b>, then launch Voxel Raid from your home screen. <button id="ioshintx" style="padding:.2em .6em">OK</button></div>
 <script src="./vendor/peerjs.min.js"></script>
-<script type="module" src="./game.min.js?v=32-realism"></script>
+<script type="module" src="./game.min.js?v=33-towers"></script>
 </body></html>

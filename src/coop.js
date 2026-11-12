@@ -1,8 +1,8 @@
-// Co-op transport (up to 4 players): PeerJS (vendored, MIT) WebRTC data channels in a host-authoritative star.
+// Co-op transport (up to 25 players): PeerJS (vendored, MIT) WebRTC data channels in a host-authoritative star.
 // The free public PeerJS broker is used for signaling only; gameplay traffic is peer-to-peer. No game server.
 const ALPH = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const pid = c => 'voxelraid-deadsignal-' + c;
-export const MAX_PLAYERS = 4;
+export const MAX_PLAYERS = 25; // v33: Quin asked for 25 riders per lobby
 export const cleanCode = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
 // Test-only loopback (?loopnet=1): tabs in one browser talk over BroadcastChannel with the same message flow.
 // Used because the CI/box Chrome policy disables non-proxied WebRTC UDP; real players always use WebRTC.

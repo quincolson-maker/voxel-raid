@@ -12,8 +12,8 @@ export const ZKINDS = {
   runner: { hp: 70, spd: 4.3, dmg: 9, cd: .9, s: .97, reach: 1.2 },
   brute: { hp: 320, spd: 1.15, dmg: 28, cd: 1.6, s: 1.28, reach: 1.5 },
 };
-export const ZSET = { travel: 6, near: 90, capDesktop: 14, capPhone: 6, startDelay: 10, waveSecs: 75, playerHp: 100, horseHp: 160, regenDelay: 5, regen: 7, respawn: 4,
-  dmg: { revolver: 50, rifle: 70, sniper: 260 }, head: 2.4, penMargin: 1.1 };
+export const ZSET = { travel: 6, near: 90, capDesktop: 42, capPhone: 18, startDelay: 10, waveSecs: 75, playerHp: 100, horseHp: 160, regenDelay: 5, regen: 7, respawn: 4,
+  dmg: { revolver: 50, rifle: 70, sniper: 260, tommy: 34, gold: 650 }, head: 2.4, penMargin: 1.1 };
 const KIND_LIST = ['walker', 'runner', 'brute'];
 
 export function createHrZombies(c) {
@@ -26,8 +26,11 @@ export function createHrZombies(c) {
   // pen rectangle the dead may never enter (fence + gate gap + a little margin)
   const RX = PEN.hw + ZSET.penMargin, RZ = PEN.hd + ZSET.penMargin;
   const inPenRect = (x, z, m = 0) => Math.abs(x - PEN.x) < RX + m && Math.abs(z - PEN.z) < RZ + m;
-  const inPenSafe = (x, z) => Math.abs(x - PEN.x) < PEN.hw + .2 && Math.abs(z - PEN.z) < PEN.hd + .4; // targets standing inside are out of reach
-  function pushOutOfPen(p) { if (!inPenRect(p.x, p.z)) return false; const dx = p.x - PEN.x, dz = p.z - PEN.z, ox = RX - Math.abs(dx), oz = RZ - Math.abs(dz);
+  const inTown = (x, z, m = 0) => { for (const q of (H.safeRects || [])) if (Math.abs(x - q.x) < q.hw + m && Math.abs(z - q.z) < q.hd + m) return q; return null; }; // v33: the town is a safe zone too
+  const inPenSafe = (x, z) => (Math.abs(x - PEN.x) < PEN.hw + .2 && Math.abs(z - PEN.z) < PEN.hd + .4) || !!inTown(x, z); // targets standing inside are out of reach
+  const inSafeZone = (x, z) => inTown(x, z) ? 'town' : Math.abs(x - PEN.x) < PEN.hw + .2 && Math.abs(z - PEN.z) < PEN.hd + .4 ? 'pen' : '';
+  function pushOutOfPen(p) { const q = inTown(p.x, p.z, .6); if (q) { const dx = p.x - q.x, dz = p.z - q.z, ox = q.hw + .6 - Math.abs(dx), oz = q.hd + .6 - Math.abs(dz); if (ox < oz) p.x = q.x + Math.sign(dx || 1) * (q.hw + .61); else p.z = q.z + Math.sign(dz || 1) * (q.hd + .61); return true; } // they turn away at the town's edge
+    if (!inPenRect(p.x, p.z)) return false; const dx = p.x - PEN.x, dz = p.z - PEN.z, ox = RX - Math.abs(dx), oz = RZ - Math.abs(dz);
     if (ox < oz) p.x = PEN.x + Math.sign(dx || 1) * (RX + .01); else p.z = PEN.z + Math.sign(dz || 1) * (RZ + .01); return true; }
   function segHitsPen(ax, az, bx, bz) { // does the straight walk from a to b cross the pen rectangle?
     const n = Math.ceil(Math.hypot(bx - ax, bz - az) / 1.5); for (let i = 1; i < n; i++) { const t = i / n; if (inPenRect(ax + (bx - ax) * t, az + (bz - az) * t, -.05)) return true; } return false; }
@@ -59,11 +62,11 @@ export function createHrZombies(c) {
   const pickKind = () => { const w = Z.wave, r = rnd(); if (w >= 3 && r < Math.min(.15, .04 * w)) return 'brute'; if (w >= 2 && r < Math.min(.5, .12 * w)) return 'runner'; return 'walker'; };
 
   // ---- who they go for: players on foot or riding (their horse), loose horses outside the pen ----
-  function players() { const out = []; if (!Z.dead) { const h = H.mounted; out.push({ id: H.me || 'P1', me: true, x: h ? h.pos.x : P.pos.x, z: h ? h.pos.z : P.pos.z, horse: h || null }); }
-    for (const r of (c.remotes ? c.remotes() : [])) if (r && r.s && !r.s.dd) { const h = r.s.m >= 0 ? H.horses[r.s.m] : null; out.push({ id: r.id, me: false, x: h ? h.pos.x : r.s.x, z: h ? h.pos.z : r.s.z, horse: h }); }
+  function players() { const out = []; if (!Z.dead) { const h = H.mounted; out.push({ id: H.me || 'P1', me: true, x: h ? h.pos.x : P.pos.x, y: h ? h.pos.y : P.pos.y, z: h ? h.pos.z : P.pos.z, horse: h || null }); }
+    for (const r of (c.remotes ? c.remotes() : [])) if (r && r.s && !r.s.dd) { const h = r.s.m >= 0 ? H.horses[r.s.m] : null; out.push({ id: r.id, me: false, x: h ? h.pos.x : r.s.x, y: h ? h.pos.y : r.s.y, z: h ? h.pos.z : r.s.z, horse: h }); }
     return out; }
   function chooseTarget(o) { let best = null, bd = 1e9;
-    for (const p of players()) { const d = Math.hypot(p.x - o.pos.x, p.z - o.pos.z) + (inPenSafe(p.x, p.z) ? 40 : 0); if (d < bd) { bd = d; best = { kind: 'player', p, x: p.x, z: p.z, safe: inPenSafe(p.x, p.z) }; } }
+    for (const p of players()) { const up = (p.y ?? o.pos.y) - o.pos.y > 2.6, sf = inPenSafe(p.x, p.z) || up, d = Math.hypot(p.x - o.pos.x, p.z - o.pos.z) + (sf ? 40 : 0); if (d < bd) { bd = d; best = { kind: 'player', p, x: p.x, z: p.z, safe: sf, up }; } }
     for (const h of H.horses) { if (H.ridden && H.ridden.has(h)) continue; if (h === H.mounted || inPenSafe(h.pos.x, h.pos.z)) continue; const d = Math.hypot(h.pos.x - o.pos.x, h.pos.z - o.pos.z) * 1.3; if (d < bd) { bd = d; best = { kind: 'horse', h, x: h.pos.x, z: h.pos.z, safe: false }; } }
     return best; }
 
@@ -88,14 +91,14 @@ export function createHrZombies(c) {
       const tb = rc(ro, d, o.pos.x, o.pos.z, .3 * o.K.s, o.pos.y, o.pos.y + 1.5 * o.K.s); if (tb > 0 && tb < maxT && (!best || tb < best.t - .05)) best = { t: tb, Z: o, head: false }; }
     return best; }
   function assistPoints() { const out = []; for (const o of Z.list) if (o.alive) { out.push({ c: headPos(o, new THREE.Vector3()), z: o }); out.push({ c: new THREE.Vector3(o.pos.x, o.pos.y + 1.15 * o.K.s, o.pos.z), z: o }); } return out; }
-  function damage(o, dmg, head, p, dir, by) { if (!o || !o.alive) return false; o.hp -= dmg; o.flinch = Math.min(1, o.flinch + (head ? .8 : .45)); if (dir) o.push = [dir.x * (dmg > 150 ? 2.5 : .8), dir.z * (dmg > 150 ? 2.5 : .8)];
-    if (o.hp <= 0) kill(o, head, by); return true; }
-  function kill(o, head, by) { o.alive = false; o.hp = 0; o.st = 2; o.deadT = 0; o.fallDir = rnd() < .5 ? 1 : -1; if (by !== 'remote') { Z.kills++; if (head) Z.heads++; }
+  function damage(o, dmg, head, p, dir, by, from) { if (!o || !o.alive) return false; o.hp -= dmg; o.flinch = Math.min(1, o.flinch + (head ? .8 : .45)); if (dir) o.push = [dir.x * (dmg > 150 ? 2.5 : .8), dir.z * (dmg > 150 ? 2.5 : .8)];
+    if (o.hp <= 0) { kill(o, head, by); if (from && c.sendTo) { c.sendTo(from, { t: 'zk', h: head ? 1 : 0 }); c.creditRemote && c.creditRemote(from, head); } } return true; }
+  function kill(o, head, by) { if (!o.alive) return; o.alive = false; o.hp = 0; o.st = 2; o.deadT = 0; o.fallDir = rnd() < .5 ? 1 : -1; if (by !== 'remote') { Z.kills++; if (head) Z.heads++; }
     if (sfx.at && sfx.ctx) sfx.at(o.pos, () => { sfx.tone('sawtooth', 120, 40, .22, .7); sfx.nz('lowpass', 300, 1, .25, .4); }, .3); }
-  function onHit(o, w, head, p, dir) { // a local player's bullet hit this zombie
-    const dmg = Math.round((ZSET.dmg[w] || 50) * (head ? ZSET.head : 1));
+  function onHit(o, w, head, p, dir, mul = 1) { // a local player's bullet hit this zombie
+    const dmg = Math.round((ZSET.dmg[w] || 50) * (head ? ZSET.head : 1) * mul);
     if (fx) { fx.debris && fx.debris(p.x, p.y, p.z, 0x5a1410, head ? 10 : 6, .6); fx.number && fx.number(p, dmg, head); }
-    if (Z.role() === 'client') { c.send && c.send({ t: 'zh', id: o.id, d: dmg, h: head ? 1 : 0 }); o.hp -= dmg; o.flinch = 1; if (o.hp <= 0) { Z.kills++; if (head) Z.heads++; kill(o, head, 'remote'); } return { dmg, head, killed: !o.alive }; }
+    if (Z.role() === 'client') { c.send && c.send({ t: 'zh', id: o.id, d: dmg, h: head ? 1 : 0 }); o.hp -= dmg; o.flinch = 1; if (o.hp <= 0) kill(o, head, 'remote'); return { dmg, head, killed: !o.alive }; }
     damage(o, dmg, head, p, dir, 'me'); return { dmg, head, killed: !o.alive }; }
 
   // ---- per-frame ----
@@ -110,13 +113,15 @@ export function createHrZombies(c) {
     if (o.hold) { o.sp = 0; o.st = 0; return; } // dev / tests: stand still
     const T = o.tgt = (o.retT = (o.retT || 0) - dt) <= 0 || !o.tgt ? chooseTarget(o) : o.tgt; if (o.retT <= 0) o.retT = .5;
     let tx = T ? (T.kind === 'horse' ? T.h.pos.x : T.p.x) : PEN.x, tz = T ? (T.kind === 'horse' ? T.h.pos.z : T.p.z) : PEN.z;
-    const dist = Math.hypot(tx - o.pos.x, tz - o.pos.z), reach = o.K.reach + (T && (T.kind === 'horse' || T.p.horse) ? .8 : 0), safe = T && (T.kind === 'horse' ? inPenSafe(tx, tz) : inPenSafe(T.p.x, T.p.z));
+    const dist = Math.hypot(tx - o.pos.x, tz - o.pos.z), reach = o.K.reach + (T && (T.kind === 'horse' || T.p.horse) ? .8 : 0), safe = T && (T.kind === 'horse' ? inPenSafe(tx, tz) : inPenSafe(T.p.x, T.p.z) || ((T.p.y ?? o.pos.y) - o.pos.y > 2.6));
     o.cd -= dt;
     if (T && dist < reach && !safe) { o.st = 1; o.sp = 0; const want = Math.atan2(-(tx - o.pos.x), -(tz - o.pos.z)); o.yaw += Math.atan2(Math.sin(want - o.yaw), Math.cos(want - o.yaw)) * Math.min(1, dt * 8);
       if (o.cd <= 0) { o.cd = o.K.cd; const d = o.K.dmg;
         if (T.kind === 'horse') hurtHorse(T.h, d); else if (T.p.me) hurtMe(T.p.horse ? d * .4 : d, T.p.horse ? d : 0); else c.sendTo && c.sendTo(T.p.id, { t: 'zd', d: T.p.horse ? Math.round(d * .4) : d, hz: T.p.horse ? d : 0 }); } return; }
     o.st = 0;
-    if (safe) { const dx = tx - PEN.x, dz = tz - PEN.z, ox = PEN.hw - Math.abs(dx), oz = PEN.hd - Math.abs(dz); // prey inside the pen: press up against the rails nearest to it
+    if (safe && inTown(tx, tz)) { const q = inTown(tx, tz); tx = o.pos.x + Math.sign(o.pos.x - q.x || 1) * 0; tz = o.pos.z; } // prey in town: they mill around outside the edge
+    else if (safe && T && T.up) { /* prey up a lookout: crowd at the foot */ }
+    else if (safe) { const dx = tx - PEN.x, dz = tz - PEN.z, ox = PEN.hw - Math.abs(dx), oz = PEN.hd - Math.abs(dz); // prey inside the pen: press up against the rails nearest to it
       if (ox < oz) tx = PEN.x + Math.sign(dx || 1) * (RX + .35); else tz = PEN.z + Math.sign(dz || 1) * (RZ + .35); }
     const det = penDetour(o, tx, tz); if (det) [tx, tz] = det;
     const far = dist > ZSET.near, spd = Math.max(o.K.spd, far ? ZSET.travel : 0) * (1 - o.flinch * .6), dx = tx - o.pos.x, dz = tz - o.pos.z, l = Math.hypot(dx, dz) || 1;
@@ -139,7 +144,7 @@ export function createHrZombies(c) {
     for (const h of H.horses) { if (h.hp == null) h.hp = ZSET.horseHp; if (h.panic > 0) h.panic -= dt; if (h.hp < ZSET.horseHp && (inPenSafe(h.pos.x, h.pos.z) || (Z.t % 1 < dt && h.panic <= 0))) h.hp = Math.min(ZSET.horseHp, h.hp + (inPenSafe(h.pos.x, h.pos.z) ? 12 : 2) * dt); }
     if (host) { // waves: a steady trickle that thickens; capped (phones lower)
       if ((Z.waveT += dt) > ZSET.waveSecs) { Z.waveT = 0; Z.wave++; c.msg && c.msg(`Wave ${Z.wave} — more of the dead are coming down from the mountains`, 3); }
-      const live = Z.list.filter(o => o.alive).length; Z.spawnT -= dt; if (Z.spawnT <= 0 && live < Z.cap) { Z.spawnT = Math.max(2.2, 7 - Z.wave * .7) * (rnd() * .5 + .75); spawn(pickKind()); } }
+      const live = Z.list.filter(o => o.alive).length; Z.spawnT -= dt; if (Z.spawnT <= 0 && live < Z.cap) { Z.spawnT = Math.max(.75, (7 - Z.wave * .7) / 3) * (rnd() * .5 + .75); spawn(pickKind()); } }
     const cam = c.camera.position;
     for (const o of [...Z.list]) { o.anim += dt; o.flinch = Math.max(0, o.flinch - dt * 2.5);
       if (!o.alive) { o.deadT += dt; const k = Math.min(1, o.deadT / .7); o.g.rotation.x = -k * 1.45 * (o.kind === 'brute' ? .95 : 1) ; o.g.rotation.z = k * .2 * o.fallDir; if (o.deadT > 4) o.pos.y -= dt * .6; if (o.deadT > 6.5) { despawn(o); continue; } pose(o, dt, 0); continue; }
@@ -155,11 +160,12 @@ export function createHrZombies(c) {
   // ---- multiplayer: host snapshots, client mirror ----
   function snap() { return { t: 'zs', w: Z.wave, z: Z.list.map(o => [o.id, KIND_LIST.indexOf(o.kind), +o.pos.x.toFixed(1), +o.pos.z.toFixed(1), +o.yaw.toFixed(2), o.alive ? o.st : 2, Math.max(0, Math.round(o.hp)), +o.sp.toFixed(1)]) }; }
   function apply(m) { if (!m || !Array.isArray(m.z)) return; Z.wave = m.w | 0 || Z.wave; const seen = new Set();
-    for (const r of m.z.slice(0, 40)) { if (!Array.isArray(r) || r.length < 8 || !r.slice(2, 5).every(Number.isFinite)) continue; const [id, ki, x, z, yaw, st, hp, sp] = r; seen.add(id);
+    for (const r of m.z.slice(0, 64)) { if (!Array.isArray(r) || r.length < 8 || !r.slice(2, 5).every(Number.isFinite)) continue; const [id, ki, x, z, yaw, st, hp, sp] = r; seen.add(id);
       let o = Z.list.find(q => q.id === id); if (!o) { if (st === 2) continue; o = spawn(KIND_LIST[ki] || 'walker', [x, z], id); o.yaw = yaw; }
       o.net = { x, z, yaw, st, sp }; if (st === 2 && o.alive) kill(o, false, 'remote'); else if (o.alive) o.hp = hp; }
     for (const o of [...Z.list]) if (!seen.has(o.id) && o.alive) despawn(o); }
-  function remoteHit(m) { if (!m || !Number.isFinite(m.id) || !Number.isFinite(m.d)) return; const o = Z.list.find(q => q.id === m.id); if (!o) return; damage(o, Math.max(0, Math.min(700, m.d)), !!m.h, null, null, 'remote'); }
+  function remoteHit(m, from) { if (!m || !Number.isFinite(m.id) || !Number.isFinite(m.d)) return; const o = Z.list.find(q => q.id === m.id); if (!o) return; damage(o, Math.max(0, Math.min(2000, m.d)), !!m.h, null, null, 'remote', from); }
+  function confirmKill(m) { Z.kills++; if (m && m.h) Z.heads++; } // the host says my shot killed one
   function remoteHurt(m) { if (!m || !Number.isFinite(m.d)) return; hurtMe(Math.max(0, Math.min(60, m.d)), Math.max(0, Math.min(80, m.hz || 0))); }
 
   // ---- HUD: health, wave, kills; red hurt flash ----
@@ -168,8 +174,8 @@ export function createHrZombies(c) {
     const live = Z.list.filter(o => o.alive).length, h = H.mounted;
     el.style.display = H.on && Z.on ? '' : 'none'; fl.style.display = H.on ? '' : 'none'; fl.style.opacity = Z.dead > 0 ? .85 : (Z.flash * .7).toFixed(2);
     const hh = h ? Math.round(100 * (h.hp ?? ZSET.horseHp) / ZSET.horseHp) : null;
-    el.innerHTML = `<b class="hp"><i style="width:${Math.round(Z.hp)}%"></i></b>${hh != null ? `<b class="hp horse"><i style="width:${hh}%"></i></b>` : ''}<span>☠ WAVE ${Z.wave} · ${live} near · ${Z.kills} down${Z.heads ? ` (${Z.heads} ◉)` : ''}</span>${Z.dead > 0 ? '<em>OVERRUN</em>' : inPenSafe(P.pos.x, P.pos.z) && !h ? '<em class="safe">SAFE IN THE PEN</em>' : ''}`; }
+    el.innerHTML = `<b class="hp"><i style="width:${Math.round(Z.hp)}%"></i></b>${hh != null ? `<b class="hp horse"><i style="width:${hh}%"></i></b>` : ''}<span>☠ WAVE ${Z.wave} · ${live} near · ${Z.kills} down${Z.heads ? ` (${Z.heads} ◉)` : ''}</span>${Z.dead > 0 ? '<em>OVERRUN</em>' : inTown(P.pos.x, P.pos.z) ? '<em class="safe">🛡 SAFE ZONE · TOWN</em>' : inPenSafe(P.pos.x, P.pos.z) && !h ? '<em class="safe">SAFE IN THE PEN</em>' : ''}`; }
   const netState = () => ({ dd: Z.dead > 0 ? 1 : 0 });
-  return { state: Z, list: Z.list, settings: ZSET, kinds: ZKINDS, tick, spawn, damage, onHit, rayHit, assistPoints, headPos, snap, apply, remoteHit, remoteHurt, hurtMe, netState, inPenRect, inPenSafe, despawn,
+  return { state: Z, list: Z.list, settings: ZSET, kinds: ZKINDS, tick, spawn, damage, onHit, rayHit, assistPoints, headPos, snap, apply, remoteHit, remoteHurt, confirmKill, hurtMe, netState, inPenRect, inPenSafe, inSafeZone, inTown, despawn,
     clear() { for (const o of [...Z.list]) despawn(o); } };
 }

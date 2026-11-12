@@ -14,6 +14,7 @@ import { ShaderPass } from '../addons/postprocessing/ShaderPass.js';
 import { createGuns } from './hrguns.js';
 import { createHrZombies } from './hrzombies.js';
 import { createFlora } from './hrflora.js';
+import { createTown, wearJacket } from './hrtown.js';
 import { buildFeatures, buildMask, createChunks, createWater } from './hrterrain.js';
 import { makeRawH, trailSegments, segDist as segD, createSky, terrainMaterial as terrainMat2, loadTerrainTextures, buildTerrain, createGrass, loadRockModels } from './hrworld.js';
 const $ = id => document.getElementById(id);
@@ -21,7 +22,8 @@ const S = 800, EDGE = 360;                // meadow half-extent (the mountains s
 const WALK = 1050, CHUNK = 125, CH_LIM = 10, MASK_HALF = 1200; // v30: rideable half-extent (up into the mountains), detail-chunk size / limit, world-mask extent
 const PEN = { x: 0, z: 0, hw: 13, hd: 9, gate: 2.6 }; // pen centre, half sizes, gate half-width (south side, +z)
 const SPAWN = { x: 4, z: 34 };
-const clearing = (x, z, m = 0) => Math.abs(x - PEN.x) < 11 + m && z > PEN.z && z < PEN.z + 150; // open riding meadow south of the gate
+let ZONES = []; const inZone = (x, z, m = 0) => { for (const q of ZONES) if (Math.abs(x - q[0]) < q[2] + m && Math.abs(z - q[1]) < q[3] + m) return true; return false; }; // v33: town + tower footprints keep clear of trees / rocks
+const clearing = (x, z, m = 0) => (Math.abs(x - PEN.x) < 11 + m && z > PEN.z && z < PEN.z + 150) || inZone(x, z, m); // open riding meadow south of the gate
 const MOUNT_R = 2.8, COOLDOWN = .45;
 const sstep = (a, b, t) => { t = Math.min(1, Math.max(0, (t - a) / (b - a))); return t * t * (3 - 2 * t); };
 const rawH = makeRawH(EDGE);
@@ -291,6 +293,11 @@ function strawTex(spiral) { const c = document.createElement('canvas'); c.width 
     if (spiral) { const rad = r() * 125, a = r() * 6.28; x.arc(128, 128, rad, a, a + .3 + r() * .6); } else { const px = r() * 256, py = r() * 256; x.moveTo(px, py); x.lineTo(px + l * .97, py + (r() - .5) * 14); } x.stroke(); }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; return t; }
 // colour grade (after tone mapping): warm highlights / cool shadows, a touch of contrast and saturation, soft vignette
+// v33 drunk: double vision (two drifting copies), blur and a slow wobble, scaled by how much you drank
+const DRUNK = { uniforms: { tDiffuse: { value: null }, uK: { value: 0 }, uT: { value: 0 } }, vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
+  fragmentShader: 'uniform sampler2D tDiffuse; uniform float uK, uT; varying vec2 vUv; void main(){ vec2 uv = vUv + vec2(sin(vUv.y * 9. + uT * 1.3), cos(vUv.x * 7. + uT)) * .004 * uK; vec2 o = vec2(sin(uT * .7), cos(uT * .53)) * .018 * uK; float b = .004 * uK;' +
+    ' vec4 a = texture2D(tDiffuse, uv); vec4 bl = (texture2D(tDiffuse, uv + vec2(b, 0.)) + texture2D(tDiffuse, uv - vec2(b, 0.)) + texture2D(tDiffuse, uv + vec2(0., b)) + texture2D(tDiffuse, uv - vec2(0., b))) * .25; vec4 g = (texture2D(tDiffuse, uv + o) + texture2D(tDiffuse, uv - o)) * .5;' +
+    ' gl_FragColor = mix(mix(a, bl, min(1., uK * 1.4)), g, min(.5, uK * .55)); }' };
 const GRADE = { uniforms: { tDiffuse: { value: null }, uAmt: { value: 1 } }, vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
   fragmentShader: `uniform sampler2D tDiffuse; uniform float uAmt; varying vec2 vUv;
 void main(){ vec4 c=texture2D(tDiffuse,vUv); vec3 x=c.rgb; float l=dot(x,vec3(.2126,.7152,.0722));
@@ -320,7 +327,7 @@ function loadAssets(hq) {
 }
 
 export function createHorseRider(ctx) {
-  const { scene, GX, P, keys, input, camera, sfx, msg, PBRS } = ctx; let guns = null, zombies = null;
+  const { scene, GX, P, keys, input, camera, sfx, msg, PBRS } = ctx; let guns = null, zombies = null, town2 = null;
   const H = { on: false, horses: [], mounted: null, cd: 0, prompt: '', obst: [], fence: [], speed: 0, t: 0, near: null, vy: 0, ground: true, riddenT: 0, mounts: 0, models: 'loading', trees: [], lodT: 0, ridden: new Map(), follow: false, online: '',
     stam: 100, winded: 0, cruise: 2, shiftT: 0, yawRate: 0, roll: 0, pitchK: 0, mountT: 0, dismT: 0, wantOff: false, side: 1, lookT: 9, recenter: false, shake: 0, fv: new THREE.Vector2(), bodyYaw: 0, fp: false, gait: 'Standing', zoom: 1 };
   const rnd = mulberry(42), Q = GX.Q, mobile = !!ctx.mobile;
@@ -337,9 +344,20 @@ export function createHorseRider(ctx) {
     H.terrain = buildTerrain(scene, mat, hAt, 500, seg, HQ ? 110 : 72, HQ ? 448 : 256, holeMat); H.ground3d = H.terrain.inner;
     H.chunks = createChunks(scene, mat, hAt, { CH: CHUNK, seg: Q.shadow >= 2048 && !mobile ? 80 : HQ ? 64 : mobile ? 40 : 50, K: mobile ? 1 : 2, lim: CH_LIM, U: XO.chunkU }); H.chunks.update(P.pos.x, P.pos.z, true);
     H.water = createWater(scene, F, hAt, { mobile });
+    buildPlaces(F);
     buildTrees(); buildRocks(); buildLogs(); buildFlora(); buildGrass(); buildPen(); buildTrailMarks();
     if (mobile) for (const im of H.rockMeshes || []) if (im.count > 100) im.castShadow = false; // v32: big scattered rock sets do not cast on phones
   }
+  // v33: fire lookouts at the two trail tops furthest apart (above the snow line), the town on flat meadow ground facing the pen
+  function buildPlaces(F) { const tops = F.trails.map(t => t.top); let A = 0, B = 1, bd = -1; for (let i = 0; i < tops.length; i++) for (let j = i + 1; j < tops.length; j++) { const d = Math.hypot(tops[i][0] - tops[j][0], tops[i][1] - tops[j][1]); if (d > bd) { bd = d; A = i; B = j; } }
+    const flat = (x, z, hw, hd) => { let a = 1e9, b = -1e9; for (let u = -hw; u <= hw; u += hw / 3) for (let v = -hd; v <= hd; v += hd / 3) { const h = hAt(x + u, z + v); a = Math.min(a, h); b = Math.max(b, h); } return b - a; };
+    const tw = [A, B].map((i, n) => { const t = tops[i]; let best = [t[0], t[1] - 9], bs = 1e9; for (let r = 7; r <= 28; r += 3) for (let a = 0; a < TAU; a += TAU / 12) { const x = t[0] + Math.cos(a) * r, z = t[1] + Math.sin(a) * r; if (Math.abs(x) > WALK - 14 || Math.abs(z) > WALK - 14 || F.trailDist(x, z) < 6) continue; const sc = flat(x, z + 1, 5, 6) + r * .05; if (sc < bs) { bs = sc; best = [x, z]; } } return [best[0], best[1], n ? 'station' : 'armory']; });
+    let town = null, ts = 1e9; for (let d = 95; d <= 230; d += 15) for (let a = 0; a < TAU; a += TAU / 24) { const x = PEN.x + Math.cos(a) * d, z = PEN.z + Math.sin(a) * d;
+      let bad = false; for (const [u, v] of [[-16, -11], [16, -11], [-16, 11], [16, 11], [0, 0], [-16, 0], [16, 0], [0, 11], [0, -11]]) { const px = x + u, pz = z + v; if ((Math.abs(px - PEN.x) < 40 && Math.abs(pz - PEN.z) < 40) || clearing(px, pz, 3) || inRange(px, pz, 6) || F.trailDist(px, pz) < 10 || F.waterDist(px, pz) < 8 || trailDist(px, pz) < 4) { bad = true; break; } } if (bad) continue;
+      const sc = flat(x, z, 13, 9) + d * .004; if (sc < ts) { ts = sc; town = [x, z, Math.atan2(x - PEN.x, z - PEN.z)]; } }
+    ZONES = tw.map(t => [t[0], t[1] + 1, 6, 6.5]); if (town) ZONES.push([town[0], town[1], 16, 16]);
+    town2 = H.town2 = createTown({ scene, hAt, H, P, mobile, msg, sfx, camera, send: m => H.zSend && H.zSend(m), jacket: on => { if (real()) wearJacket(rider, on); } }).build({ towers: tw, town });
+    for (const w of town2.walls) H.obstWalls = town2.walls; H.places = { towers: tw, town, tops: [tops[A], tops[B]].map(t => [Math.round(t[0]), Math.round(t[1]), Math.round(t[2] - BASE)]), townFlat: +ts.toFixed(2) }; }
   // woods: conifers + broadleaf trees, instanced, with a near (detailed) / far (low-poly) LOD swapped around the player
   function buildTrees() {
     const nT = Math.round(Q.trees * (mobile ? 2.2 : 3));
@@ -526,7 +544,7 @@ export function createHorseRider(ctx) {
     me.seat.set(0, .45, .04).sub(hp); me.W = W; m.userData.kind = 'real'; rider = m;
     if (was) attachRider(was); else toFoot();
     const sp = saddleParts(PBRS); for (let i = 0; i < 2; i++) { const r = new THREE.Mesh(sp.rein, sp.dark); r.visible = false; r.castShadow = false; scene.add(r); reins.push(r); }
-    H.models = 'real'; H.assets = A; for (const av of avatars) av.rebuild();
+    H.models = 'real'; H.assets = A; for (const av of avatars) av.rebuild(); if (town2 && town2.jacket && town2.wear) wearJacket(rider, true); if (town2 && guns) town2.dressGuns(guns.models); if (town2) town2.dressNPC && town2.dressNPC(() => makeWalker(A.riderSrc, A.clips));
   }
   const real = () => rider.userData.kind === 'real';
   function toFoot() { if (!real()) return; me.body.add(rider); rider.position.set(0, 0, 0); rider.rotation.set(0, Math.PI, 0); rider.visible = true; me.body.visible = !H.fp; }
@@ -557,6 +575,7 @@ export function createHorseRider(ctx) {
   function blocked(x, z, r, skip) {
     if (Math.abs(x) > WALK || Math.abs(z) > WALK) return true;
     for (const f of H.fence) if (segDist(x, z, f) < r + .1) return true;
+    if (town2 && town2.wallHit(x, z, r, H.curY ?? -1e9)) return true; if (town2 && r >= .7) for (const t of town2.towers) if (Math.abs(x - t.cx) < 4.6 + r && z - t.cz > -4.6 - r && z - t.cz < 6 + r) return true; // horses stay off the lookouts
     for (const [ox, oz, or] of obstNear(x, z)) if (Math.abs(ox - x) < or + r && Math.abs(oz - z) < or + r && Math.hypot(ox - x, oz - z) < or + r) return true;
     for (const h of H.horses) if (h !== skip && h !== H.mounted && Math.hypot(h.pos.x - x, h.pos.z - z) < .75 + r) return true;
     return false;
@@ -564,12 +583,14 @@ export function createHorseRider(ctx) {
   // too steep to climb: keep only the along-the-contour part of the step (slide along the bank), else stay put. true = it was too steep
   function slopeGate(pos, ox, oz, gy0, maxG, r, skip) { const dx = pos.x - ox, dz = pos.z - oz, mv = Math.hypot(dx, dz); if (mv < 1e-4 || (hAt(ox + dx / mv * 1.2, oz + dz / mv * 1.2) - gy0) / 1.2 <= maxG) return false; // grade over the next 1.2 m (ignores tiny kinks)
     let gx = hAt(ox + .7, oz) - hAt(ox - .7, oz), gz = hAt(ox, oz + .7) - hAt(ox, oz - .7); const gl = Math.hypot(gx, gz) || 1; gx /= gl; gz /= gl; const upc = dx * gx + dz * gz, tx = ox + dx - upc * gx, tz = oz + dz - upc * gz, m = Math.hypot(tx - ox, tz - oz);
-    if (m > 1e-4 && (hAt(ox + (tx - ox) / m * 1.2, oz + (tz - oz) / m * 1.2) - gy0) / 1.2 <= maxG && !blocked(tx, tz, r, skip)) { pos.x = tx; pos.z = tz; } else { pos.x = ox; pos.z = oz; } return true; }
-  function moveCircle(pos, dx, dz, r, skip) { let hit = false; if (!blocked(pos.x + dx, pos.z, r, skip)) pos.x += dx; else hit = true; if (!blocked(pos.x, pos.z + dz, r, skip)) pos.z += dz; else hit = true; return hit; }
+    if (m > 1e-4 && (hAt(ox + (tx - ox) / m * 1.2, oz + (tz - oz) / m * 1.2) - gy0) / 1.2 <= maxG && hAt(tx, tz) - gy0 <= m * .02 && !blocked(tx, tz, r, skip)) { pos.x = tx; pos.z = tz; } else { pos.x = ox; pos.z = oz; } return true; }
+  H.blockedAt = (x, z, r = .8) => blocked(x, z, r, H.mounted); H.maxGrade = () => MAX_GRADE;
+  function moveCircle(pos, dx, dz, r, skip) { if (!blocked(pos.x + dx, pos.z + dz, r, skip)) { pos.x += dx; pos.z += dz; return false; } let hit = false; if (!blocked(pos.x + dx, pos.z, r, skip)) pos.x += dx; else hit = true; if (!blocked(pos.x, pos.z + dz, r, skip)) pos.z += dz; else hit = true; return hit; }
   function nearestHorse() { let best = null, bd = MOUNT_R; for (const h of H.horses) { if (H.ridden.has(h)) continue; const d = Math.hypot(h.pos.x - P.pos.x, h.pos.z - P.pos.z); if (d < bd) { bd = d; best = h; } } return best; }
   function use() {
     if (!H.on || H.cd > 0) return false;
     if (H.mounted) { if (H.mountT > 0 || H.dismT > 0) return false; H.wantOff = true; H.cd = COOLDOWN; return true; } // rein in, then step down
+    if (town2 && town2.use()) { H.cd = COOLDOWN; return true; }
     const h = nearestHorse(); if (!h) { msg('Walk up to a horse to ride it', 1.5); return false; }
     const rx = Math.cos(h.yaw), rz = -Math.sin(h.yaw); H.side = (P.pos.x - h.pos.x) * rx + (P.pos.z - h.pos.z) * rz > 0 ? -1 : 1; // mount from the side you stand on (+1 = horse's left)
     H.mounted = h; H.cd = COOLDOWN; H.speed = 0; H.yawRate = 0; H.roll = 0; H.wantOff = false; H.dismT = 0; H.mountT = real() && h.g.userData.kind === 'real' ? MOUNT_T : 0;
@@ -606,7 +627,7 @@ export function createHorseRider(ctx) {
       sn.position.copy(sunTmp).addScaledVector(sky.sunDir, 200); sn.target.position.copy(sunTmp); sn.target.updateMatrixWorld(); };
     GX.setLens(false); // the shared cinematic lens pass desaturates; Horse Rider uses its own grade below
     if (GX.composer) { const ps = GX.composer.passes; for (const p of ps) if (p.strength != null && p.radius != null) { p.strength = .24; p.radius = .5; p.threshold = .88; }
-      const li = ps.indexOf(GX.lens && GX.lens()); H.grade = new ShaderPass(GRADE); GX.composer.insertPass(H.grade, li >= 0 ? li : ps.length); }
+      const li = ps.indexOf(GX.lens && GX.lens()); H.grade = new ShaderPass(GRADE); GX.composer.insertPass(H.grade, li >= 0 ? li : ps.length); H.drunkPass = new ShaderPass(DRUNK); H.drunkPass.enabled = false; GX.composer.insertPass(H.drunkPass, GX.composer.passes.indexOf(H.grade) + 1); }
     envTick(0, true);
   }
   function envTick(dt, force) {
@@ -649,16 +670,19 @@ export function createHorseRider(ctx) {
     const busy = H.mountT > 0 || H.dismT > 0 || H.wantOff;
     // gait selection (keyboard): tap Shift = one gait up, hold Shift = gallop flat out (stamina), C = one gait down
     if ((keys.ShiftLeft || keys.ShiftRight) && !H.scoped) H.shiftT += dt; else H.shiftT = 0; // in the scope Shift holds your breath instead
-    const ref = free || H.recenter ? h.yaw : P.yaw; // steering is camera-relative; while looking around it is relative to the horse
-    let target = 0, want = null, brake = false;
+    // v33: direct reins. Forward / back = speed (back brakes hard, then a slow back-up), left / right = turn rate. The camera
+    // and the aim never steer the horse, and releasing the reins stops the turn at once (no circling on its own).
+    let fA = fwdIn, tA = sideIn; if (stick > .05) { const dz = .14, m = Math.min(1, (stick - dz) / (1 - dz)), k = m > 0 ? m / stick : 0; fA = -input.mz * k; tA = input.mx * k; tA = Math.sign(tA) * Math.pow(Math.abs(tA), 1.35); } // phone stick: deadzone + response curve
+    if ((H.drunkK || 0) > 1 && Math.abs(H.speed) > .5) tA = Math.max(-1, Math.min(1, tA + Math.sin(H.t * .55 + 1.3) * Math.min(.5, (H.drunkK - 1) * .08))); // drunk: the horse wanders off line
+    H.turnIn = tA; H.fwdIn = fA;
+    let target = 0, brake = false, coast = false;
     if (!busy) {
-      if (stick > .08) { target = stickSpeed(Math.min(1, stick)); want = ref - Math.atan2(input.mx, -input.mz); }
-      else if (fwdIn > 0) { target = H.shiftT >= .3 ? SPRINT : GAIT_SP[H.cruise]; want = ref - Math.atan2(sideIn, 1) ; }
-      else if (fwdIn < 0) { brake = true; target = Math.abs(H.speed) < .7 ? -1.7 : 0; }
-      else if (sideIn) { target = Math.max(GAIT_SP[1], Math.min(H.speed, GAIT_SP[H.cruise])); want = ref - Math.atan2(sideIn, .25); }
-      if (Math.abs(H.speed) < .3 && fwdIn <= 0 && stick <= .08) H.cruise = Math.min(H.cruise, 2);
+      if (fA < -.25) { brake = true; H.backT = Math.abs(H.speed) < .6 ? (H.backT || 0) + dt : 0; target = H.backT > .45 ? -1.6 : 0; }
+      else if (stick > .05 && fA > .05) { H.backT = 0; target = stickSpeed(Math.min(1, .1 + fA * .9)); }
+      else if (stick <= .05 && fA > 0) { H.backT = 0; target = H.shiftT >= .3 ? SPRINT : GAIT_SP[H.cruise]; }
+      else { H.backT = 0; coast = true; target = Math.abs(tA) > .2 ? Math.min(Math.max(H.speed, 0), GAIT_SP[1]) : 0; } // reins slack: ease down to a stop (a walk while turning)
+      if (Math.abs(H.speed) < .3 && fA <= 0) H.cruise = Math.min(H.cruise, 2);
     } else brake = true;
-    if (want != null && Math.abs(wrapA(want - h.yaw)) > 2.2 && H.speed > 5) target = Math.min(target, GAIT_SP[2]); // swinging round: slow first
     // stamina: galloping drains it; a winded horse drops to a canter until it recovers
     if (target > 12.5 && H.speed > 11) { H.stam = Math.max(0, H.stam - dt * (target > 16 ? 7.5 : 4)); if (H.stam <= 0) { H.winded = 5; msg('Your horse is winded — ease off', 1.6); } }
     else H.stam = Math.min(100, H.stam + dt * (H.speed < 9.5 ? 12 : 4));
@@ -666,32 +690,31 @@ export function createHorseRider(ctx) {
     // slopes: the steeper the climb the slower (trails stay a canter), picking its way down steep ground; galloping uphill tires it faster
     { const fx0 = -Math.sin(h.yaw), fz0 = -Math.cos(h.yaw), dir = H.speed < -.1 ? -1 : 1, gF = (hAt(h.pos.x + fx0 * 2.5 * dir, h.pos.z + fz0 * 2.5 * dir) - hAt(h.pos.x, h.pos.z)) / 2.5; H.grade = gF;
       const cap = gF > .32 ? (gF < .62 ? lerp(SPRINT, 9, (gF - .32) / .3) : lerp(9, 1.7, sstep(.62, MAX_GRADE, gF))) : gF < -.7 ? lerp(9.5, 1.7, sstep(.7, 1.35, -gF)) : 1e9;
-      if (Math.abs(target) > cap) target = Math.sign(target) * cap; if (gF > .25 && H.speed > 9) H.stam = Math.max(0, H.stam - dt * gF * 6); }
-    // obstacle sense: look ahead along the heading, swing round trees / rocks / posts, refuse (rein in) at a wall of fence
-    let avoid = 0; if (H.speed > 1.2 && target > 0) { const L = 1.4 + H.speed * .45;
-      if (aheadBlocked(h, h.yaw, L)) { let best = null; const goal = want == null ? h.yaw : want;
-        for (const a of [.35, -.35, .7, -.7, 1.1, -1.1]) if (!aheadBlocked(h, h.yaw + a, L)) { const sc = Math.abs(wrapA(h.yaw + a - goal)); if (!best || sc < best[1]) best = [a, sc]; }
-        if (best) avoid = best[0]; else { target = 0; brake = true; if (H.speed > 7 && !(hu.toss > 0)) hu.toss = 1; } } }
-    // speed: weighty, linear acceleration per gait; firm but not instant braking
-    const acc = target > H.speed ? (H.speed < 0 ? 5 : H.speed < 4.5 ? 3.2 : H.speed < 9.5 ? 3.4 : 2.3) : brake ? (H.speed > 0 ? 9 : 4) : 4.4;
+      if (Math.abs(target) > cap) target = Math.sign(target) * cap; if (gF > .25 && H.speed > 9) H.stam = Math.max(0, H.stam - dt * gF * 6);
+      if (gF < -.35 && target > H.speed) target = Math.min(target, H.speed + .5); } // downhill: no surging, it stays under control
+    // a wall dead ahead at speed (fence, cliff): refuse and rein in rather than crash; trees / rocks are slid past
+    if (H.speed > 3 && target > 0 && aheadBlocked(h, h.yaw, 1.2 + H.speed * .25)) { const lb = aheadBlocked(h, h.yaw + .5, 2.5), rb = aheadBlocked(h, h.yaw - .5, 2.5); if (lb && rb) { target = Math.min(target, 2); brake = true; if (H.speed > 7 && !(hu.toss > 0)) hu.toss = 1; } }
+    // speed: weighty acceleration per gait; strong braking on the reins, a firm ease-off when they go slack
+    const acc = target > H.speed ? (H.speed < 0 ? 5 : H.speed < 4.5 ? 3.4 : H.speed < 9.5 ? 3.6 : 2.6) : brake ? (H.speed > 0 ? 15 : 5) : coast ? (H.speed > 9 ? 7.5 : 6) : 5;
     const prev = H.speed; H.speed += Math.sign(target - H.speed) * Math.min(Math.abs(target - H.speed), acc * dt);
     const decel = (prev - H.speed) / Math.max(dt, 1e-3);
-    // turning: eased yaw rate that tightens at low speed; carving at a gallop scrubs a little speed
-    const maxR = Math.abs(H.speed) < .5 ? 1.5 : lerp(2.3, .95, sstep(2, 17, H.speed));
-    let wantR = 0; if (H.speed < -.1) wantR = -sideIn * .9; else if (avoid) wantR = Math.max(-maxR, Math.min(maxR, avoid * 3.2)); else if (want != null) wantR = Math.max(-maxR, Math.min(maxR, wrapA(want - h.yaw) * 2.6));
-    H.yawRate += (wantR - H.yawRate) * Math.min(1, dt * 5); h.yaw += H.yawRate * dt;
-    if (Math.abs(H.yawRate) > .8 && H.speed > 8) H.speed -= (Math.abs(H.yawRate) - .8) * dt * 2;
+    // turning: rate scales with speed (pivots at a stand, tight at a walk, wide but usable at a gallop), eased in, dropped at once on release
+    const sp0 = Math.abs(H.speed), maxR = sp0 < .4 ? 1.9 : lerp(2.5, 1.05, sstep(1.5, 17, sp0));
+    const wantR = (H.speed < -.1 ? 1 : -1) * tA * maxR;
+    H.yawRate += (wantR - H.yawRate) * Math.min(1, dt * (Math.abs(tA) > .05 ? 9 : 16)); if (Math.abs(tA) < .05 && Math.abs(H.yawRate) < .02) H.yawRate = 0; h.yaw += H.yawRate * dt;
+    if (Math.abs(H.yawRate) > .8 && H.speed > 9) H.speed -= (Math.abs(H.yawRate) - .8) * dt * 1.5;
     const fx = -Math.sin(h.yaw), fz = -Math.cos(h.yaw);
-    const ox0 = h.pos.x, oz0 = h.pos.z, gy0 = hAt(ox0, oz0); let hit = moveCircle(h.pos, fx * H.speed * dt, fz * H.speed * dt, .8, h);
+    const ox0 = h.pos.x, oz0 = h.pos.z, gy0 = hAt(ox0, oz0); H.curY = h.pos.y; let hit = moveCircle(h.pos, fx * H.speed * dt, fz * H.speed * dt, .8, h); H.curY = null;
     if (slopeGate(h.pos, ox0, oz0, gy0, MAX_GRADE, .8, h)) { H.steepHits = (H.steepHits || 0) + 1; H.speed *= .96; }
     if (hit) { if (Math.abs(H.speed) > 5) { hu.toss = 1; H.shake = .6; sfx.step && sfx.step(true); } H.speed *= Math.abs(H.speed) > 5 ? .3 : .6; }
-    const g0 = hAt(h.pos.x, h.pos.z); if (jump && H.ground && !busy && H.speed > -.5) { H.vy = 6.2; H.ground = false; }
-    H.vy -= 22 * dt; h.pos.y += H.vy * dt; if (h.pos.y <= g0) { if (!H.ground && H.vy < -5) H.shake = Math.max(H.shake, .25); h.pos.y = g0; H.vy = 0; H.ground = true; }
+    const g0 = town2 ? town2.floorAt(h.pos.x, h.pos.z, h.pos.y) : hAt(h.pos.x, h.pos.z); if (jump && H.ground && !busy && H.speed > -.5) { H.vy = 6.2; H.ground = false; }
+    const gS = (g0 * 2 + hAt(h.pos.x + fx * .9, h.pos.z + fz * .9) + hAt(h.pos.x - fx * .9, h.pos.z - fz * .9)) / 4, gT = Math.max(gS, g0 - .12); // over bumps / rocks: follow the hooves' average, not every kink
+    H.vy -= 22 * dt; h.pos.y += H.vy * dt; if (h.pos.y <= gT) { if (!H.ground && H.vy < -5) H.shake = Math.max(H.shake, .25); if (H.ground && h.pos.y > gT - .6) h.pos.y += (gT - h.pos.y) * Math.min(1, dt * 16); else h.pos.y = gT; if (h.pos.y < g0 - .15) h.pos.y = g0 - .15; H.vy = 0; H.ground = true; } else if (H.ground && h.pos.y - gT < .35 && H.vy <= 0) { h.pos.y += (gT - h.pos.y) * Math.min(1, dt * 16); H.vy = 0; }
     // body: lean into turns, pitch with the slope, sit back on the haunches when braking hard
     const lean = Math.max(-.2, Math.min(.2, H.yawRate * Math.max(0, H.speed) * .02)); H.roll += (lean - H.roll) * Math.min(1, dt * 4);
     H.pitchK += ((decel > 4 && H.speed > 2 ? .07 : 0) - H.pitchK) * Math.min(1, dt * 5);
     const ahead = hAt(h.pos.x + fx, h.pos.z + fz), behind = hAt(h.pos.x - fx, h.pos.z - fz);
-    h.g.rotation.set(Math.atan2(ahead - behind, 2) * .8 + H.pitchK, h.yaw, H.roll);
+    H.pitchS = (H.pitchS ?? 0) + (Math.atan2(ahead - behind, 2) * .8 - (H.pitchS ?? 0)) * Math.min(1, dt * 7); h.g.rotation.set(H.pitchS + H.pitchK, h.yaw, H.roll);
     anim(h, dt, H.ground ? H.speed : 3, false); P.pos.set(h.pos.x, h.pos.y + 1.1, h.pos.z);
     const ob = H.clop || 0; H.clop = ob + dt * Math.abs(H.speed) * .55; if (H.ground && Math.abs(H.speed) > 1 && Math.floor(ob) !== Math.floor(H.clop)) sfx.step && sfx.step(true);
     // camera follow: swing back behind the horse unless the player is looking around
@@ -712,9 +735,12 @@ export function createHorseRider(ctx) {
     const f = tmp.set(-Math.sin(P.yaw), 0, -Math.cos(P.yaw)), rx = -f.z, rz = f.x;
     let mx = f.x * fwdIn + rx * sideIn, mz = f.z * fwdIn + rz * sideIn; const l = Math.hypot(mx, mz); if (l > 0) { mx *= sp / l; mz *= sp / l; }
     H.fv.x += (mx - H.fv.x) * Math.min(1, dt * 9); H.fv.y += (mz - H.fv.y) * Math.min(1, dt * 9); // momentum: ease into and out of a run
-    const v = H.fv.length(), ox0 = P.pos.x, oz0 = P.pos.z, gy0 = hAt(ox0, oz0); moveCircle(P.pos, H.fv.x * dt, H.fv.y * dt, .35, null);
-    if (slopeGate(P.pos, ox0, oz0, gy0, 1.3, .35, null)) H.fv.multiplyScalar(.9); // scrambling up: only up to ~52 degrees
-    const g0 = hAt(P.pos.x, P.pos.z); if (jump && H.ground) { H.vy = 7; H.ground = false; }
+    { const dk = H.drunkK || 0, vv = Math.hypot(H.fv.x, H.fv.y); if (dk > 2.5 && vv > 1 && H.ground && !(H.fallT > 0)) { // drunk on foot: stumbles, then falls over
+      if (Math.random() < dt * (dk - 2.5) * .22) { const a = Math.random() * TAU; H.fv.x += Math.cos(a) * 2.2; H.fv.y += Math.sin(a) * 2.2; H.shake = Math.max(H.shake, .3); H.stumbles = (H.stumbles || 0) + 1; }
+      if (dk > 4.5 && Math.random() < dt * (dk - 4.5) * .12) { H.fallT = 2.2; H.falls = (H.falls || 0) + 1; H.fv.set(0, 0); msg('You fell over', 1.5); } } }
+    const v = H.fv.length(), ox0 = P.pos.x, oz0 = P.pos.z, gy0 = hAt(ox0, oz0), onS = town2 && town2.onStruct(ox0, oz0, P.pos.y); H.curY = P.pos.y; moveCircle(P.pos, H.fv.x * dt, H.fv.y * dt, .35, null); H.curY = null;
+    if (!onS && !(town2 && town2.onStruct(P.pos.x, P.pos.z, P.pos.y)) && slopeGate(P.pos, ox0, oz0, gy0, 1.3, .35, null)) H.fv.multiplyScalar(.9); // scrambling up: only up to ~52 degrees
+    const g0 = town2 ? town2.floorAt(P.pos.x, P.pos.z, P.pos.y) : hAt(P.pos.x, P.pos.z); if (jump && H.ground) { H.vy = 7; H.ground = false; }
     H.vy -= 22 * dt; P.pos.y += H.vy * dt; if (P.pos.y <= g0) { P.pos.y = g0; H.vy = 0; H.ground = true; }
     const ob = P.bob; P.bob += dt * v * 1.6; if (H.ground && v > .5 && Math.floor(ob / Math.PI) !== Math.floor(P.bob / Math.PI)) sfx.step && sfx.step(false);
     if (H.gunFace != null) H.bodyYaw += wrapA(H.gunFace - H.bodyYaw) * Math.min(1, dt * 14); else if (v > .3) { const wy = Math.atan2(-H.fv.x, -H.fv.y); H.bodyYaw += wrapA(wy - H.bodyYaw) * Math.min(1, dt * 10); }
@@ -724,14 +750,19 @@ export function createHorseRider(ctx) {
   addEventListener('keydown', e => { if (!H.on || e.repeat || !document.body.classList.contains('horse-mode')) return;
     if (H.mounted) { if (/^Shift/.test(e.code) && !H.scoped) H.cruise = Math.min(4, H.cruise + 1); else if (e.code === 'KeyC') H.cruise = Math.max(1, H.cruise - 1); }
     else if (e.code === 'KeyC') { H.fp = !H.fp; msg(H.fp ? 'First-person view (C to switch back)' : 'Third-person view', 1.2); } });
-  addEventListener('wheel', e => { if (!H.on || !document.body.classList.contains('horse-mode')) return; H.zoom = Math.max(.5, Math.min(1.5, H.zoom * (e.deltaY > 0 ? 1.08 : 1 / 1.08))); }, { passive: true }); // camera zoom
+  addEventListener('wheel', e => { if (!H.on || !document.body.classList.contains('horse-mode') || H.scoped) return; H.zoom = Math.max(.5, Math.min(1.5, H.zoom * (e.deltaY > 0 ? 1.08 : 1 / 1.08))); }, { passive: true }); // camera zoom
   function tick(dt) {
     if (!H.on) return; H.t += dt; TREE_WIND.value += dt; H.cd = Math.max(0, H.cd - dt); H.shake = Math.max(0, H.shake - dt * 1.6);
     const h = H.mounted;
     let fwdIn = 0, sideIn = 0; if (keys.KeyW || keys.ArrowUp) fwdIn += 1; if (keys.KeyS || keys.ArrowDown) fwdIn -= 1; if (keys.KeyD || keys.ArrowRight) sideIn += 1; if (keys.KeyA || keys.ArrowLeft) sideIn -= 1;
-    const stick = Math.min(1, Math.hypot(input.mx || 0, input.mz || 0)); if (stick > .05) { fwdIn = -input.mz; sideIn = input.mx; }
+    let stick = Math.min(1, Math.hypot(input.mx || 0, input.mz || 0)); if (stick > .05) { fwdIn = -input.mz; sideIn = input.mx; }
+    if (H.uiOpen || (town2 && town2.passT > 0) || H.fallT > 0) { fwdIn = sideIn = 0; stick = 0; }
+    const dk = town2 ? town2.level() : 0; H.drunkK = dk; if (dk > .3) { // v33 drunk: controls answer late and drift, worse with every drink
+      const tau = Math.min(.9, dk * .1), f = 1 - Math.exp(-dt / Math.max(.01, tau)); H.lagF = (H.lagF ?? fwdIn) + (fwdIn - (H.lagF ?? fwdIn)) * f; H.lagS = (H.lagS ?? sideIn) + (sideIn - (H.lagS ?? sideIn)) * f; fwdIn = H.lagF; sideIn = H.lagS;
+      if (Math.abs(fwdIn) + Math.abs(sideIn) > .1 && dk > 1.5) sideIn += Math.sin(H.t * .9) * Math.min(.55, (dk - 1.5) * .09) + Math.sin(H.t * 2.3 + 1) * Math.min(.25, (dk - 1.5) * .04); } else { H.lagF = fwdIn; H.lagS = sideIn; }
     const run = !!keys.ShiftLeft || !!keys.ShiftRight || (stick > .92 && fwdIn > .6);
     const jump = keys.Space || input.jump;
+    if (H.fallT > 0) H.fallT -= dt; if (town2) town2.tick(dt);
     if (H.dead) { H.fv.x = H.fv.y = 0; } else if (h) ride(h, dt, stick > .05 ? 0 : fwdIn, stick > .05 ? 0 : sideIn, stick, jump); else walk(dt, fwdIn, sideIn, stick, run, jump);
     for (const o of H.horses) { if (o === h) continue;
       if (H.ridden.has(o) || (H.follow && o.net)) { netHorse(o, dt); if (H.ridden.has(o)) dustEmit(o, dt); continue; } // ridden by another player / herd mirrored from the host
@@ -748,8 +779,8 @@ export function createHorseRider(ctx) {
     if (H.marks && ((H.markT = (H.markT || 0) + dt) > .5)) { H.markT = 0; for (const g of H.marks) g.visible = Math.hypot(g.userData.at[0] - P.pos.x, g.userData.at[1] - P.pos.z) < 220; } // signposts / cairns only drawn nearby
     if (guns) guns.update(dt);
     if (zombies) zombies.tick(dt);
-    H.near = h ? null : nearestHorse(); H.gait = h ? gaitName(H.speed) : '';
-    H.prompt = h ? (H.mountT > 0 ? 'Mounting…' : H.wantOff || H.dismT > 0 ? 'Getting off…' : mobile ? 'Tap GET OFF to dismount' : '[E] Get off the horse') : H.near ? (mobile ? 'Tap RIDE to mount' : '[E] Ride horse') : '';
+    H.near = h ? null : nearestHorse(); H.gait = h ? gaitName(H.speed) : ''; const sp2 = !h && town2 ? town2.nearSpot() : null; H.spot = sp2 && town2.label(sp2) ? sp2 : null;
+    H.prompt = h ? (H.mountT > 0 ? 'Mounting…' : H.wantOff || H.dismT > 0 ? 'Getting off…' : mobile ? 'Tap GET OFF to dismount' : '[E] Get off the horse') : H.spot ? (mobile ? 'Tap ' + town2.touchLabel(H.spot) + ' · ' + town2.label(H.spot) : '[E] ' + town2.label(H.spot)) : H.near ? (mobile ? 'Tap RIDE to mount' : '[E] Ride horse') : '';
   }
   // hoof dust: a small pool of soft points kicked up behind the hooves at speed
   const DN = mobile ? 40 : 90, dust = { p: new Float32Array(DN * 3), a: new Float32Array(DN), sz: new Float32Array(DN), v: new Float32Array(DN * 3), life: new Float32Array(DN), i: 0, acc: 0, pts: null };
@@ -791,7 +822,11 @@ export function createHorseRider(ctx) {
     camClear(look, want); want.y = Math.max(want.y, hAt(want.x, want.z) + .5);
     want.sub(look); if (!H.camInit || !dt) { camPos.copy(want); H.camInit = true; } else camPos.lerp(want, Math.min(1, dt * k)); // smooth the offset, not the position: no lag at a gallop
     camera.position.copy(look).add(camPos); camera.position.y = Math.max(camera.position.y, hAt(camera.position.x, camera.position.z) + .4); if (H.shake > 0) camera.position.add(tmp.set((Math.random() - .5), (Math.random() - .5), (Math.random() - .5)).multiplyScalar(H.shake * .12)); camera.lookAt(look);
+    { const cp = h ? Math.max(-.7, Math.min(.35, P.pitch)) : Math.max(-.85, Math.min(.6, P.pitch)), ex = Math.max(-1.553, Math.min(1.553, P.pitch)) - cp; if (Math.abs(ex) > 1e-4) camera.rotateX(ex); } // v33: the camera keeps its orbit, the view tilts on to look straight up / down (+-89 deg)
     if (h) camera.rotateZ(H.roll * .3);
+    { const dk = H.drunkK || 0; if (dk > .05) { const t = H.t, k = Math.min(1.6, dk / 5); camera.rotateZ(Math.sin(t * .55) * .09 * k + Math.sin(t * 1.3) * .02 * k); camera.rotateY(Math.sin(t * .43 + 1) * .03 * k); camera.rotateX(Math.sin(t * .71) * .025 * k); }
+      { const k = Math.min(1, Math.pow(dk / 6, 1.3)); if (H.drunkPass) { H.drunkPass.enabled = k > .03; H.drunkPass.uniforms.uK.value = k; H.drunkPass.uniforms.uT.value = H.t; } else { const f = k > .03 ? `blur(${(k * 2.2).toFixed(1)}px)` : ''; if (GX.renderer.domElement.style.filter !== f) GX.renderer.domElement.style.filter = f; } }
+      if (town2 && town2.hic > 0) camera.position.y += Math.sin(town2.hic * 25) * .04; if (H.fallT > 0 && !h) { camera.position.y -= Math.min(1.1, (2.2 - H.fallT) * 2.5) * Math.min(1, H.fallT * 2); camera.rotateZ(.5 * Math.min(1, H.fallT)); } }
     if (Math.abs(camera.fov - fov) > .05) { camera.fov += (fov - camera.fov) * Math.min(1, (dt || 1) * 3); camera.updateProjectionMatrix(); }
     updateReins();
   }
@@ -803,10 +838,36 @@ export function createHorseRider(ctx) {
     $('mode').textContent = '🐎 HORSE RIDER'; $('timer').textContent = hz ? Math.round(Math.abs(H.speed) * 3.6) + ' km/h' : ''; $('stars').textContent = H.online || '';
     const alt = Math.round(P.pos.y - BASE - (hz ? 1.1 : 0)), altS = alt > 25 ? ' · ⛰ ' + alt + ' m' : '';
     $('sub').textContent = hz ? H.gait + altS + (hz.coat ? ' · ' + hz.coat : '') + (H.winded > 0 ? ' · winded' : '') + (mobile ? ' · push the stick further to speed up' : ' · W ride · tap Shift faster · hold Shift gallop · C slower · A/D steer')
-      : H.models === 'loading' && d < 40 ? 'Horses arriving…' : d > 16 ? `Horse pen ${d} m away${altS}` : inPen(P.pos.x, P.pos.z) ? 'In the pen — walk up to a horse' : 'At the horse pen';
+      : H.spot ? town2.label(H.spot) : H.models === 'loading' && d < 40 ? 'Horses arriving…' : d > 16 ? `Horse pen ${d} m away${altS}` : inPen(P.pos.x, P.pos.z) ? 'In the pen — walk up to a horse' : 'At the horse pen';
     if (!stamEl) { stamEl = document.createElement('div'); stamEl.id = 'hrStam'; stamEl.innerHTML = '<i></i>'; document.body.appendChild(stamEl); }
     const show = !!hz && (H.stam < 99 || Math.abs(H.speed) > 12); stamEl.style.opacity = show ? 1 : 0; stamEl.firstChild.style.width = H.stam.toFixed(0) + '%'; stamEl.classList.toggle('low', H.stam < 25 || H.winded > 0);
+    board(); tags(); placesHud();
   }
+  function placesHud() { if (!town2 || !H.places) return; const sb = $('sub'); if (!sb || H.mounted && !sb) return; const ts = town2.towers, tn = town2.town, px = P.pos.x, pz = P.pos.z, dir = (x, z) => { const a = ((Math.atan2(x - px, -(z - pz)) * 180 / Math.PI) + 360) % 360; return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(a / 45) % 8]; };
+    const inTown = tn && zombies && zombies.inSafeZone && zombies.inSafeZone(px, pz) === 'town'; let extra = inTown ? ' · 🛡 Safe zone' : '';
+    for (const t of ts) { const dd = Math.hypot(t.cx - px, t.cz - pz); if (dd > 30) extra += ` · 🗼${t.kind === 'armory' ? '1' : '2'} ${Math.round(dd)} m ${dir(t.cx, t.cz)}`; } if (tn) { const dd = Math.hypot(tn.cx - px, tn.cz - pz); if (dd > 40) extra += ` · 🏠 town ${Math.round(dd)} m ${dir(tn.cx, tn.cz)}`; }
+    if (extra && !sb.textContent.endsWith(extra)) sb.textContent += extra; }
+  // v33: rolling kill leaderboard (everyone in the lobby, live; kills / points come from each rider's synced state, kill points are host-confirmed)
+  let lbEl = null, lbHtml = '';
+  const esc = t => String(t).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
+  function board() { if (!lbEl) { lbEl = document.createElement('div'); lbEl.id = 'hrLB'; document.body.appendChild(lbEl); }
+    const g = guns && guns.state, me = H.me || 'P1', rows = [{ id: me, n: H.callsign ? H.callsign() : 'Rider', k: g ? g.kills || 0 : 0, pt: g ? g.score : 0, me: true }];
+    for (const R of (H.netRemotes ? H.netRemotes() : [])) if (R && R.id) rows.push({ id: R.id, n: (R.s && R.s.n) || '', k: (R.s && +R.s.k) || 0, pt: (R.s && +R.s.pt) || 0 });
+    rows.sort((a, b) => b.k - a.k || b.pt - a.pt || (a.id < b.id ? -1 : 1)); H.board = rows; const mi = rows.findIndex(r => r.me), shown = rows.map((r, i) => [r, i]).filter(([r, i]) => i < 8 || r.me); // v33: up to 25 riders: top 8 + you
+    const html = '<b>☠ KILLS · PTS' + (rows.length > 8 ? ' · ' + rows.length + ' riders' : '') + '</b>' + shown.map(([r, i]) => `<div class="${r.me ? 'me' : ''}" style="${r.me ? '' : 'color:' + ((H.colors && H.colors[r.id]) || '#fff')}"><span class="r">${i + 1}</span><span class="n">${esc(r.id)}${r.n ? ' ' + esc(r.n) : ''}</span><span>${r.k}</span><span style="opacity:.7">${r.pt}</span></div>`).join('');
+    if (html !== lbHtml) { lbEl.innerHTML = lbHtml = html; } }
+  // v33: P1..P4 + callsign tags over the other riders (never yourself); off screen or behind you they sit on the screen edge with an arrow
+  let tagEl = null; const tagMap = new Map(), tv = new THREE.Vector3();
+  function tags() { if (!tagEl) { tagEl = document.createElement('div'); tagEl.id = 'hrTags'; document.body.appendChild(tagEl); }
+    const seen = new Set(), W = innerWidth, Hh = innerHeight, m = 26, rem = H.netRemotes ? H.netRemotes() : [];
+    for (const av of avatars) { seen.add(av); let e = tagMap.get(av); if (!e) { e = document.createElement('div'); e.className = 't'; tagEl.appendChild(e); tagMap.set(av, e); }
+      const R = rem.find(r => r.av === av), nm = R && R.s && R.s.n ? R.s.n : ''; tv.copy(av.g.position); tv.y += av.horse ? 1.25 : 2.05;
+      const dist = Math.round(camera.position.distanceTo(tv)); tv.project(camera); const behind = tv.z > 1; let x = (tv.x * .5 + .5) * W, y = (-tv.y * .5 + .5) * Hh;
+      const on = !behind && x > m && x < W - m && y > m && y < Hh - m;
+      if (!on) { let dx = x - W / 2, dy = y - Hh / 2; if (behind) { dx = -dx; dy = -dy; } if (Math.abs(dx) < 1e-3 && Math.abs(dy) < 1e-3) dy = 1; const k = Math.min((W / 2 - m) / Math.max(1e-3, Math.abs(dx)), (Hh / 2 - m) / Math.max(1e-3, Math.abs(dy))); x = W / 2 + dx * k; y = Hh / 2 + dy * k; e.style.setProperty('--a', (Math.atan2(dy, dx) * 180 / Math.PI).toFixed(0) + 'deg'); }
+      const txt = on ? `${esc(av.id)}${nm ? ' ' + esc(nm) : ''}<small>${dist} m</small>` : esc(av.id); if (e.dataset.h !== txt) { e.innerHTML = txt; e.dataset.h = txt; }
+      e.classList.toggle('edge', !on); e.style.color = av.color || '#fff'; e.style.left = x.toFixed(0) + 'px'; e.style.top = y.toFixed(0) + 'px'; e.dataset.on = on ? 1 : 0; }
+    for (const [av, e] of tagMap) if (!seen.has(av)) { e.remove(); tagMap.delete(av); } H.tagCount = tagMap.size; }
   // ---- multiplayer hooks (src/horsenet.js): remote riders, herd mirroring ----
   function netHorse(o, dt) { const n = o.net; if (!n) { anim(o, dt, 0, false); return; } const k = Math.min(1, dt * 8);
     if (Math.hypot(n.x - o.pos.x, n.z - o.pos.z) > 12) { o.pos.x = n.x; o.pos.z = n.z; } else { o.pos.x += (n.x - o.pos.x) * k; o.pos.z += (n.z - o.pos.z) * k; }
@@ -816,13 +877,13 @@ export function createHorseRider(ctx) {
   function applyHerd(arr) { H.follow = true; for (const [id, x, z, yaw, sp, gr] of arr) { const o = H.horses[id]; if (!o || o === H.mounted || H.ridden.has(o)) continue; o.net = { x, z, yaw, sp, gr }; } }
   function release(o) { if (!H.ridden.has(o)) return; H.ridden.delete(o); o.speed = 0; o.wait = 4 + rnd() * 4; o.tgt = null; o.inPen = inPen(o.pos.x, o.pos.z, .5); o.graze = true; if (!H.follow) o.net = null; }
   function seat(h, obj) { if (h.g.userData.kind === 'real' && obj.userData.kind === 'real') { h.g.userData.bones[1].add(obj); obj.position.copy(me.seat); } else { h.g.add(obj); obj.position.set(0, h.g.userData.kind === 'real' ? 1.45 : 1.72, .08); } obj.rotation.set(0, 0, 0); obj.visible = true; }
-  const avatars = new Set();
+  const avatars = new Set(); H.avatars = avatars;
   function nameTag(text, color) { const c = document.createElement('canvas'); c.width = 256; c.height = 64; const x = c.getContext('2d'); x.fillStyle = 'rgba(10,12,14,.6)'; x.beginPath(); x.roundRect(8, 8, 240, 48, 22); x.fill();
     x.fillStyle = color; x.font = 'bold 30px sans-serif'; x.textAlign = 'center'; x.fillText(text, 128, 43); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true, fog: false, toneMapped: false })); sp.scale.set(1.2, .3, 1); sp.renderOrder = 9; return sp; }
   // remote player: the same rigged person (idle / walk / run blend) on foot, a seated copy with the live riding pose on the horse they ride
   function avatar(id, color) {
-    const av = { id, g: new THREE.Group(), horse: null, walker: null, sitter: null, W: null, tag: nameTag(id, color), v: 0 };
+    const av = { id, color, g: new THREE.Group(), horse: null, walker: null, sitter: null, W: null, tag: nameTag(id, color), v: 0 }; av.tag.visible = false; // v33: DOM name tags (readable at any distance, edge arrows) replace the sprite
     scene.add(av.g); av.g.add(av.tag); av.tag.position.y = 2.15;
     av.rebuild = () => { if (av.walker) av.g.remove(av.walker); if (av.sitter && av.sitter.parent) av.sitter.parent.remove(av.sitter); const A = H.assets;
       if (A && A.riderSrc) { av.W = makeWalker(A.riderSrc, A.clips); av.walker = av.W.m; av.walker.rotation.y = Math.PI;
@@ -842,12 +903,12 @@ export function createHorseRider(ctx) {
       let dy = s.yw - av.g.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); av.g.rotation.y += dy * k;
       av.v += ((s.sp || 0) - av.v) * Math.min(1, dt * 6); if (av.W) av.W.update(dt, av.v); };
     av.dispose = () => { if (av.horse) release(av.horse); if (av.sitter && av.sitter.parent) av.sitter.parent.remove(av.sitter); scene.remove(av.g); avatars.delete(av); };
-    const up0 = av.update, dp0 = av.dispose; av.update = (dt, s) => { up0(dt, s); if (guns) guns.poseRemote(av, s, av.horse ? av.sitter : av.walker, !!av.horse); }; av.dispose = () => { if (guns) guns.disposeRemote(av); dp0(); };
+    const up0 = av.update, dp0 = av.dispose; av.update = (dt, s) => { up0(dt, s); if (guns) guns.poseRemote(av, s, av.horse ? av.sitter : av.walker, !!av.horse); const jk = !!(s && s.jk); if (av.jk !== jk || av.jkRoot !== av.walker) { if (wearJacket(av.walker, jk) | (av.sitter && wearJacket(av.sitter, jk))) { av.jk = jk; av.jkRoot = av.walker; } } }; av.dispose = () => { if (guns) guns.disposeRemote(av); dp0(); };
     av.rebuild(); avatars.add(av); return av;
   }
-  const touchLabel = () => H.mounted ? 'GET OFF' : H.near ? 'RIDE' : '';
+  const touchLabel = () => H.mounted ? 'GET OFF' : H.spot ? town2.touchLabel(H.spot) : H.near ? 'RIDE' : '';
   const stats = () => { const i = GX.renderer.info; i.autoReset = false; i.reset(); GX.renderer.render(scene, camera); i.autoReset = true; return { calls: i.render.calls, triangles: i.render.triangles, geometries: i.memory.geometries, textures: i.memory.textures }; };
   const syncAll = dt => { syncCamera(dt); envTick(dt); };
-  const gunNet = () => guns ? guns.netState() : { g: 0 }, remoteShot = (id, m) => guns && guns.remoteShot(id, m);
+  const gunNet = () => Object.assign(guns ? guns.netState() : { g: 0 }, { jk: town2 && town2.jacket && town2.wear ? 1 : 0 }), remoteShot = (id, m) => guns && guns.remoteShot(id, m);
   return { state: H, init, tick, syncCamera: syncAll, hud, gunNet, remoteShot, get guns() { return guns; }, use, dismount, touchLabel, hAt, PEN, nearestHorse, stats, herd, applyHerd, avatar };
 }

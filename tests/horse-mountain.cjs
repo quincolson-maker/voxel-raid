@@ -40,8 +40,8 @@ const ignorable = t => /pointer ?lock|requestPointerLock|fullscreen|favicon|WebG
     await sleep(1500);
     const rideTo = async (frac, maxRounds) => { for (let k = 0; k < maxRounds; k++) { const r = await p.evaluate(([ti, frac]) => { const H = __horse, S = H.state, t = S.F.trails[ti].pts, h = S.mounted, B = H.hAt(0, 0), keys = __coop.keys; S.cruise = 2; keys.KeyW = true;
         let i0 = S._ti || 0, maxA = S._maxA || 0; for (let s = 0; s < 450; s++) { let bi = i0, bd = 1e9; for (let i = Math.max(0, i0 - 20); i < Math.min(t.length, i0 + 60); i++) { const d = Math.hypot(t[i][0] - h.pos.x, t[i][1] - h.pos.z); if (d < bd) { bd = d; bi = i; } } i0 = bi;
-          if (i0 >= Math.floor((t.length - 1) * frac)) break; const g = t[Math.min(t.length - 1, i0 + 3)]; __P.yaw = Math.atan2(-(g[0] - h.pos.x), -(g[1] - h.pos.z)); S.lookT = 9; H.tick(1 / 30); maxA = Math.max(maxA, h.pos.y - B); }
-        keys.KeyW = false; S._ti = i0; S._maxA = maxA; return { i: i0, n: t.length, alt: +(h.pos.y - B).toFixed(1), maxA: +maxA.toFixed(1), x: +h.pos.x.toFixed(1), z: +h.pos.z.toFixed(1), sp: +S.speed.toFixed(2), chunks: S.chunks.count }; }, [trail.i, frac]);
+          if (i0 >= Math.floor((t.length - 1) * frac)) break; const g = t[Math.min(t.length - 1, i0 + 3)], dy = Math.atan2(-(g[0] - h.pos.x), -(g[1] - h.pos.z)), er = Math.atan2(Math.sin(dy - h.yaw), Math.cos(dy - h.yaw)); keys.KeyA = er > .05; keys.KeyD = er < -.05; __P.yaw = dy; S.lookT = 9; /* v33: steer with the reins (the camera no longer steers) */ H.tick(1 / 30); maxA = Math.max(maxA, h.pos.y - B); }
+        keys.KeyW = keys.KeyA = keys.KeyD = false; S._ti = i0; S._maxA = maxA; return { i: i0, n: t.length, alt: +(h.pos.y - B).toFixed(1), maxA: +maxA.toFixed(1), x: +h.pos.x.toFixed(1), z: +h.pos.z.toFixed(1), sp: +S.speed.toFixed(2), chunks: S.chunks.count }; }, [trail.i, frac]);
         if (r.i >= Math.floor((r.n - 1) * frac)) return r; await sleep(200); } return null; };
     const mid = await rideTo(.55, 30); assert.ok(mid, 'rode half way up the trail'); R.mid = mid;
     // look back down the trail and out over the valley (camera behind the rider, horse in view)

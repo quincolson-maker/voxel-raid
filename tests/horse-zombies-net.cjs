@@ -48,6 +48,27 @@ async function page(br, mobile, errors, tag) {
     await c.evaluate(id => { const Z = __horse.state.zombies, o = Z.list.find(q => q.id === id); Z.onHit(o, 'revolver', true, Z.headPos(o, o.pos.clone()), { x: 0, y: 0, z: 1 }); }, R.hostIds[0]);
     await until(h, id => { const o = __horse.state.zombies.list.find(q => q.id === id); return !o || !o.alive; }, R.hostIds[0], 15000); R.hostKilled = true;
     await sleep(800); R.clientStillDead = await c.evaluate(id => { const o = __horse.state.zombies.list.find(q => q.id === id); return !o || !o.alive; }, R.hostIds[0]); assert.ok(R.clientStillDead);
+    step('v33: the kill is credited to the client by the host (points), leaderboard synced, name tags over the other rider only');
+    await until(c, () => __horse.guns.state.kills === 1 && __horse.guns.state.score >= 15, null, 15000); R.clientPts = await c.evaluate(() => [__horse.guns.state.kills, __horse.guns.state.score]);
+    await until(h, () => { __horse.hud(); const r = (__horse.state.board || []).find(x => x.id === 'P2'); return r && r.k === 1 && r.pt >= 15; }, null, 15000); R.hostBoard = await h.evaluate(() => __horse.state.board.map(r => [r.id, r.k, r.pt]));
+    await until(c, () => { __horse.hud(); return (__horse.state.board || []).length === 2 && __horse.state.board[0].id === 'P2'; }, null, 15000); R.clientBoard = await c.evaluate(() => __horse.state.board.map(r => [r.id, r.k, r.pt]));
+    R.tags = { host: await h.evaluate(() => { __horse.hud(); return [__horse.state.tagCount, [...document.querySelectorAll('#hrTags .t')].map(e => e.textContent)]; }), client: await c.evaluate(() => { __horse.hud(); return [__horse.state.tagCount, [...document.querySelectorAll('#hrTags .t')].map(e => e.textContent)]; }) };
+    // v33 saloon games over the co-op link (host-authoritative): P2 challenges P1 to checkers, both move; then darts
+    await c.evaluate(() => __horse.state.town2.ck.send({ a: 'ch', to: 'P1' }));
+    await until(h, () => { const G = __horse.state.town2.ck.G; return G && G.who[0] === 'P2' && G.who[1] === 'P1'; }, null, 15000); await until(c, () => !!__horse.state.town2.ck.G, null, 15000);
+    await c.evaluate(() => { const T = __horse.state.town2, G = T.ck.G, m = T.ckMoves(G)[0]; T.ck.send({ a: 'mv', f: m.f, d: m.t }); });
+    await until(h, () => __horse.state.town2.ck.G.n === 1, null, 15000);
+    await h.evaluate(() => { const T = __horse.state.town2, G = T.ck.G, m = T.ckMoves(G)[0]; T.ck.send({ a: 'mv', f: m.f, d: m.t }); });
+    await until(c, () => __horse.state.town2.ck.G.n === 2 && __horse.state.town2.ck.G.turn === 0, null, 15000);
+    R.ckSync = await Promise.all([h, c].map(pg => pg.evaluate(() => __horse.state.town2.ck.G.B.join(',')))); assert.equal(R.ckSync[0], R.ckSync[1], 'checkers boards match');
+    R.ckCheat = await h.evaluate(() => { const T = __horse.state.town2, G = T.ck.G, b = G.B.join(','); T.ck.netIn({ a: 'mv', f: 0, d: 9 }, 'P1'); return G.B.join(',') === b && G.n === 2; }); assert.ok(R.ckCheat, 'out-of-turn / illegal moves are refused');
+    await c.evaluate(() => { const T = __horse.state.town2; T.ck.send({ a: 'q' }); T.closeUI(); }); await h.evaluate(() => __horse.state.town2.closeUI());
+    await c.evaluate(() => __horse.state.town2.dartSend({ a: 'ch', to: 'P1' })); await until(h, () => { const G = __horse.state.town2.dart; return G && G.who[0] === 'P2'; }, null, 15000);
+    await c.evaluate(() => __horse.state.town2.dartSend({ a: 'th', x: 0, y: 103 })); await until(c, () => __horse.state.town2.dart && __horse.state.town2.dart.s[0] === 241, null, 15000); R.dartsSync = await h.evaluate(() => __horse.state.town2.dart.s[0]); assert.equal(R.dartsSync, 241, 'darts score synced');
+    await c.evaluate(() => { const T = __horse.state.town2; T.dartSend({ a: 'q' }); T.closeUI(); }); await h.evaluate(() => __horse.state.town2.closeUI());
+    await h.evaluate(() => { const T = __horse.state.town2; T.jacket = true; T.wear = true; }); // the HORSE RIDER windbreaker shows on the host's avatar for the client
+    await until(c, () => [...__horse.state.avatars].some(a => a.jk === true), null, 30000); R.remoteJacket = true;
+    assert.equal(R.tags.host[0], 1); assert.ok(/P2/.test(R.tags.host[1][0])); assert.equal(R.tags.client[0], 1); assert.ok(/P1/.test(R.tags.client[1][0]));
     step('client body shot on the brute only damages it on the host');
     await c.evaluate(id => { const Z = __horse.state.zombies, o = Z.list.find(q => q.id === id); Z.onHit(o, 'rifle', false, o.pos.clone(), { x: 0, y: 0, z: 1 }); }, R.hostIds[2]);
     await until(h, id => { const o = __horse.state.zombies.list.find(q => q.id === id); return o && o.hp === 250; }, R.hostIds[2], 15000); R.hostBruteHp = 250;
@@ -56,6 +77,11 @@ async function page(br, mobile, errors, tag) {
     await h.evaluate(id => { const Z = __horse.state.zombies, o = Z.list.find(q => q.id === id), r = __hnet.state.remotes.get('P2').s; o.hold = false; o.pos.set(r.x + 1, o.pos.y, r.z); }, R.hostIds[1]);
     await until(c, () => __horse.state.zombies.state.hp < 100, null, 30000); R.clientHurt = await c.evaluate(() => Math.round(__horse.state.zombies.state.hp));
     R.hostUnhurt = await h.evaluate(() => Math.round(__horse.state.zombies.state.hp)); assert.equal(R.hostUnhurt, 100);
+    if (process.env.SHOTS !== '0') { step('name tag screenshots'); // the two riders a little apart, each looking towards the other
+      const put = async (pg, x, z, tx, tz) => pg.evaluate((x, z, tx, tz) => { __P.pos.set(x, __horse.hAt(x, z), z); __P.yaw = Math.atan2(-(tx - x), -(tz - z)); __P.pitch = -.05; }, x, z, tx, tz);
+      await put(c, 40, 30, 22, 70); await put(h, 22, 70, 40, 30); await sleep(2500);
+      for (const [pg, tag, ox, oz, tx, tz] of [[h, 'desktop', 22, 70, 40, 30], [c, 'mobile', 40, 30, 22, 70]]) { await pg.bringToFront(); await put(pg, ox, oz, tx, tz); await sleep(2500); await pg.evaluate(() => __horse.hud()); await pg.screenshot({ path: `shot-horserider-v33-${tag}-nametags.png` }); }
+      R.tagShot = await h.evaluate(() => [...document.querySelectorAll('#hrTags .t')].map(e => [e.textContent, e.dataset.on])); }
     R.errors = errors; console.log(JSON.stringify(R, null, 1));
     assert.equal(errors.length, 0, errors.join('\n'));
     console.log('HORSE ZOMBIES NET OK');

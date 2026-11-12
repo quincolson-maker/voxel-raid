@@ -30,7 +30,7 @@ function handler(req, res) {
       if (m.closed) { if (cur && cur.key === String(m.key || '')) rooms.delete(code); return send(res, 200, { ok: true }); }
       if (cur && cur.key !== String(m.key || '')) return send(res, 409, { error: 'code taken' });
       if (!cur && rooms.size >= MAX_ROOMS) { prune(); if (rooms.size >= MAX_ROOMS) return send(res, 503, { error: 'full' }); }
-      const max = Math.max(2, Math.min(4, m.max | 0 || 4)), players = Math.max(1, Math.min(max, m.players | 0 || 1));
+      const max = Math.max(2, Math.min(25, m.max | 0 || 4)), players = Math.max(1, Math.min(max, m.players | 0 || 1));
       rooms.set(code, { code, key: String(m.key || '').slice(0, 40), host: cleanName(m.host), players, max, map: m.map === 'night' ? 'night' : 'day', mode: m.mode === 'horse' ? 'horse' : 'zombies', ts: Date.now() });
       send(res, 200, { ok: true, stale: STALE_MS });
     });

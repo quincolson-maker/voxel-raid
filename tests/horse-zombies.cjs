@@ -32,7 +32,7 @@ const ignorable = t => /pointer ?lock|requestPointerLock|fullscreen|favicon|WebG
       return { n: at.length, at, minEdge: +edge.toFixed(1), closer: d1.slice(0, d0.length).every((d, i) => d < d0[i] - 20), d0: d0.map(Math.round), d1: d1.map(Math.round), cap: S.cap, alive: Z.list.filter(o => o.alive).length, kinds: [...new Set(Z.list.map(o => o.kind))] }; });
     assert.ok(R.spawn.n >= 4 && R.spawn.minEdge > 330, 'zombies spawn at the map edge (foot of the mountains)');
     assert.ok(R.spawn.closer, 'they come in towards the player');
-    assert.equal(R.spawn.cap, mobile ? 6 : 14); assert.ok(R.spawn.alive <= R.spawn.cap, 'capped');
+    assert.equal(R.spawn.cap, mobile ? 18 : 42); /* v33: 3x zombies */ assert.ok(R.spawn.alive <= R.spawn.cap, 'capped');
     // --- the pen: indestructible safe zone ---
     R.pen = await G(() => { const Z = __horse.state.zombies, S = Z.state, H = __horse.state, PEN = __horse.PEN; Z.clear(); S.spawnT = 1e9; S.hp = 100; S.dead = 0; S.hurtT = -99;
       const fence = JSON.stringify(H.fence), inside = H.horses.find(o => Math.abs(o.pos.x - PEN.x) < PEN.hw - 1 && Math.abs(o.pos.z - PEN.z) < PEN.hd - 1);

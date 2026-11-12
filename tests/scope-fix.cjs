@@ -47,7 +47,7 @@ const ignorable = t => /pointer ?lock|requestPointerLock|fullscreen|favicon|WebG
     // --- no writing over the scope view (Quin: "Get that writing off the scope view"): only the reticle + touch buttons ---
     await frames(2); await sleep(300);
     R.scopeText = await G(() => { const out = [], w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); let n;
-      while ((n = w.nextNode())) { const t = n.textContent.trim(); if (!t) continue; const e = n.parentElement; if (e.closest('#touch') || e.closest('#vMute')) continue;
+      while ((n = w.nextNode())) { const t = n.textContent.trim(); if (!t) continue; const e = n.parentElement; if (e.closest('#touch') || e.closest('#vMute') || e.closest('#hrScope .pts') || e.closest('#hrScope .pops')) continue; // v33: Quin asked for a minimal points counter + kill pops inside the scope
         const rc = e.getBoundingClientRect(); let vis = rc.width > 0 && rc.height > 0; for (let a = e; a && vis; a = a.parentElement) { const st = getComputedStyle(a); if (st.display === 'none' || st.visibility === 'hidden' || +st.opacity === 0 || a.hidden) vis = false; }
         if (vis) out.push((e.id || e.className || e.tagName) + ': ' + t.slice(0, 40)); } return out; });
     assert.deepEqual(R.scopeText, [], 'no text shown over the scope view');

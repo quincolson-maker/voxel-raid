@@ -22,7 +22,7 @@ const ignorable = t => /pointer ?lock|requestPointerLock|fullscreen|favicon|WebG
     await p.waitForFunction(() => __G.mode === 'horse' && __horse.state.horses.length >= 4 && __horse.guns, { timeout: 20000 });
     await p.waitForFunction(() => __horse.state.models !== 'loading', { timeout: 90000 });
     const frames = async n => { const u = await p.evaluate(() => __horse.guns.state.upd || 0); await p.waitForFunction(m => (__horse.guns.state.upd || 0) >= m, { timeout: 90000 }, u + n); };
-    const G = f => p.evaluate(f);
+    const G = (f, ...a) => p.evaluate(f, ...a);
     const vis = sel => p.$eval(sel, e => getComputedStyle(e).display !== 'none' && !e.hidden && e.offsetHeight > 0).catch(() => false);
     R.targets = await G(() => { const t = __horse.guns.targets; return { bottle: t.filter(x => x.kind === 'bottle').length, can: t.filter(x => x.kind === 'can').length, board: t.filter(x => x.kind === 'board').length }; });
     assert.ok(R.targets.bottle >= 6 && R.targets.can >= 4 && R.targets.board >= 3, 'bottles, cans and boards on the range');
@@ -145,10 +145,12 @@ const ignorable = t => /pointer ?lock|requestPointerLock|fullscreen|favicon|WebG
     await p.waitForFunction(() => __horse.guns.state.lastHit.weapon === 'sniper' && __horse.guns.state.lastHit.mounted, { timeout: 90000 });
     R.mountedLong = await G(() => __horse.guns.state.lastHit); assert.equal(R.mountedLong.target, 'gong', 'scoped hit from the saddle'); assert.ok(R.mountedLong.dist > 140);
     if (!mobile) await p.keyboard.up('ShiftLeft');
-    // horseback yaw limit: no shooting straight back over the horse's rump
-    await frames(10); await G(() => { const H = __horse; __P.yaw = H.state.mounted.yaw + Math.PI; }); await frames(2);
-    R.blocked = await G(() => { const g = __horse.guns, n = g.state.shots; const r = g.shoot(false); return { fired: r, shots: g.state.shots - n, blocked: g.state.blocked }; });
-    assert.equal(R.blocked.shots, 0, 'cannot fire behind the horse'); assert.ok(R.blocked.blocked);
+    // v33: a full 360 from the saddle: straight back over the horse's rump fires and never hits your own horse; look up / down ~89 deg
+    await frames(10); await G(() => { const H = __horse; __P.yaw = H.state.mounted.yaw + Math.PI; __P.pitch = -.05; H.guns.state.ammo.sniper = 1; H.guns.state.reloading = false; H.guns.state.cocked = true; }); await frames(3);
+    R.behind = await G(() => { const g = __horse.guns, n = g.state.shots; const r = g.shoot(false); return { fired: r, shots: g.state.shots - n, blocked: g.state.blocked, aim: g.state.dbg && g.state.dbg.aim }; });
+    assert.equal(R.behind.shots, 1, 'fires straight back from the saddle'); assert.ok(!R.behind.blocked); assert.notEqual(R.behind.aim, 'horse', 'never hits your own horse');
+    for (const pt of [1.55, -1.55]) { await G(pt => { __P.pitch = pt; }, pt); await frames(2); const dy = await G(() => { const v = new __cam.position.constructor(); __cam.getWorldDirection(v); return v.y; }); R['look' + (pt > 0 ? 'Up' : 'Down')] = +dy.toFixed(3); assert.ok(Math.abs(dy) > .99, 'look ~89 deg ' + pt + ' got ' + dy); }
+    await G(() => { __P.pitch = -.1; });
     if (mobile) await p.tap('#tAds'); else await p.mouse.up({ button: 'right' });
     // holster
     if (mobile) { while (await G(() => !!__horse.guns.state.weapon)) await p.tap('#tGun'); await frames(1); R.holsteredButtons = { fire: await vis('#tFire'), aim: await vis('#tAds') }; assert.ok(!R.holsteredButtons.fire && !R.holsteredButtons.aim); }
