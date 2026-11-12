@@ -136,14 +136,14 @@ export function createChunks(scene, mat, hAt, o) {
 
 // water: pond discs and the creek ribbon, with drifting ripples; shallow, so horses wade through
 export function createWater(scene, F, hAt, o) {
-  const U = { uT: { value: 0 } }, m = new THREE.MeshStandardMaterial({ color: 0x35565a, roughness: .07, metalness: 0, transparent: true, opacity: .84, envMapIntensity: 1.1 });
+  const U = { uT: { value: 0 } }, m = new THREE.MeshStandardMaterial({ color: 0x2a464b, roughness: .045, metalness: 0, transparent: true, opacity: .84, envMapIntensity: 1.5 });
   m.onBeforeCompile = sh => { sh.uniforms.uT = U.uT; sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWW;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvWW=(modelMatrix*vec4(position,1.)).xyz;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
 varying vec3 vWW; uniform float uT; float wh(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);} float wn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(wh(i),wh(i+vec2(1,0)),f.x),mix(wh(i+vec2(0,1)),wh(i+1.),f.x),f.y);}
 float wv(vec2 p){return wn(p*.9+vec2(uT*.35,uT*.2))*.6+wn(p*2.3-vec2(uT*.5,-uT*.3))*.4;}`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
 { vec2 p=vWW.xz; float e=.15, c=wv(p); vec3 wN=normalize(vec3((c-wv(p+vec2(e,0.)))*1.4,1.,(c-wv(p+vec2(0.,e)))*1.4)); normal=normalize((viewMatrix*vec4(wN,0.)).xyz); }`)
-      .replace('#include <opaque_fragment>', 'float fr=pow(1.-clamp(dot(normalize(vViewPosition),normal),0.,1.),4.); diffuseColor.a=mix(.62,.95,fr);\n#include <opaque_fragment>'); };
+      .replace('#include <opaque_fragment>', 'float fr=.02+.98*pow(1.-clamp(dot(normalize(vViewPosition),normal),0.,1.),5.); diffuseColor.a=mix(.58,.97,fr); outgoingLight*=mix(.85,1.15,fr); /* v32: Schlick fresnel */\n#include <opaque_fragment>'); };
   const meshes = [];
   for (const p of F.ponds) { const g = new THREE.CircleGeometry(p.R * 1.15, o.mobile ? 28 : 48); g.rotateX(-Math.PI / 2); const w = new THREE.Mesh(g, m); w.position.set(p.x, p.L, p.z); w.renderOrder = 1; scene.add(w); meshes.push(w); }
   for (const c of F.creeks) { const P = c.pts, pos = [], idx = []; for (let i = 0; i < P.length; i++) { const a = P[Math.max(0, i - 1)], b = P[Math.min(P.length - 1, i + 1)], dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1, nx = -dz / l, nz = dx / l;

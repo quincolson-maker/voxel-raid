@@ -141,17 +141,23 @@ vec2 uvG=xz/3.2; vec3 gA=texture2D(tG,uvG).rgb, gB=texture2D(tG,mat2(.8,-.6,.6,.
 vec3 grass=mix(gA,g2*vec3(.95,1.08,.78),.35+.3*(mv-.5)); grass=mix(grass,gB,smoothstep(15.,90.,dist)*.65);
 grass*=mix(.84,1.1,mv)*vec3(.95,1.05,.82); grass=mix(grass,grass*vec3(1.22,1.06,.7),smoothstep(.55,.8,macro)*.55); grass=mix(grass,grass*vec3(.8,1.03,.82),smoothstep(.45,.2,macro)*.5);
 float sunny=clamp(dot(vWN.xz,vec2(-.6,-.55))*3.,0.,1.); grass=mix(grass,grass*vec3(1.18,1.04,.72),sunny*smoothstep(.06,.25,slope)*.6); grass=mix(grass,grass*vec3(.82,1.06,.84),smoothstep(6.,-10.,hgt)*.55); grass*=mix(1.,.86,smoothstep(.1,.32,slope));
-vec3 dirt=texture2D(tD,xz/3.).rgb*vec3(.95,.9,.84); vec3 trail=texture2D(tTr,xz/2.6).rgb*vec3(1.02,.96,.88);
-vec3 tw=pow(abs(vWN),vec3(4.)); tw/=tw.x+tw.y+tw.z; vec3 rock=tri(tR,vWP/7.,tw)*vec3(.92,.9,.88); vec3 rockF=tri(tR,vWP/41.,tw); rock=mix(rock,rockF*vec3(.9,.88,.86),smoothstep(60.,400.,dist)*.7);
+vec3 tw=pow(abs(vWN),vec3(4.)); tw/=tw.x+tw.y+tw.z; float slTri=smoothstep(.08,.24,slope); // v32: banks and cuts sample triplanar too (no stretched streaks)
+vec3 dirt=texture2D(tD,xz/3.).rgb; if(slTri>0.){ dirt=mix(dirt,tri(tD,vWP/3.,tw),slTri); grass=mix(grass,tri(tG,vWP/3.2,tw)*mix(.84,1.1,mv)*vec3(.95,1.05,.82),slTri); } dirt*=vec3(.95,.9,.84); vec3 trail=texture2D(tTr,xz/2.6).rgb*vec3(1.02,.96,.88); vec3 rock=tri(tR,vWP/7.,tw)*vec3(.92,.9,.88); vec3 rockF=tri(tR,vWP/41.,tw); rock=mix(rock,rockF*vec3(.9,.88,.86),smoothstep(60.,400.,dist)*.7);
 vec3 snow=texture2D(tS,xz/4.).rgb*vec3(.98,1.,1.04); rock=mix(rock,vec3(dot(rock,vec3(.3,.4,.3))),.4)*vec3(.9,.9,.95);
 float pen=1.-smoothstep(-1.,1.3,penM(xz)+(vn(xz*.6)-.5)*1.6); float td=trailD(xz); float path=1.-smoothstep(.7,2.1,td+(vn(xz*.5)-.5)*1.4);
 float worn=smoothstep(.7,.92,vn(xz*.08)*.7+vn(xz*.35)*.3)*(1.-smoothstep(200.,400.,r0)); float dm=max(pen*.95,worn*.6);
 vec2 mk=texture2D(uMask,xz/(2.*uMH)+.5).rg; float tdM=(1.-mk.r)*8.; float path2=(1.-smoothstep(1.3,3.3,tdM+(vn(xz*.5)-.5)*1.5))*step(.004,mk.r); path=max(path,path2*.96);
 float wd=(1.-mk.g)*30.; float moist=(1.-smoothstep(1.5,22.,wd))*step(.004,mk.g); float bank=(1.-smoothstep(.3,2.6,wd+(vn(xz*.45)-.5)*3.2))*step(.004,mk.g);
 grass=mix(grass,grass*vec3(.74,1.12,.78),moist*.65); float speck=smoothstep(.74,.86,vn(xz*.85)+vn(xz*3.3)*.2)*(1.-moist)*(1.-smoothstep(10.,40.,dist)); dm=max(dm,speck*.55);
-float rockW=smoothstep(.2,.38,slope+(mv-.5)*.12)+smoothstep(70.,150.,hgt+(macro-.5)*60.)*.7; rockW=clamp(rockW,0.,1.)*(1.-path2*.85)*(1.-bank*.6);
+float rockW=smoothstep(.17,.34,slope+(mv-.5)*.12)+smoothstep(70.,150.,hgt+(macro-.5)*60.)*.7; rockW=clamp(rockW,0.,1.)*(1.-path2*.85)*(1.-bank*.6);
 float sLine=355.-smoothstep(900.,2600.,r0)*90.+(vn(xz*.012)-.5)*55.-clamp(-vWN.z,0.,1.)*25.-(1.-smoothstep(.08,.4,slope))*28.; float snowW=smoothstep(sLine,sLine+45.,hgt+(macro-.5)*70.)*mix(1.,smoothstep(.15,.65,vn(xz*.05+vWP.y*.02)),smoothstep(.45,.78,slope))*(1.-smoothstep(.78,.92,slope)); 
 rock*=mix(.86,1.08,vn(vec2(vWP.y*.07,macro*4.+xz.x*.002)))*mix(vec3(.86,.86,.9),vec3(1.04,.97,.88),vn(xz*.008)); rock*=mix(.62,1.,smoothstep(.25,.6,vn(vWP.xz*.06+vWP.y*.03)))*mix(1.,.8,smoothstep(.55,.9,slope));
+// v32: sedimentary strata (warped height bands) + erosion gullies running down steep faces
+float steep=smoothstep(.32,.62,slope); vec2 dh=normalize(vWN.xz+vec2(1e-4)); vec2 perp=vec2(-dh.y,dh.x);
+float bandY=vWP.y+(vn(xz*.011)-.5)*26.+(vn(xz*.05)-.5)*5.; float st1=sin(bandY*.52)*.5+.5, st2=sin(bandY*2.1+vn(xz*.2)*3.)*.5+.5;
+vec3 strata=mix(vec3(.84,.85,.9),vec3(1.1,1.,.86),smoothstep(.35,.75,st1))*mix(.86,1.08,st2);
+float gully=smoothstep(.5,.82,vn(vec2(dot(xz,perp)*.32,vWP.y*.012+macro))*.7+vn(vec2(dot(xz,perp)*1.3,vWP.y*.05))*.3);
+rock*=mix(vec3(1.),strata,steep*smoothstep(25.,70.,hgt)*.85)*mix(1.,.66,gully*steep); rock=mix(rock,rock*vec3(1.05,.98,.9),smoothstep(.6,.9,vn(xz*.004+3.))*.4);
 float forest=smoothstep(380.,560.,r0)*(1.-smoothstep(.36,.55,slope))*(1.-smoothstep(110.,175.,hgt+(macro-.5)*50.))*smoothstep(.3,.55,fbm3(xz*.006+2.)); forest=max(forest,smoothstep(380.,520.,r0)*(1.-smoothstep(.45,.62,slope))*(1.-smoothstep(130.,175.,hgt))*smoothstep(25.,60.,hgt)*.85);
 vec3 litter=mix(vec3(.085,.12,.065)*(.65+.7*vn(xz*.11))*(.85+.3*macro),dirt*vec3(.62,.55,.45)*(.8+.4*vn(xz*.6)),1.-smoothstep(30.,120.,dist)); // forest floor: needle litter up close
 vec3 col=mix(grass,dirt,dm); col=mix(col,trail,path*.92); col=mix(col,litter,forest*.8); col=mix(col,rock,rockW); col=mix(col,mix(dirt*vec3(.5,.47,.44),trail*vec3(.8,.78,.74),vn(xz*.9)),bank*.7);
@@ -160,15 +166,29 @@ snowW*=1.-path2*.45; col=mix(col,snow,snowW); col*=mix(1.,.82+.36*vn(xz*2.7),(1.
 vec4 gArm=texture2D(tGa,uvG); float ao=mix(gArm.r,1.,max(max(dm,path),rockW)); col*=mix(1.,ao,.8);
 float tRough=mix(mix(mix(gArm.g,.97,dm),.98,path),.84,rockW); tRough=mix(tRough,.62,snowW); tRough=mix(tRough,.5,bank*.7); tRough=max(tRough,mix(.6,.96,smoothstep(40.,350.,dist))); // far, grazing terrain must not mirror the bright sky (white valley floors)
 vec3 nG=texture2D(normalMap,vNormalMapUv*1.28).xyz*2.-1.; nG=normalize(nG+(texture2D(normalMap,xz/.85).xyz*2.-1.)*vec3(.7,.7,0.)*(1.-smoothstep(6.,26.,dist))); vec3 nD=texture2D(tDn,xz/3.).xyz*2.-1., nR=texture2D(tRn,xz/7.).xyz*2.-1., nS=texture2D(tSn,xz/4.).xyz*2.-1.;
-vec3 tN=normalize(mix(mix(mix(nG,nD,max(dm,path)),nR*vec3(1.3,1.3,1.),rockW),nS,snowW)); tN.xy*=1.-smoothstep(60.,260.,dist)*.7;
+vec3 tN=normalize(mix(mix(mix(nG,nD,max(dm,path)),nR*vec3(1.3,1.3,1.),rockW),nS,snowW)); float cliffW=smoothstep(.3,.55,slope)*rockW*(1.-snowW*.6)*(1.-smoothstep(150.,600.,dist)); tN.xy*=1.-smoothstep(60.,260.,dist)*.7;
 #ifdef TERRAIN_HQ
 float fd=smoothstep(30.,260.,dist); if(fd>0.){ vec2 q=xz*.022; float c0=fbm3(q), cx=fbm3(q+vec2(.12,0.)), cz=fbm3(q+vec2(0.,.12)); tN.xy+=vec2(cx-c0,cz-c0)*(5.+9.*rockW)*fd; tN=normalize(tN); }
 #else
 { float fd=smoothstep(30.,260.,dist); vec2 q=xz*.022; float c0=vn(q*2.), cx=vn(q*2.+vec2(.24,0.)), cz=vn(q*2.+vec2(0.,.24)); tN.xy+=vec2(cx-c0,cz-c0)*(4.+6.*rockW)*fd; tN=normalize(tN); }
 #endif
 diffuseColor.rgb*=col;`)
-      .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = tRough;')
-      .replace('#include <normal_fragment_maps>', '#ifdef USE_NORMALMAP_TANGENTSPACE\n vec3 mapN = tN; mapN.xy *= normalScale; normal = normalize( tbn * mapN );\n#endif'); };
+      .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = tRough;').replace('#include <opaque_fragment>', `#if NUM_DIR_LIGHTS > 0
+ { vec3 cell=floor(vWP*26.); float hs=fract(sin(dot(cell,vec3(12.9898,78.233,37.719)))*43758.5453); vec3 Vd=normalize(cameraPosition-vWP);
+   float vk=fract(hs*91.7+dot(Vd,vec3(3.1,5.7,2.3))*1.6); float spk=step(.975,hs)*smoothstep(.9,1.,vk)*snowW*(1.-smoothstep(5.,55.,dist))*max(0.,dot(normal,directionalLights[0].direction));
+   outgoingLight+=spk*directionalLights[0].color*.9; } // v32: snow glints that twinkle as the view moves
+#endif
+#include <opaque_fragment>`)
+      .replace('#include <normal_fragment_maps>', `#ifdef USE_NORMALMAP_TANGENTSPACE
+ vec3 mapN = tN; mapN.xy *= normalScale; normal = normalize( tbn * mapN );
+ float triW=max(cliffW,slTri*.9*(1.-smoothstep(150.,600.,dist)));
+ if (triW > .01) { vec3 tw3=pow(abs(vWN),vec3(4.)); tw3/=tw3.x+tw3.y+tw3.z; vec3 N=vWN; // v32: triplanar (whiteout) rock / dirt normals on cliffs and banks, no stretching
+  vec3 nx=texture2D(tRn,vWP.zy/6.).xyz*2.-1., ny=texture2D(tRn,vWP.xz/6.).xyz*2.-1., nz=texture2D(tRn,vWP.xy/6.).xyz*2.-1.;
+  vec3 dx=texture2D(tDn,vWP.zy/3.).xyz*2.-1., dy=texture2D(tDn,vWP.xz/3.).xyz*2.-1., dz=texture2D(tDn,vWP.xy/3.).xyz*2.-1.; float rk=clamp(rockW*1.4,0.,1.);
+  nx=mix(dx,nx,rk); ny=mix(dy,ny,rk); nz=mix(dz,nz,rk);
+  nx=vec3(nx.xy*1.35+N.zy,abs(nx.z)*N.x); ny=vec3(ny.xy*1.35+N.xz,abs(ny.z)*N.y); nz=vec3(nz.xy*1.35+N.xy,abs(nz.z)*N.z);
+  vec3 wn=normalize(nx.zyx*tw3.x+ny.xzy*tw3.y+nz.xyz*tw3.z); normal=normalize(mix(normal,normalize((viewMatrix*vec4(wn,0.)).xyz),triW)); }
+#endif`); };
   return m;
 }
 export function loadTerrainTextures(renderer, hd) {
@@ -204,7 +224,7 @@ function toHalf(f) { const o = new Uint16Array(f.length); for (let i = 0; i < f.
 // ---------------- GPU grass: tufts of blades on a camera-following world grid (stable, no CPU scatter), wind, wildflowers, distance fade ----------------
 function tuftGeometry(blades) {
   const pos = [], hgt = [], nor = [], head = [], idx = []; let v = 0; const r = (() => { let s = 7; return () => (s = (s * 16807) % 2147483647) / 2147483647; })();
-  for (let b = 0; b < blades; b++) { const a = r() * Math.PI * 2, ox = Math.cos(a) * Math.sqrt(r()) * .26, oz = Math.sin(a) * Math.sqrt(r()) * .26, w = .04 + r() * .03, lean = (r() - .5) * .7, dir = r() * Math.PI * 2, H = .42 + r() * .6;
+  for (let b = 0; b < blades; b++) { const a = r() * Math.PI * 2, ox = Math.cos(a) * Math.sqrt(r()) * .26, oz = Math.sin(a) * Math.sqrt(r()) * .26, w = .03 + r() * .026, lean = (r() - .5) * .7, dir = r() * Math.PI * 2, H = .42 + r() * .6;
     const cx = Math.cos(dir), cz = Math.sin(dir), segs = 3;
     for (let s = 0; s <= segs; s++) { const t = s / segs, ww = w * (1 - t * .92), bx = ox + Math.sin(dir + 1.57) * lean * t * t * H, bz = oz + Math.cos(dir + 1.57) * lean * t * t * H;
       for (const sd of [-1, 1]) { pos.push(bx + cx * ww * sd, t * H, bz + cz * ww * sd); hgt.push(t); nor.push(-cz, .6, cx); head.push(0); } }

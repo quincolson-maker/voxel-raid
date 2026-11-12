@@ -11,9 +11,9 @@ import { FXAAShader } from '../addons/shaders/FXAAShader.js';
 
 // ---------------- Quality ----------------
 export const PRESETS = {
-  low:    { pr: 0.75, shadow: 0,    ao: false, bloom: false, msaa: 0, fxaa: false, trees: 70,  grass: 600,  particles: 500,  dist: 90,  light: false },
+  low:    { pr: 0.75, shadow: 1024,    ao: false, bloom: false, msaa: 0, fxaa: false, trees: 70,  grass: 600,  particles: 500,  dist: 90,  light: false },
   medium: { pr: 1.0,  shadow: 1024, ao: false, bloom: true,  msaa: 0, fxaa: true,  trees: 140, grass: 2500, particles: 1000, dist: 130, light: false },
-  high:   { pr: 1.5,  shadow: 2048, ao: true,  bloom: true,  msaa: 4, fxaa: false, trees: 220, grass: 9000, particles: 1800, dist: 190, light: true },
+  high:   { pr: 1.5,  shadow: 4096, ao: true,  bloom: true,  msaa: 4, fxaa: false, trees: 220, grass: 9000, particles: 1800, dist: 190, light: true },
   ultra:  { pr: 2.0,  shadow: 4096, ao: true,  bloom: true,  msaa: 4, fxaa: false, trees: 320, grass: 16000, particles: 2600, dist: 250, light: true },
 };
 export const IS_TOUCH = new URLSearchParams(location.search).get('touch') === '1' ||
@@ -33,8 +33,7 @@ export function pickQuality() {
 // ---------------- CC0 PBR material library (Poly Haven, see CREDITS.md) ----------------
 const TL = new THREE.TextureLoader();
 export const MATDEF = { // name -> [Poly Haven id, tile size in metres, extra]
-  grass: ['sparse_grass', 2.5], dirt: ['dirt', 3], rock: ['aerial_rocks_02', 5], wall: ['concrete_wall_008', 3], concrete: ['concrete', 2.5],
-  brick: ['red_brick_03', 2], hesco: ['hessian_230', 1.2], corrugated: ['corrugated_iron_02', 2], steel: ['metal_plate_02', 2, { metal: 1 }], timber: ['brown_planks_05', 2], bark: ['bark_brown_02', 1.5] };
+  rock: ['aerial_rocks_02', 5], hesco: ['hessian_230', 1.2], corrugated: ['corrugated_iron_02', 2], timber: ['brown_planks_05', 2], bark: ['bark_brown_02', 1.5] };
 export function loadPBR(renderer, hd) {
   const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy()); const out = {};
   const ld = (id, k, size, srgb) => { const t = TL.load(`assets/tex/${id}_${k}_${size}.webp`); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = aniso; if (srgb) t.colorSpace = THREE.SRGBColorSpace; return t; };
@@ -52,7 +51,7 @@ export function pbrMaterial(set, o = {}) {
 THREE.ShaderChunk.fog_pars_vertex = '#ifdef USE_FOG\n varying float vFogDepth; varying float vFogH; varying vec3 vFogW;\n#endif';
 THREE.ShaderChunk.fog_vertex = '#ifdef USE_FOG\n vFogDepth = - mvPosition.z;\n vec4 fogWP = vec4( transformed, 1.0 );\n #ifdef USE_INSTANCING\n fogWP = instanceMatrix * fogWP;\n #endif\n vFogH = ( modelMatrix * fogWP ).y; vFogW = ( modelMatrix * fogWP ).xyz;\n#endif';
 THREE.ShaderChunk.fog_pars_fragment = '#ifdef USE_FOG\n uniform vec3 fogColor; varying float vFogDepth; varying float vFogH; varying vec3 vFogW;\n #ifdef FOG_EXP2\n uniform float fogDensity;\n #else\n uniform float fogNear; uniform float fogFar;\n #endif\n#endif';
-THREE.ShaderChunk.fog_fragment = '#ifdef USE_FOG\n #ifdef FOG_EXP2\n float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );\n fogFactor *= mix( 0.45, 1.0, exp( - max( vFogH - 1.0, 0.0 ) * 0.07 ) );\n #else\n /* aerial haze (Horse Rider): THREE.Fog carries density in .near and the packed sun direction in .far */\n float fogFactor = 1.0 - exp( - fogNear * fogNear * vFogDepth * vFogDepth );\n fogFactor *= mix( 0.3, 1.0, exp( - max( vFogH - 1.0, 0.0 ) * 0.0045 ) );\n float fAz = floor( fogFar ) * 0.01, fEl = fract( fogFar ), fCe = sqrt( 1.0 - fEl * fEl );\n vec3 fSd = vec3( sin( fAz ) * fCe, fEl, cos( fAz ) * fCe ), fVd = normalize( vFogW - cameraPosition );\n float fSg = pow( max( dot( fVd, fSd ), 0.0 ), 5.0 );\n vec3 fogC = fogColor * mix( vec3( 1.0 ), vec3( 1.75, 1.3, .82 ), fSg * ( 1.0 - fEl ) );\n float fAer = smoothstep( 250.0, 3200.0, vFogDepth ); fogFactor = max( fogFactor, fAer * 0.58 ); fogC = mix( fogC, fogC * vec3( .86, .95, 1.1 ), fAer * ( 1.0 - fSg ) );\n #endif\n #ifdef FOG_EXP2\n gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );\n #else\n gl_FragColor.rgb = mix( gl_FragColor.rgb, fogC, fogFactor );\n #endif\n#endif';
+THREE.ShaderChunk.fog_fragment = '#ifdef USE_FOG\n #ifdef FOG_EXP2\n float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );\n fogFactor *= mix( 0.45, 1.0, exp( - max( vFogH - 1.0, 0.0 ) * 0.07 ) );\n #else\n /* aerial haze (Horse Rider): THREE.Fog carries density in .near and the packed sun direction in .far */\n float fogFactor = 1.0 - exp( - fogNear * fogNear * vFogDepth * vFogDepth );\n fogFactor *= mix( 0.3, 1.0, exp( - max( vFogH - 1.0, 0.0 ) * 0.0045 ) );\n float fAz = floor( fogFar ) * 0.01, fEl = fract( fogFar ), fCe = sqrt( 1.0 - fEl * fEl );\n vec3 fSd = vec3( sin( fAz ) * fCe, fEl, cos( fAz ) * fCe ), fVd = normalize( vFogW - cameraPosition );\n float fSg = pow( max( dot( fVd, fSd ), 0.0 ), 5.0 );\n vec3 fogC = fogColor * mix( vec3( 1.0 ), vec3( 1.75, 1.3, .82 ), fSg * ( 1.0 - fEl ) );\n float fAer = smoothstep( 250.0, 3200.0, vFogDepth ); fogFactor = max( fogFactor, fAer * 0.62 ); fogC = mix( fogC, fogC * vec3( .76, .89, 1.15 ), fAer * ( 1.0 - fSg ) ); /* v32: bluer distant aerial perspective */\n #endif\n #ifdef FOG_EXP2\n gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );\n #else\n gl_FragColor.rgb = mix( gl_FragColor.rgb, fogC, fogFactor );\n #endif\n#endif';
 // cinematic lens pass: chromatic aberration, vignette, film grain (after tone mapping)
 const LensShader = { uniforms: { tDiffuse: { value: null }, uT: { value: 0 }, uCA: { value: .0015 }, uGrain: { value: .055 }, uVig: { value: .45 } },
   vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }',

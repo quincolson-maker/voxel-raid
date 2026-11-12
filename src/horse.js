@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from '../addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from '../addons/utils/BufferGeometryUtils.js';
 import { clone as cloneSkinned } from '../addons/utils/SkeletonUtils.js';
-import { mulberry, conifer } from './hrtrees.js';
+import { mulberry, conifer, conifCards, broadleafCards, cardMaterial, needleTexture, leafTexture, TREE_WIND } from './hrtrees.js';
 import { ShaderPass } from '../addons/postprocessing/ShaderPass.js';
 import { createGuns } from './hrguns.js';
 import { createHrZombies } from './hrzombies.js';
@@ -324,7 +324,7 @@ export function createHorseRider(ctx) {
   const H = { on: false, horses: [], mounted: null, cd: 0, prompt: '', obst: [], fence: [], speed: 0, t: 0, near: null, vy: 0, ground: true, riddenT: 0, mounts: 0, models: 'loading', trees: [], lodT: 0, ridden: new Map(), follow: false, online: '',
     stam: 100, winded: 0, cruise: 2, shiftT: 0, yawRate: 0, roll: 0, pitchK: 0, mountT: 0, dismT: 0, wantOff: false, side: 1, lookT: 9, recenter: false, shake: 0, fv: new THREE.Vector2(), bodyYaw: 0, fp: false, gait: 'Standing', zoom: 1 };
   const rnd = mulberry(42), Q = GX.Q, mobile = !!ctx.mobile;
-  const LOD_HORSE = mobile ? 9 : 14, LOD_TREE = mobile ? 55 : 85;
+  const LOD_HORSE = mobile ? 9 : 14, LOD_TREE = mobile ? 70 : 125;
   const up = new THREE.Vector3(0, 1, 0), m4 = new THREE.Matrix4(), qq = new THREE.Quaternion(), v3 = new THREE.Vector3(), sc3 = new THREE.Vector3(), col = new THREE.Color();
   const pbr = (k, o = {}) => PBRS && PBRS[k] ? new THREE.MeshStandardMaterial({ map: PBRS[k].map, normalMap: PBRS[k].normalMap, roughness: 1, metalness: 0, ...o }) : std(o.color ?? 0x7a5634);
   const HQ = !mobile && Q.shadow > 0; // desktop medium / high / ultra: full sky + terrain detail
@@ -338,6 +338,7 @@ export function createHorseRider(ctx) {
     H.chunks = createChunks(scene, mat, hAt, { CH: CHUNK, seg: Q.shadow >= 2048 && !mobile ? 80 : HQ ? 64 : mobile ? 40 : 50, K: mobile ? 1 : 2, lim: CH_LIM, U: XO.chunkU }); H.chunks.update(P.pos.x, P.pos.z, true);
     H.water = createWater(scene, F, hAt, { mobile });
     buildTrees(); buildRocks(); buildLogs(); buildFlora(); buildGrass(); buildPen(); buildTrailMarks();
+    if (mobile) for (const im of H.rockMeshes || []) if (im.count > 100) im.castShadow = false; // v32: big scattered rock sets do not cast on phones
   }
   // woods: conifers + broadleaf trees, instanced, with a near (detailed) / far (low-poly) LOD swapped around the player
   function buildTrees() {
@@ -358,17 +359,17 @@ export function createHorseRider(ctx) {
     const nC = H.trees.filter(t => t.conif).length, nB = H.trees.length - nC;
     const mk = (g, m, n, shadow = true) => { const im = new THREE.InstancedMesh(g, m, Math.max(1, n)); im.count = 0; im.castShadow = shadow; im.receiveShadow = true; im.frustumCulled = false; scene.add(im); return im; };
     H.tm = { cTrunk: mk(new THREE.CylinderGeometry(.16, .36, 12, 7).translate(0, 6, 0), bark, nC), bTrunk: mk(new THREE.CylinderGeometry(.18, .34, 5.2, 7).translate(0, 2.6, 0), bark, nB),
-      cNear: mk(softFoliage(conifer(), y => y, .6), needle, nC), cFar: mk(softFoliage(farConifer(), y => y, .6), needle, nC, false), bNear: mk(softFoliage(broadleafGeo(1, 11), () => 5, .8), leaf, nB), bFar: mk(softFoliage(broadleafGeo(0, 11), () => 5, .8), leaf, nB, false) }; // far LOD is never inside the shadow box
+      cNear: mk(conifCards(mobile ? 11 : 16), cardMaterial(needleTexture(), 0xffffff, 3.4), nC), /* v32: branch cards */ cFar: mk(softFoliage(farConifer(), y => y, .6), needle, nC, false), bNear: mk(broadleafCards(11, mobile ? 8 : 12), cardMaterial(leafTexture(), 0xffffff, 2.2), nB), bFar: mk(softFoliage(broadleafGeo(0, 11), () => 5, .8), leaf, nB, false) }; // far LOD is never inside the shadow box
     // trunks never change LOD: fill once
     let ic = 0, ib = 0; for (const t of H.trees) { m4.compose(v3.set(t.x, t.y, t.z), qq.setFromAxisAngle(up, t.r), sc3.set(t.s, t.s * (t.conif ? 1 : .9 + t.hue * .3), t.s)); if (t.conif) H.tm.cTrunk.setMatrixAt(ic++, m4); else H.tm.bTrunk.setMatrixAt(ib++, m4); }
-    H.tm.cTrunk.count = ic; H.tm.bTrunk.count = ib; updateTreeLOD(true);
+    H.tm.cTrunk.count = ic; H.tm.bTrunk.count = ib; if (mobile) H.tm.cTrunk.castShadow = H.tm.bTrunk.castShadow = false; // v32: phones only shadow the near crowns (the trunk instances cover the whole map) updateTreeLOD(true);
   }
   function updateTreeLOD(force) {
     const T = H.tm; if (!T) return; const px = P.pos.x, pz = P.pos.z; if (!force && H.lodAt && Math.hypot(px - H.lodAt[0], pz - H.lodAt[1]) < 8) return; H.lodAt = [px, pz];
     const n = { cNear: 0, cFar: 0, bNear: 0, bFar: 0 };
     for (const t of H.trees) { const near = Math.hypot(t.x - px, t.z - pz) < LOD_TREE, key = (t.conif ? 'c' : 'b') + (near ? 'Near' : 'Far'), im = T[key];
       m4.compose(v3.set(t.x, t.y, t.z), qq.setFromAxisAngle(up, t.r), sc3.set(t.s, t.s * (t.conif ? 1 : .9 + t.hue * .3), t.s)); im.setMatrixAt(n[key], m4);
-      im.setColorAt(n[key]++, t.conif ? col.setHSL(.27 + t.hue * .06, .34 + t.hue * .1, .2 + t.hue * .06) : col.setHSL(.2 + t.hue * .09, .42 + t.hue * .15, .24 + t.hue * .08)); }
+      im.setColorAt(n[key]++, near ? (t.conif ? col.setHSL(.29 + t.hue * .06, .2 + t.hue * .1, .46 + t.hue * .1) : col.setHSL(.2 + t.hue * .08, .28 + t.hue * .12, .52 + t.hue * .1)) : t.conif ? col.setHSL(.27 + t.hue * .06, .34 + t.hue * .1, .2 + t.hue * .06) : col.setHSL(.2 + t.hue * .09, .42 + t.hue * .15, .24 + t.hue * .08)); }
     for (const k in n) { const im = T[k]; im.count = n[k]; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; }
   }
   // sagebrush, bunchgrass, cacti and the far woods on the mountain slopes (src/hrflora.js)
@@ -394,7 +395,15 @@ export function createHorseRider(ctx) {
     const lowRock = (det, seed) => { const g = new THREE.IcosahedronGeometry(.5, det), p = g.attributes.position, rr = mulberry(seed); const ph = [rr() * 6, rr() * 6, rr() * 6];
       for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i), n = 1 + .22 * Math.sin(x * 7 + ph[0]) * Math.cos(z * 6 + ph[1]) + .12 * Math.sin(y * 9 + ph[2]); p.setXYZ(i, x * n, Math.max(-.12, y * n * .78), z * n); }
       g.translate(0, .14, 0); g.computeVertexNormals(); return g; };
-    const placeLow = mat => { const rm = mat.clone(); rm.normalScale && rm.normalScale.set(1.2, 1.2); for (const [lp, det] of [[1, 2], [2, 1]]) { const L = list.filter(r => r.lp === lp); if (!L.length) continue; const im = new THREE.InstancedMesh(lowRock(det, 7 + lp), rm, L.length);
+    const triRock = m => { m.onBeforeCompile = sh => { // v32: world-space triplanar albedo (no UV seams on the low-poly rocks) + moss/lichen on top faces, darker crevices
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vRW; varying vec3 vRN;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n{ vec4 wp = vec4(transformed, 1.);\n#ifdef USE_INSTANCING\n wp = instanceMatrix * wp;\n#endif\n vRW = (modelMatrix * wp).xyz; vRN = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * objectNormal); }');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vRW; varying vec3 vRN;').replace('#include <map_fragment>', `#ifdef USE_MAP
+ vec3 w3 = pow(abs(vRN), vec3(4.)); w3 /= w3.x + w3.y + w3.z; vec3 p3 = vRW / 1.7; vec4 tc = texture2D(map, p3.zy) * w3.x + texture2D(map, p3.xz) * w3.y + texture2D(map, p3.xy) * w3.z;
+ float up = smoothstep(.55, .9, vRN.y); float lich = fract(sin(dot(floor(vRW * 3.), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+ vec3 rc = tc.rgb * mix(.85, 1.08, fract(sin(dot(floor(vRW.xz * .05), vec2(12.9, 78.2))) * 437.5)); rc = mix(rc, rc * vec3(.62, .78, .45), up * .55); rc = mix(rc, vec3(.62, .6, .46), step(.985, lich) * (1. - up) * .5);
+ diffuseColor.rgb *= rc;
+#endif`); }; return m; };
+    const placeLow = mat => { const rm = triRock(mat.clone()); rm.normalScale && rm.normalScale.set(1.2, 1.2); for (const [lp, det] of [[1, 2], [2, 1]]) { const L = list.filter(r => r.lp === lp); if (!L.length) continue; const im = new THREE.InstancedMesh(lowRock(det, 7 + lp), rm, L.length);
       L.forEach((r, i) => { m4.compose(v3.set(r.x, hAt(r.x, r.z) - r.s * (r.sink || .12), r.z), qq.setFromEuler(new THREE.Euler(r.tilt, r.ry, r.tilt * .6)), sc3.set(r.s * 1.5, r.s * (.8 + (i % 5) * .12), r.s * 1.5)); im.setMatrixAt(i, m4); });
       im.castShadow = im.receiveShadow = true; im.computeBoundingSphere(); scene.add(im); (H.rockMeshes = H.rockMeshes || []).push(im); } list.splice(0, list.length, ...list.filter(r => !r.lp)); };
     const place = shapes => { placeLow(shapes[0].mat); for (let k = 0; k < shapes.length; k++) { const L = list.filter(r => r.k % shapes.length === k), im = new THREE.InstancedMesh(shapes[k].geo, shapes[k].mat, Math.max(1, L.length));
@@ -436,7 +445,7 @@ export function createHorseRider(ctx) {
   function buildGrass() {
     const tufts = Math.round(Math.min(60000, Math.max(3000, (Q.grass || 600) * 4.5)) * (mobile ? .5 : 1.15)), N = Math.round(Math.sqrt(tufts)); // v30: denser near the player on desktop
     const R = Math.min(52, Math.max(18, 9 + Math.sqrt(N * N) * .19));
-    H.grassG = createGrass(scene, H.terrain, PEN, SEG, { N, R, blades: mobile ? 4 : HQ ? 7 : 5, hAt, mask: H.mask, maskHalf: MASK_HALF, mobile }); H.grassInfo = { tufts: N * N, radius: +R.toFixed(1), tris: H.grassG.tris };
+    H.grassG = createGrass(scene, H.terrain, PEN, SEG, { N, R, blades: mobile ? 4 : HQ ? 9 : 7, hAt, mask: H.mask, maskHalf: MASK_HALF, mobile }); H.grassInfo = { tufts: N * N, radius: +R.toFixed(1), tris: H.grassG.tris };
   }
   function buildPen() {
     const y0 = BASE, { x: cx, z: cz, hw, hd, gate } = PEN, g = new THREE.Group(); scene.add(g);
@@ -588,7 +597,7 @@ export function createHorseRider(ctx) {
     sky = H.sky = createSky(GX.renderer, scene, { hq: HQ, mobile });
     fog = scene.fog = new THREE.Fog(0xc8c0b0, mobile ? .00052 : .00042, 0); // near = haze density, far = packed sun direction (see gfx.js fog chunk)
     GX.renderer.toneMappingExposure = .82; GX.hemi.groundColor.set(0x3e3a2c);
-    const sn = GX.sun, sc = sn.shadow.camera, SR = Q.shadow >= 2048 && !mobile ? 46 : mobile ? 22 : 32;
+    const sn = GX.sun, sc = sn.shadow.camera, SR = mobile ? 24 : Q.shadow >= 4096 ? (Q.pr >= 2 ? 72 : 58) : Q.shadow >= 2048 ? 46 : 32; // v32: phones get a small soft shadow box, desktop high/ultra a 4K one
     if (sn.castShadow) { sc.left = sc.bottom = -SR; sc.right = sc.top = SR; sc.near = 1; sc.far = 420; sc.updateProjectionMatrix(); sn.shadow.bias = -.0005; sn.shadow.normalBias = .05; sn.shadow.radius = 2; }
     // shadow box follows what the camera sees (shifted forward) and snaps to whole shadow texels -> no shimmer while riding
     const tx = 2 * SR / Math.max(1, Q.shadow || 1024);
@@ -596,7 +605,7 @@ export function createHorseRider(ctx) {
       lm.lookAt(sky.sunDir, O3, up); lmi.copy(lm).transpose(); sunTmp.applyMatrix4(lmi); sunTmp.x = Math.round(sunTmp.x / tx) * tx; sunTmp.y = Math.round(sunTmp.y / tx) * tx; sunTmp.applyMatrix4(lm);
       sn.position.copy(sunTmp).addScaledVector(sky.sunDir, 200); sn.target.position.copy(sunTmp); sn.target.updateMatrixWorld(); };
     GX.setLens(false); // the shared cinematic lens pass desaturates; Horse Rider uses its own grade below
-    if (GX.composer) { const ps = GX.composer.passes; for (const p of ps) if (p.strength != null && p.radius != null) { p.strength = .2; p.radius = .45; p.threshold = .9; }
+    if (GX.composer) { const ps = GX.composer.passes; for (const p of ps) if (p.strength != null && p.radius != null) { p.strength = .24; p.radius = .5; p.threshold = .88; }
       const li = ps.indexOf(GX.lens && GX.lens()); H.grade = new ShaderPass(GRADE); GX.composer.insertPass(H.grade, li >= 0 ? li : ps.length); }
     envTick(0, true);
   }
@@ -717,7 +726,7 @@ export function createHorseRider(ctx) {
     else if (e.code === 'KeyC') { H.fp = !H.fp; msg(H.fp ? 'First-person view (C to switch back)' : 'Third-person view', 1.2); } });
   addEventListener('wheel', e => { if (!H.on || !document.body.classList.contains('horse-mode')) return; H.zoom = Math.max(.5, Math.min(1.5, H.zoom * (e.deltaY > 0 ? 1.08 : 1 / 1.08))); }, { passive: true }); // camera zoom
   function tick(dt) {
-    if (!H.on) return; H.t += dt; H.cd = Math.max(0, H.cd - dt); H.shake = Math.max(0, H.shake - dt * 1.6);
+    if (!H.on) return; H.t += dt; TREE_WIND.value += dt; H.cd = Math.max(0, H.cd - dt); H.shake = Math.max(0, H.shake - dt * 1.6);
     const h = H.mounted;
     let fwdIn = 0, sideIn = 0; if (keys.KeyW || keys.ArrowUp) fwdIn += 1; if (keys.KeyS || keys.ArrowDown) fwdIn -= 1; if (keys.KeyD || keys.ArrowRight) sideIn += 1; if (keys.KeyA || keys.ArrowLeft) sideIn -= 1;
     const stick = Math.min(1, Math.hypot(input.mx || 0, input.mz || 0)); if (stick > .05) { fwdIn = -input.mz; sideIn = input.mx; }

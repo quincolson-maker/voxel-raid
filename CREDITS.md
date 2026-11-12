@@ -65,3 +65,5 @@ Sky: original code (`src/hrworld.js`); the atmospheric scattering is the Preetha
 
 
 v31: the voxel raid / zombies FPS modes were removed, together with their assets (Quaternius CC0 gun GLBs, Poly Haven ammo_box / wooden_military_crate); their credits are in git history (<= v30).
+
+v32 realism: the branch-card / leaf-card tree textures, rock triplanar/moss, strata, snow glints and water fresnel are original procedural code (canvas-drawn textures, GLSL); no new third-party assets. Terrain textures remain the existing Poly Haven CC0 sets (leafy_grass, sparse_grass, dirt, rocky_trail, rock_face, snow_02, aerial_rocks_02, bark_brown_02). Removed in v32 (unused after v31): concrete, concrete_wall_008, red_brick_03, metal_plate_02.
