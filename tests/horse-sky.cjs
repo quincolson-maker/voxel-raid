@@ -15,7 +15,7 @@ const ignorable = t => /pointer ?lock|requestPointerLock|fullscreen|favicon|WebG
     const p = await br.newPage(); p.on('pageerror', e => errors.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !ignorable(m.text())) errors.push(m.text()); });
     await p.setViewport(mobile ? { width: 844, height: 390, deviceScaleFactor: 1, isMobile: true, hasTouch: true, isLandscape: true } : { width: 1280, height: 720 });
     await p.goto(base + `/?dev=1&zombies=0&q=${q}` + (mobile ? '&touch=1' : ''), { waitUntil: 'networkidle0', timeout: 120000 });
-    if (mobile) await p.tap('#horseBtn'); else await p.click('#horseBtn');
+    // v31: the page opens straight into Horse Rider (no menu)
     await p.waitForFunction(() => __G.mode === 'horse' && __horse.state.models !== 'loading', { timeout: 120000 }); await sleep(2500);
     R.sky = await p.evaluate(() => { const S = __horse.state.sky; return S && { el: +S.el.toFixed(1), env: !!S.env, dome: S.dome.visible, bgNull: __cam.parent.background === null, envSet: !!__cam.parent.environment, fog: __cam.parent.fog.isFog === true, far: __cam.far }; });
     assert.ok(R.sky && R.sky.env && R.sky.envSet && R.sky.bgNull && R.sky.fog, 'sky dome + sky IBL + sky-tied haze'); assert.ok(R.sky.el > 3 && R.sky.el < 20, 'golden-hour sun'); assert.ok(R.sky.far >= 5000, 'far plane reaches the mountains');

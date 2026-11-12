@@ -15,10 +15,9 @@ const ignorable = t => /pointer ?lock|requestPointerLock|fullscreen|favicon|WebG
     const tag = mobile ? 'mobile' : 'desktop', errors = [], R = (out[tag] = {});
     const p = await br.newPage(); p.on('pageerror', e => errors.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !ignorable(m.text())) errors.push(m.text()); });
     await p.setViewport(mobile ? { width: 844, height: 390, deviceScaleFactor: 1, isMobile: true, hasTouch: true, isLandscape: true } : { width: 1280, height: 720 });
-    await p.goto(base + '/?dev=1&q=low&zombies=0' + (mobile ? '&touch=1' : ''), { waitUntil: 'networkidle0' });
-    assert.ok(await p.$eval('#horseBtn', e => e.offsetHeight > 0 && /HORSE RIDER/.test(e.textContent)));
-    await p.screenshot({ path: `shot-horserider-rdr-menu-${tag}.png` });
-    if (mobile) await p.tap('#horseBtn'); else await p.click('#horseBtn');
+    await p.goto(base + '/?dev=1&q=low&zombies=0' + (mobile ? '&touch=1' : ''), { waitUntil: 'networkidle0', timeout: 180000 });
+    assert.ok(await p.evaluate(() => !document.getElementById('horseBtn') && !document.getElementById('menu')), 'no mode menu (v31)');
+    await p.screenshot({ path: `shot-horserider-rdr-open-${tag}.png` });
     await p.waitForFunction(() => __G.mode === 'horse' && __horse.state.horses.length >= 4, { timeout: 15000 });
     await p.waitForFunction(() => __horse.state.models !== 'loading', { timeout: 60000 });
     R.models = await p.evaluate(() => __horse.state.models); if (!/prochorse/.test(base)) assert.equal(R.models, 'real', 'realistic GLB horses + rider loaded');

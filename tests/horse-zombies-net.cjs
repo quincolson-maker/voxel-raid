@@ -28,10 +28,10 @@ async function page(br, mobile, errors, tag) {
     br = await puppeteer.launch({ executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', headless: true, protocolTimeout: 120000, args });
     await br.defaultBrowserContext().overridePermissions(base, ['microphone']);
     const Q = '/?dev=1&loopnet=1&q=low&lobby=' + encodeURIComponent(base);
-    step('host'); const h = await page(br, false, errors, 'host'); await h.goto(base + Q, { waitUntil: 'networkidle0' }); await h.click('#horseBtn');
+    step('host'); const h = await page(br, false, errors, 'host'); await h.goto(base + Q, { waitUntil: 'load', timeout: 180000 });
     await until(h, () => __hnet.state.role === 'host' && !!__hnet.state.code && __horse.state.zombies, null, 30000);
     await h.evaluate(() => { const Z = __horse.state.zombies; Z.clear(); Z.state.spawnT = 1e9; for (const o of __horse.state.horses) { o.tgt = null; o.wait = 1e9; } });
-    step('client joins'); const c = await page(br, true, errors, 'p2'); await c.goto(base + Q + '&touch=1', { waitUntil: 'networkidle0' }); await c.tap('#horseBtn');
+    step('client joins'); const c = await page(br, true, errors, 'p2'); await c.goto(base + Q + '&touch=1', { waitUntil: 'load', timeout: 180000 });
     await until(c, () => __hnet.state.role === 'client' && __hnet.state.remotes.has('P1') && __horse.state.zombies, null, 30000); await until(h, () => __hnet.state.remotes.has('P2'));
     step('host spawns; client mirrors the same zombies');
     R.hostIds = await h.evaluate(() => { const Z = __horse.state.zombies; return [['walker', 30, 60], ['runner', 36, 64], ['brute', 24, 66]].map(([k, x, z]) => { const o = Z.spawn(k, [x, z]); o.hold = true; return o.id; }); });

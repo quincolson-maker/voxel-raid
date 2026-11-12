@@ -38,7 +38,7 @@ export function initTouch(input, look, act, unlockAudio) {
     dbgEl.innerHTML = h; }
   dbg(); addEventListener('resize', dbg);
   // buttons; FIRE also acts as a look pad while held
-  const btn = (id, down, up, drag) => { const el = $(id); let pid = null, last = null;
+  const btn = (id, down, up, drag) => { const el = $(id); if (!el || !down) return; let pid = null, last = null;
     el.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); unlockAudio(); if (pid !== null) return; pid = e.pointerId; cap(el, e); el.classList.add('down'); last = [e.clientX, e.clientY]; if (drag) lookStart(pid, e.clientX, e.clientY); down(); });
     if (drag) el.addEventListener('pointermove', e => { if (e.pointerId !== pid) return; e.preventDefault(); lookMove(pid, e.clientX, e.clientY); });
     const u = e => { if (e.pointerId !== pid) return; if (drag) lookEnd(pid); pid = null; el.classList.remove('down'); up && up(); };
@@ -49,7 +49,7 @@ export function initTouch(input, look, act, unlockAudio) {
   // the ⋯ menu holds everything that is not needed every second
   const more = $('uiMore'), setMore = v => { more.hidden = !v; $('tMore').classList.toggle('down', v); };
   btn('tMore', () => setMore(more.hidden));
-  const item = (id, fn, keep) => { const el = $(id); el.addEventListener('pointerdown', e => { e.stopPropagation(); }); el.addEventListener('click', e => { e.preventDefault(); unlockAudio(); fn(); if (!keep) setMore(false); }); };
+  const item = (id, fn, keep) => { const el = $(id); if (!el || !fn) return; el.addEventListener('pointerdown', e => { e.stopPropagation(); }); el.addEventListener('click', e => { e.preventDefault(); unlockAudio(); fn(); if (!keep) setMore(false); }); };
   item('mSlide', act.slide); item('mInspect', act.inspect); item('mScore', act.score); item('mHelp', act.help); item('mFs', act.fs); item('mQuit', act.quit); item('mClose', () => {});
   // block page scroll/zoom gestures that would otherwise steal touches (iOS Safari)
   document.addEventListener('touchmove', e => { if (e.target.closest && e.target.closest('#touch')) e.preventDefault(); }, { passive: false });

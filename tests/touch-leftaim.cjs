@@ -14,7 +14,7 @@ const ignorable = t => /pointer ?lock|requestPointerLock|fullscreen|favicon|WebG
   try {
     const open = async q => { const p = await br.newPage(); p.on('pageerror', e => errors.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !ignorable(m.text())) errors.push(m.text()); });
       await p.setViewport({ width: 844, height: 390, deviceScaleFactor: 1, isMobile: true, hasTouch: true, isLandscape: true });
-      await p.goto(base + '/?dev=1&q=low&zombies=0&touch=1' + q, { waitUntil: 'networkidle0' }); await p.tap('#horseBtn');
+      await p.goto(base + '/?dev=1&q=low&zombies=0&touch=1' + q, { waitUntil: 'networkidle0', timeout: 180000 });
       await p.waitForFunction(() => __G.mode === 'horse' && __horse.guns && __horse.state.models !== 'loading', { timeout: 90000 });
       await p.evaluate(() => { const H = __horse; for (const o of H.state.horses) { o.tgt = null; o.wait = 1e9; } const x = H.PEN.x - H.PEN.hw - 9, z = H.PEN.z + 1; __P.pos.set(x, H.hAt(x, z), z); __P.yaw = Math.PI / 2; __P.pitch = 0; });
       const cdp = await p.target().createCDPSession(); const T = {}; // id -> [x, y]

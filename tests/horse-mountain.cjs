@@ -18,7 +18,7 @@ const ignorable = t => /pointer ?lock|requestPointerLock|fullscreen|favicon|WebG
     const p = await br.newPage(); p.on('pageerror', e => errors.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !ignorable(m.text())) errors.push(m.text()); });
     await p.setViewport(mobile ? { width: 844, height: 390, deviceScaleFactor: 1, isMobile: true, hasTouch: true, isLandscape: true } : { width: 1280, height: 720 });
     await p.goto(base + `/?dev=1&solo=1&zombies=0&q=${mobile ? 'low' : 'medium'}` + (mobile ? '&touch=1' : ''), { waitUntil: 'networkidle0', timeout: 120000 });
-    if (mobile) await p.tap('#horseBtn'); else await p.click('#horseBtn');
+    // v31: the page opens straight into Horse Rider (no menu)
     await p.waitForFunction(() => __G.mode === 'horse' && __horse.state.horses.length >= 4, { timeout: 30000 });
     await p.waitForFunction(() => __horse.state.models !== 'loading', { timeout: 120000 });
     R.features = await p.evaluate(() => __horse.state.F.info);

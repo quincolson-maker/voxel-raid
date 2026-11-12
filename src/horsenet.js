@@ -45,7 +45,7 @@ export function createHorseNet({ horse, P, msg }) {
     b.title = st === 'live' ? 'Voice on — tap to mute (V)' : st === 'muted' ? 'Muted — tap to talk (V)' : st === 'starting' ? 'Waiting for microphone permission' : (V.err || 'Mic unavailable') + ' — tap to retry. You can still hear the other riders.';
     b.setAttribute('aria-label', b.title); b.setAttribute('aria-pressed', st === 'live' ? 'false' : 'true'); }
   const advert = createAdvert();
-  const callsign = () => ($('operator') && $('operator').value) || 'Rider';
+  const callsign = () => new URLSearchParams(location.search).get('name') || localStorage.getItem('vr_op') || 'Rider';
   const advertise = () => { if (isHost() && S.code) advert.update({ code: S.code, host: callsign(), players: 1 + S.remotes.size, max: MAX_PLAYERS, map: 'day', mode: 'horse' }); };
   function onStatus(s, peer) {
     if (s === 'open' && isHost()) {

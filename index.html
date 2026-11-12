@@ -1,7 +1,7 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#1a2238">
-<link rel="icon" href="data:,"><link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="manifest" href="manifest.webmanifest"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Voxel Raid"><title>Voxel Raid: Bastion Breakers</title>
+<link rel="icon" href="data:,"><link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="manifest" href="manifest.webmanifest"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Voxel Raid"><title>Voxel Raid · Horse Rider</title>
 <style>
 :root{--gold:#e0cf96;--panel:rgba(18,20,18,.68);--fs:clamp(11px,1.6vmin + 4px,17px)}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -61,14 +61,6 @@ select,input{background:#1c2540;box-shadow:none}
 #ioshint{position:fixed;left:50%;bottom:max(12px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:30;max-width:90vw;font-size:.85em;display:none}#ioshint.show{display:block}
 #fsb{position:fixed;right:max(8px,env(safe-area-inset-right));bottom:max(8px,env(safe-area-inset-bottom));z-index:40;padding:.3em .6em;font-size:.8em}
 .touch #fsb{bottom:auto;top:calc(max(8px,env(safe-area-inset-top)) + 6.5em)}
-#menu{justify-content:safe center}
-#zombies{background:linear-gradient(#842e31,#421e26);border-color:#df7472;color:#ffe0c2;letter-spacing:.08em}
-#zHud{position:absolute;inset:0}#zRound{position:absolute;left:24px;bottom:115px;color:#e24540;font:italic 900 70px Georgia,serif;text-shadow:2px 3px 1px #280505,0 0 18px #a52024;letter-spacing:-8px}
-#zUse{position:absolute;bottom:19%;width:100%;text-align:center;color:#ffe5aa;text-shadow:0 2px 4px #000;font-weight:bold}
-#zPowers{position:absolute;top:18%;width:100%;text-align:center;color:#aaffb8;font-weight:bold;text-shadow:0 2px 4px #000}
-.zombie-mode #top{border-color:#ad514e;min-width:280px}.zombie-mode #right{color:#ffdb9b}.zombie-mode #hotbar{display:none}
-.touch.zombie-mode #top{min-width:240px;width:40vw;max-width:340px;font-size:10px}.touch.zombie-mode #vitals{font-size:10px;min-width:0;max-width:27vw}.touch.zombie-mode #right{font-size:10px}
-.touch #zRound{font-size:48px;bottom:16px;left:20px}.touch #zUse{bottom:6%;font-size:12px}.touch #zPowers{top:22%;font-size:11px}
 #endS{white-space:pre-wrap!important}
 /* ===== GHOSTLINE tactical theme (original) ===== */
 :root{--gold:#d9dccf;--acc:#9fc23a;--panel:rgba(8,10,11,.55)}
@@ -167,49 +159,25 @@ body.hr-scoped #hud,body.hr-scoped #hrZ,body.hr-scoped #hrGun,body.hr-scoped #nu
 </style>
 </head><body>
 <div id="hud" style="display:none">
- <div id="zHud" hidden><div id="zRound"></div><div id="zUse"></div><div id="zPowers"></div><div id="zBuild" hidden><div class="zbt">BUILD YOUR DEFENSES</div><div id="zBuildT">7:00</div><div class="zbs" id="zBuildHint">Press <b>G</b> to start round 1 now</div></div><div id="zCoop" class="pill" hidden></div><div id="zScore" class="pill" hidden></div></div><div id="vign"></div><div id="nums"></div>
+<div id="vign"></div><div id="nums"></div>
  <div id="top" class="pill"><div class="row"><span id="mode"></span><span id="timer"></span><span id="stars"></span></div><div id="sub" style="font-size:.8em;opacity:.85"></div><div class="bar"><i id="dbar"></i></div></div>
- <div id="compass"><div id="cstrip"></div><div id="cpins"></div><div id="chead"></div></div><div id="feed"></div><div id="scope"></div><div id="cross"></div><div id="hitm">✕</div><div id="msg"></div><div id="hrPrompt" hidden></div>
+ <div id="compass"><div id="cstrip"></div><div id="cpins"></div><div id="chead"></div></div><div id="hitm">✕</div><div id="msg"></div><div id="hrPrompt" hidden></div>
  <div id="vitals" class="pill"><div class="bar" id="hpbar"><i id="hp"></i></div><div id="ammo"></div><div id="res"></div></div>
- <div id="hotbar"></div><div id="right" class="pill"></div><div id="fps" hidden></div><div id="keyhint">H · controls</div><div id="keys" class="pill" hidden></div>
+ <div id="right" class="pill"></div><div id="fps" hidden></div><div id="keyhint">H · controls</div><div id="keys" class="pill" hidden></div>
 </div>
 <div id="touch">
  <div id="joy"><div id="stick"><div id="knob"></div></div></div><div id="look"></div>
  <div class="tb big" id="tFire" style="right:5%;bottom:22%">FIRE</div>
  <div class="tb" id="tAds" style="right:calc(5% + clamp(74px,18vmin,110px));bottom:12%">ADS</div>
- <div class="tb" id="tReload" style="right:calc(5% + clamp(70px,17vmin,104px));bottom:calc(22% + clamp(56px,13vmin,84px))">RELOAD</div>
  <div class="tb" id="tJump" style="right:2%;bottom:3%">JUMP</div>
  <div class="tb act" id="tGun" style="right:2%;bottom:calc(22% + clamp(76px,18vmin,112px))">🔫<small>DRAW</small></div>
- <div class="tb" id="tSwap" style="right:4%;bottom:calc(22% + clamp(76px,18vmin,112px))">SWAP</div>
  <div class="tb act" id="tAct" style="right:calc(7% + clamp(130px,30vmin,190px));bottom:30%" hidden>USE</div>
- <div id="tBuildBar" hidden><div class="tb sm" id="tPiece">PIECE</div><div class="tb sm" id="tMat">MAT</div><div class="tb sm skip" id="tSkip">SKIP</div></div>
  <div class="tb sm" id="tMore" title="More">⋯</div>
- <div id="uiMore" class="pill" hidden><button id="mSlide">Slide</button><button id="mInspect">Inspect</button><button id="mScore">Scoreboard</button><button id="mHelp">Controls</button><button id="mFs">Fullscreen</button><button id="mQuit">Quit</button><button id="mClose">✕ Close</button></div>
+ <div id="uiMore" class="pill" hidden><button id="mHelp">Controls</button><button id="mFs">Fullscreen</button><button id="mClose">✕ Close</button></div>
 </div>
-<div id="menu" class="panel">
-<button id="gear" title="Settings" aria-label="Settings">⚙</button>
- <h1>VOXEL RAID<br><span style="font-size:.45em">GHOSTLINE · ZOMBIES</span></h1>
- <div class="help">Endless zombies on <b>Daybreak — Firebase</b> · solo or up to 4-player co-op</div>
- <button id="zombies" class="gold">☣ ZOMBIES SOLO</button>
- <button id="horseBtn">🐎 HORSE RIDER</button>
- <button id="zHost">👥 HOST CO-OP</button>
- <button id="zJoinOpen">🔗 JOIN CO-OP</button>
- <div id="lobbies"><div id="lobbyHead" data-s="checking…">OPEN LOBBIES</div><div id="lobbyList"></div></div>
- <div class="row2" id="joinBox" hidden><input id="zCode" placeholder="ROOM CODE" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false"><button id="zJoin">Connect</button></div><div class="help" id="zJoinMsg"></div>
- <div id="settings" hidden>
- <div id="loadout"><div><b>OPERATOR</b><select id="operator"><option>WRAITH-6</option><option>KESTREL</option><option>ATLAS</option><option>NOMAD</option></select></div><div><b>START</b>M17 + RPG-7</div><div><b>WALL-BUYS</b>M4A1 · M870 · Mystery Box</div></div>
- <div class="row2"><label>Graphics <select id="quality"><option value="auto">Auto</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="ultra">Ultra</option></select></label> <label>Lighting <select id="lightsel"><option value="day">Day</option><option value="golden">Golden hour</option><option value="overcast">Overcast</option><option value="dusk">Dusk</option></select></label></div>
- <div class="row2"><label><input type="checkbox" id="rainchk"> Rain (High/Ultra)</label> <label><input type="checkbox" id="lenschk" checked> Lens FX</label> <label><input type="checkbox" id="fpschk"> FPS counter</label> <button id="fsb">⛶ Fullscreen</button></div>
- <div class="help">Co-op: Host gets a room code + link; up to 3 friends tap Join and enter it. Build phase: host skips, or half the squad votes.</div>
- <div class="help" id="help"></div>
- <div class="help" style="opacity:.55">Weapon models: Quaternius (CC0). PeerJS (MIT).</div>
- </div>
- <div id="classic" hidden><button id="queue">Queue</button><button id="att">Attack</button><button id="def">Defend</button><select id="layout"></select><input id="buildT" type="number" value="300"><select id="primary"><option value="carbine">M4A1</option><option value="smg9">MP9</option><option value="shotgun">M870</option><option value="dmr">SR-25</option><option value="lmg">M249</option></select></div>
-</div>
-<div id="end" class="panel" style="display:none"><h1 id="endT"></h1><div id="endS" style="font-size:1.2em;white-space:pre;text-align:center"></div><button class="gold" onclick="location.href=location.pathname">Main Menu</button></div>
 <button id="vMute" hidden aria-pressed="false"></button>
 <div id="rot"><div class="ph"></div><p>Rotate your phone to landscape</p><button id="rotskip">Play anyway</button></div>
 <div id="ioshint" class="pill">For true fullscreen on iPhone: tap Share → <b>Add to Home Screen</b>, then launch Voxel Raid from your home screen. <button id="ioshintx" style="padding:.2em .6em">OK</button></div>
 <script src="./vendor/peerjs.min.js"></script>
-<script type="module" src="./game.min.js?v=30-mountains"></script>
+<script type="module" src="./game.min.js?v=31-horseonly"></script>
 </body></html>

@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from '../addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from '../addons/utils/BufferGeometryUtils.js';
 import { clone as cloneSkinned } from '../addons/utils/SkeletonUtils.js';
-import { mulberry, conifer } from './models.js';
+import { mulberry, conifer } from './hrtrees.js';
 import { ShaderPass } from '../addons/postprocessing/ShaderPass.js';
 import { createGuns } from './hrguns.js';
 import { createHrZombies } from './hrzombies.js';

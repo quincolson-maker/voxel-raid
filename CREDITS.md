@@ -18,29 +18,14 @@ No Bohemia Interactive / Arma or Supercell assets, models, textures or likenesse
 | metal_plate_02 | Player steel pieces | https://polyhaven.com/a/metal_plate_02 | CC0 |
 | brown_planks_05 | Player timber pieces, watchtower | https://polyhaven.com/a/brown_planks_05 | CC0 |
 | bark_brown_02 | Tree trunks | https://polyhaven.com/a/bark_brown_02 | CC0 |
-| ammo_box (glTF) | Supply depot props | https://polyhaven.com/a/ammo_box | CC0 |
-| wooden_military_crate (glTF) | Supply depot props | https://polyhaven.com/a/wooden_military_crate | CC0 |
 
 Textures were resized and re-encoded to WebP (512 px default, 1k lazy-loaded on High/Ultra); glTF textures downscaled to 512 px.
 Library: three.js r170 (MIT) incl. examples/jsm add-ons (MIT).
-
-## Weapons
-All six weapons (Carbine, SMG-9, Shotgun, DMR, LMG, Pistol) are original procedural models authored in code (`src/models.js` → `makeGun`), with generic names and no trademarks or manufacturer markings. Firing sounds are synthesized with WebAudio.
-Downloadable CC0/CC-BY gun models were reviewed on Poly Pizza (e.g. Quaternius CC0 low-poly rifles), but they are stylized flat-colour low-poly and clashed with the realistic look, so none were used. No third-party weapon assets are included.
 
 ## Realism pass (v8)
 All new effects (bullet-hole/scorch decals, debris/rubble, dust, rain, shell casings, lens shader, height fog, reverb impulse, footsteps) are procedural original code — no new third-party assets. No CC0/CC-BY rigged human met license requirements (Mixamo is not CC), so soldiers remain original procedural models.
 
 - PeerJS 1.5.4 (MIT) — vendored at `vendor/peerjs.min.js` for co-op WebRTC data channels; signaling via the free public PeerJS broker.
-
-## Weapon models (CC0 / public domain)
-All from **Quaternius — "Ultimate Guns Pack"** (https://quaternius.itch.io/50-lowpoly-guns, GLB mirror https://poly.pizza/bundle/Ultimate-Guns-Pack-cpgUfI4t2F), license **CC0 1.0**. Re-exported with glTF-Transform (quantized) to `assets/guns/`.
-- M4A1 (`carbine.glb`) ← "Assault Rifle" https://poly.pizza/m/Bgvuu4CUMV
-- MP9 (`smg9.glb`) ← "Submachine Gun" https://poly.pizza/m/7ehatxr7FY
-- M870 (`shotgun.glb`) ← "Shotgun" https://poly.pizza/m/DcNE0HVdW8
-- SR-25 (`dmr.glb`) ← "Sniper Rifle" https://poly.pizza/m/XCIC2Ae4Rb
-- M17 (`pistol.glb`) ← "Pistol" https://poly.pizza/m/Jyn9qex4ba
-- M249 and RPG-7 remain original procedural models (no suitable CC0 model found).
 
 ## Horse Rider models (CC0 1.0 – public domain, by Grab3D)
 | Asset | Used for | Source | License |
@@ -77,3 +62,6 @@ Sky: original code (`src/hrworld.js`); the atmospheric scattering is the Preetha
 
 ## Horse Rider rideable mountains (v30) — original, no downloaded assets
 - Mountain trails, ponds, creek, detail-terrain chunks, world mask, water shader (`src/hrterrain.js`), mountain forests, low-poly outcrop rocks, fallen logs, trail signposts and summit cairns (`src/horse.js`): original code / procedural geometry. Textures are the existing CC0 Poly Haven sets listed above (bark, rock, grass, dirt, rocky trail, snow). Nothing bought or downloaded.
+
+
+v31: the voxel raid / zombies FPS modes were removed, together with their assets (Quaternius CC0 gun GLBs, Poly Haven ammo_box / wooden_military_crate); their credits are in git history (<= v30).
