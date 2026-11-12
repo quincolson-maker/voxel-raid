@@ -12,7 +12,7 @@ export function createVoice({ send, me, onChange }) {
     if (V.mic) return Promise.resolve(V.mic); if (asking) return asking;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { V.err = 'Voice needs HTTPS and a mic'; emit(); return Promise.resolve(null); }
     asking = navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false })
-      .then(s => { V.mic = s; V.err = ''; const t = track(); if (t) { t.enabled = !V.muted; t.onended = () => { V.mic = null; V.err = 'Mic disconnected'; emit(); }; }
+      .then(s => { V.mic = s; V.err = ''; const t = track(); if (t) { t.enabled = !V.muted; t.onended = () => { V.mic = null; emit(); if (V.on) { if (document.hidden) V.needMic = true; else setTimeout(() => V.on && !V.mic && getMic(), 600); } }; /* v34: the browser / OS took the mic: grab it again by itself */ }
         for (const L of V.links.values()) attach(L); emit(); return s; })
       .catch(e => { V.err = (e && e.name === 'NotAllowedError') ? 'Mic blocked — allow it in browser settings' : 'No mic found'; emit(); return null; })
       .finally(() => { asking = null; });
@@ -47,6 +47,11 @@ export function createVoice({ send, me, onChange }) {
     else if (m.k === 'ice' && L) { if (L.pc.remoteDescription) L.pc.addIceCandidate(m.d).catch(() => {}); else L.pend.push(m.d); }
   };
   function drop(id) { const L = V.links.get(id); if (!L) return; V.links.delete(id); try { L.pc.close(); } catch (_) {} if (L.audio) { L.audio.srcObject = null; L.audio.remove(); } emit(); }
+  // v34: switching apps never mutes voice. Nothing stops the track on blur / hidden; when you come back, a mic the browser
+  // ended (iOS suspends it in the background) is re-acquired and put back on every link, and paused peer audio plays again
+  V.resume = () => { if (!V.on) return; const t = track(); if (!t || t.readyState === 'ended' || V.needMic) { V.needMic = false; if (t && t.readyState === 'ended') V.mic = null; getMic(); }
+    for (const L of V.links.values()) if (L.audio && L.audio.paused) L.audio.play().catch(() => {}); };
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) V.resume(); }); addEventListener('pageshow', () => V.resume()); addEventListener('focus', () => V.resume());
   V.drop = drop;
   // Join/host: turn voice on (asks for the mic once) and link to everyone already known.
   V.start = ids => { V.on = true; emit(); getMic(); (ids || []).forEach(V.peer); early.splice(0).forEach(V.signal); };

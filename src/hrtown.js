@@ -81,7 +81,8 @@ export function createTown(c) {
         beam(s, M.steel, P0(h1, -1, y1), P0(h1, 1, y1), .1); if (k === 0) beam(s, M.steel, P0(h0, -1, y0 + .35), P0(h0, 1, y0 + .35), .1);
         beam(s, M.steel, P0(h0, -1, y0 + .35), P0(h1, 1, y1), .05); beam(s, M.steel, P0(h0, 1, y0 + .35), P0(h1, -1, y1), .05); } }
     // switchback stair: flights alternate lanes A (+x) / B (-x); landings at x = +-3..4.2 at 4, 8, 12 (and the top landing at 16)
-    const gFoot = Math.min(.4, Math.max(-.4, G(-X, A))); // the first tread sits on the ground at the foot (no lip)
+    const gFoot = G(-X, A); // v34: the first tread sits on the ground at the foot (no lip), plus a concrete entry pad that meets the ground
+    { const ge = G(-5.4, A); floor(s, -5.4, -X, A - .55, A + .55, ge, gFoot, 'x'); const lo = Math.min(ge, gFoot); box(s, M.concrete, (-5.4 - X) / 2, (ge + gFoot) / 2 - .5, A, 5.4 - X, 1.0, 1.2); }
     for (let i = 0; i < 4; i++) { const lane = i % 2 ? B : A, up = i % 2 === 0, ya = i === 0 ? gFoot : i * 4, yb = (i + 1) * 4, zl = lane - .55, zr = lane + .55;
       floor(s, -X, X, zl, zr, up ? ya : yb, up ? yb : ya, 'x');
       const n = Math.round((yb - ya) / .21); for (let k = 0; k < n; k++) { const t = (k + .5) / n, x = up ? -X + 2 * X * t : X - 2 * X * t, y = ya + (yb - ya) * (k + 1) / n; box(s, M.grate, x, y - .03, lane, 2 * X / n + .05, .05, 1.0); }
@@ -111,7 +112,7 @@ export function createTown(c) {
       for (const [x, col] of [[-1, 0xcd7f32], [0, 0xc0c0c0], [1, 0xffd700]]) box(s, new THREE.MeshStandardMaterial({ color: col, metalness: 1, roughness: .3 }), x, L + 1.18, -2.0, .4, .14, .3);
       s.shopSpot = spot(s, 0, L, -.8, 'shop', 'Gun upgrade station', 1.7); }
     const g = finish(s); for (const sg of s.signs || []) g.add(sg);
-    const lab = new THREE.Mesh(new THREE.PlaneGeometry(1.8, .45), new THREE.MeshStandardMaterial({ map: signTex(kind === 'armory' ? 'LOOKOUT No.1' : 'LOOKOUT No.2'), roughness: .8 })); lab.position.set(-4.85, 1.6, A); lab.rotation.y = -Math.PI / 2; g.add(lab); // sign at the stair foot
+    const lab = new THREE.Mesh(new THREE.PlaneGeometry(1.8, .45), new THREE.MeshStandardMaterial({ map: signTex(kind === 'armory' ? 'LOOKOUT No.1' : 'LOOKOUT No.2'), roughness: .8 })); lab.position.set(-4.3, 2.75, A); lab.rotation.y = -Math.PI / 2; box(s, M.steel, -4.25, 2.75, A, .06, .5, 2.2); g.add(lab); // sign at the stair foot
     return s; }
 
   // ---- the town: saloon + general store side by side, boardwalk porch, hitching rail ----

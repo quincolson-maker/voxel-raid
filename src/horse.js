@@ -753,7 +753,8 @@ export function createHorseRider(ctx) {
       // v34: trips only while you are pushing on and running fast; the chance climbs with every drink; down 1.5-3 s, then you get up
       if (l > .12 && vv > 5 && dk > 3 && Math.random() < dt * (dk - 3) * .045 * Math.min(1.6, (vv - 4.5) / 2.7)) { H.fallD = H.fallT = 1.5 + Math.random() * 1.5; H.falls = (H.falls || 0) + 1; H.trips = (H.trips || 0) + 1; H.fallYaw = Math.random() < .5 ? -1 : 1; H.fv.set(0, 0); H.shake = Math.max(H.shake, .5); msg(dk > 10 ? 'You faceplant in the dirt' : 'You tripped and fell', 1.5); } } }
     const v = H.fv.length(), ox0 = P.pos.x, oz0 = P.pos.z, gy0 = hAt(ox0, oz0), onS = town2 && town2.onStruct(ox0, oz0, P.pos.y); H.curY = P.pos.y; moveCircle(P.pos, H.fv.x * dt, H.fv.y * dt, .35, null); H.curY = null;
-    if (!onS && !(town2 && town2.onStruct(P.pos.x, P.pos.z, P.pos.y)) && slopeGate(P.pos, ox0, oz0, gy0, 1.3, .35, null)) H.fv.multiplyScalar(.9); // scrambling up: only up to ~52 degrees
+    const nT = town2 && town2.towers.some(t => Math.hypot(P.pos.x - t.cx, P.pos.z - t.cz) < 22); // v34: you can always scramble up to a lookout, from any side
+    if (!onS && !(town2 && town2.onStruct(P.pos.x, P.pos.z, P.pos.y)) && (nT ? Math.hypot(H.fv.x, H.fv.y) > 2.2 && P.pos.y - gy0 > dt * 2.2 && H.fv.multiplyScalar(.97) && false : slopeGate(P.pos, ox0, oz0, gy0, 1.3, .35, null))) H.fv.multiplyScalar(.9); // scrambling up: only up to ~52 degrees
     const g0 = town2 ? town2.floorAt(P.pos.x, P.pos.z, P.pos.y) : hAt(P.pos.x, P.pos.z); if (jump && H.ground) { H.vy = 7; H.ground = false; }
     H.vy -= 22 * dt; P.pos.y += H.vy * dt; if (P.pos.y <= g0) { P.pos.y = g0; H.vy = 0; H.ground = true; }
     const ob = P.bob; P.bob += dt * v * 1.6; if (H.ground && v > .5 && Math.floor(ob / Math.PI) !== Math.floor(P.bob / Math.PI)) sfx.step && sfx.step(false);
