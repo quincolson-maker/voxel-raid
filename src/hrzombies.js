@@ -51,10 +51,20 @@ export function createHrZombies(c) {
 
   // ---- spawning at the foot of the mountains ----
   function edgePoint(ang) { const dx = Math.cos(ang), dz = Math.sin(ang), k = (EDGE - 9) / Math.max(Math.abs(dx), Math.abs(dz)); return [dx * k, dz * k]; }
+  // v34: spawn points near the players on valid ground (not steep, not water, not in the town / pen / a lookout / a rock)
+  function goodGround(x, z) { if (!Number.isFinite(x) || !Number.isFinite(z) || Math.abs(x) > WALK - 6 || Math.abs(z) > WALK - 6) return false; if (inTown(x, z, 6) || inPenRect(x, z, 4)) return false;
+    const T2 = H.town2; if (T2 && T2.towers) for (const t of T2.towers) if (T2.inFoot && T2.inFoot(t, x, z, 3)) return false; const F = H.F; if (F && F.waterDist && F.waterDist(x, z) < 3) return false;
+    const h = hAt(x, z), gr = Math.max(Math.abs(hAt(x + 1.5, z) - h), Math.abs(hAt(x, z + 1.5) - h), Math.abs(hAt(x - 1.5, z) - h), Math.abs(hAt(x, z - 1.5) - h)) / 1.5; if (!(gr < .75)) return false;
+    for (const [ox, oz, or] of (H.obstNear ? H.obstNear(x, z) : [])) if (Math.hypot(ox - x, oz - z) < or + .8) return false; return true; }
+  function nearSpot() { const ps = players(); if (!ps.length) return null; for (let i = 0; i < 24; i++) { const q = ps[(rnd() * ps.length) | 0], a = rnd() * Math.PI * 2, d = 40 + rnd() * 50, x = q.x + Math.cos(a) * d, z = q.z + Math.sin(a) * d; if (goodGround(x, z) && ps.every(p => Math.hypot(p.x - x, p.z - z) > 35)) return [x, z]; } return null; }
+  Z.goodGround = goodGround; Z.nearSpot = nearSpot;
+  function relocate(o, why) { const at = nearSpot(); if (!at) return false; o.pos.set(at[0], hAt(at[0], at[1]), at[1]); o.prog = null; o.stuckT = 0; o.farT = 0; o.tp = (o.tp || 0) + 1; Z.relocs = (Z.relocs || 0) + 1; Z.lastReloc = why; return true; }
+  Z.relocate = relocate;
   function spawn(kind, at, id) {
     kind = ZKINDS[kind] ? kind : 'walker'; const K = ZKINDS[kind], B = makeBody(kind), g = new THREE.Group(); g.add(B.m); B.m.rotation.y = Math.PI; B.m.position.set(0, 0, 0); B.m.scale.setScalar(K.s); scene.add(g);
     let x, z; if (at) [x, z] = at; else if (!at && (() => { const ps = players(); return ps.length && ps.every(p => Math.max(Math.abs(p.x), Math.abs(p.z)) > EDGE - 20); })()) { // everyone is up in the mountains: they come down the slopes above you
       const ps = players(), q = ps[(rnd() * ps.length) | 0]; let best = null, bh = -1e9; for (let i = 0; i < 6; i++) { const a = rnd() * Math.PI * 2, d = 85 + rnd() * 45, px = Math.max(-WALK + 5, Math.min(WALK - 5, q.x + Math.cos(a) * d)), pz = Math.max(-WALK + 5, Math.min(WALK - 5, q.z + Math.sin(a) * d)), hh = hAt(px, pz); if (hh > bh) { bh = hh; best = [px, pz]; } } [x, z] = best; }
+    else if ((at = nearSpot())) [x, z] = at; // v34: they come from 40-90 m around you, never stuck off at the world edge
     else { const ps = players(); let best = null, bd = 1e9; for (let i = 0; i < 4; i++) { const p = edgePoint(rnd() * Math.PI * 2), q = ps[(rnd() * ps.length) | 0] || { x: 0, z: 0 }, d = Math.hypot(p[0] - q.x, p[1] - q.z); if (d < bd) { bd = d; best = p; } } [x, z] = best; }
     const o = { id: id || Z.nextId++, kind, K, B, g, pos: g.position, yaw: Math.atan2(x - PEN.x, z - PEN.z), hp: K.hp, alive: true, deadT: 0, cd: 1, st: 0, groanT: 2 + rnd() * 6, flinch: 0, sp: 0, born: Z.t, tgt: null, net: null, anim: rnd() * 6 };
     o.pos.set(x, hAt(x, z), z); o.from = [+x.toFixed(1), +z.toFixed(1)]; Z.list.push(o); return o; }
@@ -131,7 +141,13 @@ export function createHrZombies(c) {
     if (safe && Math.hypot(tx - o.pos.x, tz - o.pos.z) < 1.2) { mx *= .2; mz *= .2; } // pressed up against the rails, groaning
     o.pos.x += mx; o.pos.z += mz;
     for (const [ox, oz, or] of (H.obstNear ? H.obstNear(o.pos.x, o.pos.z) : H.obst)) { const ddx = o.pos.x - ox, ddz = o.pos.z - oz; if (Math.abs(ddx) > or + .4 || Math.abs(ddz) > or + .4) continue; const dd = Math.hypot(ddx, ddz), rr = or + .35; if (dd < rr && dd > 1e-4) { o.pos.x = ox + ddx / dd * rr; o.pos.z = oz + ddz / dd * rr; } }
-    pushOutOfPen(o.pos); o.pos.x = Math.max(-WALK, Math.min(WALK, o.pos.x)); o.pos.z = Math.max(-WALK, Math.min(WALK, o.pos.z)); }
+    pushOutOfPen(o.pos); if (H.town2 && H.town2.towers) for (const t of H.town2.towers) if (H.town2.inFoot(t, o.pos.x, o.pos.z, 0)) { o.pos.x -= mx * 1.5; o.pos.z -= mz * 1.5; } // lookouts are solid for them
+    o.pos.x = Math.max(-WALK, Math.min(WALK, o.pos.x)); o.pos.z = Math.max(-WALK, Math.min(WALK, o.pos.z));
+    // v34 stuck watchdog: no progress toward the target for 8 s (while not at a safe-zone edge), or far from every player -> come back near them
+    const nd = players().reduce((m, p) => Math.min(m, Math.hypot(p.x - o.pos.x, p.z - o.pos.z)), 1e9);
+    if (!o.prog || Z.t - o.prog.t > 1) { if (o.prog && !safe && dist > reach + .5 && o.prog.d - dist < .4) o.stuckT = (o.stuckT || 0) + (Z.t - o.prog.t); else if (o.prog) o.stuckT = 0; o.prog = { t: Z.t, d: dist }; }
+    o.farT = nd > 140 ? (o.farT || 0) + dt : 0;
+    if ((o.stuckT || 0) > 8 || nd > 250 || o.farT > 30) relocate(o, o.stuckT > 8 ? 'stuck' : 'far'); }
   function separate() { const L = Z.list; for (let i = 0; i < L.length; i++) { const a = L[i]; if (!a.alive) continue; for (let j = i + 1; j < L.length; j++) { const b = L[j]; if (!b.alive) continue;
     const dx = b.pos.x - a.pos.x, dz = b.pos.z - a.pos.z, d = Math.hypot(dx, dz), r = .55 * (a.K.s + b.K.s) / 2; if (d < r && d > 1e-4) { const k = (r - d) / 2 / d; a.pos.x -= dx * k; a.pos.z -= dz * k; b.pos.x += dx * k; b.pos.z += dz * k; pushOutOfPen(a.pos); pushOutOfPen(b.pos); } } } }
 
@@ -144,11 +160,14 @@ export function createHrZombies(c) {
     for (const h of H.horses) { if (h.hp == null) h.hp = ZSET.horseHp; if (h.panic > 0) h.panic -= dt; if (h.hp < ZSET.horseHp && (inPenSafe(h.pos.x, h.pos.z) || (Z.t % 1 < dt && h.panic <= 0))) h.hp = Math.min(ZSET.horseHp, h.hp + (inPenSafe(h.pos.x, h.pos.z) ? 12 : 2) * dt); }
     if (host) { // waves: a steady trickle that thickens; capped (phones lower)
       if ((Z.waveT += dt) > ZSET.waveSecs) { Z.waveT = 0; Z.wave++; c.msg && c.msg(`Wave ${Z.wave} — more of the dead are coming down from the mountains`, 3); }
-      const live = Z.list.filter(o => o.alive).length; Z.spawnT -= dt; if (Z.spawnT <= 0 && live < Z.cap) { Z.spawnT = Math.max(.75, (7 - Z.wave * .7) / 3) * (rnd() * .5 + .75); spawn(pickKind()); } }
+      const live = Z.list.filter(o => o.alive).length; if (Z.wasRole === 'client') Z.spawnT = Math.min(Z.spawnT, 1); // just became the host: keep the horde coming
+      Z.spawnT -= dt; if (Z.spawnT <= 0 && live < Z.cap) { Z.spawnT = live < Z.cap * .5 ? .4 : Math.max(.75, (7 - Z.wave * .7) / 3) * (rnd() * .5 + .75); spawn(pickKind()); } }
+    Z.wasRole = Z.role();
     const cam = c.camera.position;
     for (const o of [...Z.list]) { o.anim += dt; o.flinch = Math.max(0, o.flinch - dt * 2.5);
       if (!o.alive) { o.deadT += dt; const k = Math.min(1, o.deadT / .7); o.g.rotation.x = -k * 1.45 * (o.kind === 'brute' ? .95 : 1) ; o.g.rotation.z = k * .2 * o.fallDir; if (o.deadT > 4) o.pos.y -= dt * .6; if (o.deadT > 6.5) { despawn(o); continue; } pose(o, dt, 0); continue; }
       if (host) stepHost(o, dt); else if (o.net) { const n = o.net, k = Math.min(1, dt * 8); o.pos.x += (n.x - o.pos.x) * k; o.pos.z += (n.z - o.pos.z) * k; o.yaw += Math.atan2(Math.sin(n.yaw - o.yaw), Math.cos(n.yaw - o.yaw)) * k; o.st = n.st; o.sp = n.sp; }
+      if (host && (!Number.isFinite(o.pos.x) || !Number.isFinite(o.pos.z) || !Number.isFinite(o.pos.y) || Math.abs(o.pos.x) > WALK + 1 || Math.abs(o.pos.z) > WALK + 1 || o.pos.y < hAt(o.pos.x, o.pos.z) - 1)) { if (!relocate(o, 'bad')) { o.pos.set(PEN.x + 30, hAt(PEN.x + 30, PEN.z + 30), PEN.z + 30); } } // NaN / under the map / outside the world
       o.pos.y = hAt(o.pos.x, o.pos.z); o.g.rotation.set(-o.flinch * .25, o.yaw, 0);
       const dc = Math.hypot(cam.x - o.pos.x, cam.z - o.pos.z); o.g.visible = dc < (mobile ? 220 : 320);
       if (o.g.visible && (dc < 90 || ((Z.t * 10 + o.id) | 0) % 3 === 0)) pose(o, dc < 90 ? dt : dt * 3, o.sp, dc < (mobile ? 30 : 55));

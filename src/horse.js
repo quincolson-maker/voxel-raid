@@ -351,13 +351,23 @@ export function createHorseRider(ctx) {
   // v33: fire lookouts at the two trail tops furthest apart (above the snow line), the town on flat meadow ground facing the pen
   function buildPlaces(F) { const tops = F.trails.map(t => t.top); let A = 0, B = 1, bd = -1; for (let i = 0; i < tops.length; i++) for (let j = i + 1; j < tops.length; j++) { const d = Math.hypot(tops[i][0] - tops[j][0], tops[i][1] - tops[j][1]); if (d > bd) { bd = d; A = i; B = j; } }
     const flat = (x, z, hw, hd) => { let a = 1e9, b = -1e9; for (let u = -hw; u <= hw; u += hw / 3) for (let v = -hd; v <= hd; v += hd / 3) { const h = hAt(x + u, z + v); a = Math.min(a, h); b = Math.max(b, h); } return b - a; };
-    const tw = [A, B].map((i, n) => { const t = tops[i]; let best = [t[0], t[1] - 9], bs = 1e9; for (let r = 7; r <= 28; r += 3) for (let a = 0; a < TAU; a += TAU / 12) { const x = t[0] + Math.cos(a) * r, z = t[1] + Math.sin(a) * r; if (Math.abs(x) > WALK - 14 || Math.abs(z) > WALK - 14 || F.trailDist(x, z) < 6) continue; const sc = flat(x, z + 1, 5, 6) + r * .05; if (sc < bs) { bs = sc; best = [x, z]; } } return [best[0], best[1], n ? 'station' : 'armory']; });
+    // v34 lookout sites: near the trail top, any of 4 rotations; the stair foot (local -4.6, 4.6) must be on walkable ground reachable from the trail top,
+    // and no terrain may poke above the base under the footprint (legs + footings reach down to lower ground)
+    const tw = [A, B].map((i, n) => { const t = tops[i]; let best = null, bs = 1e9;
+      const W = (x, z, r, u, v) => { const c = Math.cos(r), sn = Math.sin(r); return [x + u * c + v * sn, z - u * sn + v * c]; };
+      for (let rr = 6; rr <= 46; rr += 4) for (let a = 0; a < TAU; a += TAU / 16) { const x = t[0] + Math.cos(a) * rr, z = t[1] + Math.sin(a) * rr; if (Math.abs(x) > WALK - 16 || Math.abs(z) > WALK - 16 || F.trailDist(x, z) < 7 || F.waterDist(x, z) < 8) continue;
+        for (let k = 0; k < 4; k++) { const rot = k * TAU / 4, [ex, ez] = W(x, z, rot, -4.6, 4.6), [ox, oz] = W(x, z, rot, -8, 4.6), y0 = hAt(ex, ez); let above = 0, rel = 0;
+          for (let u = -4.4; u <= 4.4; u += 1.1) for (let v = -3.6; v <= 6.4; v += 1.25) { const [px, pz] = W(x, z, rot, u, v), dh = hAt(px, pz) - y0; above = Math.max(above, dh); rel = Math.max(rel, Math.abs(dh)); }
+          if (above > 2.2) continue; let mg = 0; const path = [[t[0], t[1]], [ox, oz], [ex, ez]]; for (let q = 0; q < 2; q++) { const [ax, az] = path[q], [bx, bz] = path[q + 1], L = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.ceil(L)); let ph = hAt(ax, az);
+            for (let m = 1; m <= n; m++) { const px = ax + (bx - ax) * m / n, pz = az + (bz - az) * m / n, hh = hAt(px, pz); mg = Math.max(mg, Math.abs(hh - ph) / (L / n)); ph = hh; } }
+          if (mg > .8) continue; const sc = above * 2 + rel * .25 + mg * 3 + rr * .04; if (sc < bs) { bs = sc; best = [x, z, n ? 'station' : 'armory', rot, +mg.toFixed(2), +above.toFixed(2)]; } } }
+      if (!best) best = [t[0] + 8, t[1] + 8, n ? 'station' : 'armory', 0, -1, -1]; return best; });
     let town = null, ts = 1e9; for (let d = 95; d <= 230; d += 15) for (let a = 0; a < TAU; a += TAU / 24) { const x = PEN.x + Math.cos(a) * d, z = PEN.z + Math.sin(a) * d;
       let bad = false; for (const [u, v] of [[-16, -11], [16, -11], [-16, 11], [16, 11], [0, 0], [-16, 0], [16, 0], [0, 11], [0, -11]]) { const px = x + u, pz = z + v; if ((Math.abs(px - PEN.x) < 40 && Math.abs(pz - PEN.z) < 40) || clearing(px, pz, 3) || inRange(px, pz, 6) || F.trailDist(px, pz) < 10 || F.waterDist(px, pz) < 8 || trailDist(px, pz) < 4) { bad = true; break; } } if (bad) continue;
       const sc = flat(x, z, 13, 9) + d * .004; if (sc < ts) { ts = sc; town = [x, z, Math.atan2(x - PEN.x, z - PEN.z)]; } }
-    ZONES = tw.map(t => [t[0], t[1] + 1, 6, 6.5]); if (town) ZONES.push([town[0], town[1], 16, 16]);
+    ZONES = tw.map(t => [t[0], t[1], 9, 9]); if (town) ZONES.push([town[0], town[1], 16, 16]);
     town2 = H.town2 = createTown({ scene, hAt, H, P, mobile, msg, sfx, camera, send: m => H.zSend && H.zSend(m), jacket: on => { if (real()) wearJacket(rider, on); } }).build({ towers: tw, town });
-    for (const w of town2.walls) H.obstWalls = town2.walls; H.places = { towers: tw, town, tops: [tops[A], tops[B]].map(t => [Math.round(t[0]), Math.round(t[1]), Math.round(t[2] - BASE)]), townFlat: +ts.toFixed(2) }; }
+    H.obstWalls = town2.walls; H.places = { towers: tw, town, tops: [tops[A], tops[B]].map(t => [Math.round(t[0]), Math.round(t[1]), Math.round(t[2] - BASE)]), townFlat: +ts.toFixed(2) }; }
   // woods: conifers + broadleaf trees, instanced, with a near (detailed) / far (low-poly) LOD swapped around the player
   function buildTrees() {
     const nT = Math.round(Q.trees * (mobile ? 2.2 : 3));
@@ -575,7 +585,7 @@ export function createHorseRider(ctx) {
   function blocked(x, z, r, skip) {
     if (Math.abs(x) > WALK || Math.abs(z) > WALK) return true;
     for (const f of H.fence) if (segDist(x, z, f) < r + .1) return true;
-    if (town2 && town2.wallHit(x, z, r, H.curY ?? -1e9)) return true; if (town2 && r >= .7) for (const t of town2.towers) if (Math.abs(x - t.cx) < 4.6 + r && z - t.cz > -4.6 - r && z - t.cz < 6 + r) return true; // horses stay off the lookouts
+    if (town2 && town2.wallHit(x, z, r, H.curY ?? -1e9)) return true; if (town2 && r >= .7) for (const t of town2.towers) if (town2.inFoot(t, x, z, r)) return true; // horses stay off the lookouts
     for (const [ox, oz, or] of obstNear(x, z)) if (Math.abs(ox - x) < or + r && Math.abs(oz - z) < or + r && Math.hypot(ox - x, oz - z) < or + r) return true;
     for (const h of H.horses) if (h !== skip && h !== H.mounted && Math.hypot(h.pos.x - x, h.pos.z - z) < .75 + r) return true;
     return false;
@@ -733,7 +743,7 @@ export function createHorseRider(ctx) {
     if ((H.aimK || 0) > .5) { run = false; stick = Math.min(stick, .45); } // aiming: walk, don't run
     const slow = !!keys.AltLeft, sp = stick > .05 ? (stick < .5 ? 1.8 * stick / .5 : run ? 7.2 : lerp(1.8, 4.6, Math.min(1, (stick - .5) / .4))) : run && fwdIn > 0 ? 7.2 : slow ? 1.8 : 4.6;
     const f = tmp.set(-Math.sin(P.yaw), 0, -Math.cos(P.yaw)), rx = -f.z, rz = f.x;
-    let mx = f.x * fwdIn + rx * sideIn, mz = f.z * fwdIn + rz * sideIn; const l = Math.hypot(mx, mz); if (l > 0) { mx *= sp / l; mz *= sp / l; }
+    let mx = f.x * fwdIn + rx * sideIn, mz = f.z * fwdIn + rz * sideIn; const l = Math.hypot(mx, mz); if (l > .12) { mx *= sp / l; mz *= sp / l; } else mx = mz = 0; // v34: a tiny leftover input is no input (never 'stuck running')
     H.fv.x += (mx - H.fv.x) * Math.min(1, dt * 9); H.fv.y += (mz - H.fv.y) * Math.min(1, dt * 9); // momentum: ease into and out of a run
     { const dk = H.drunkK || 0, vv = Math.hypot(H.fv.x, H.fv.y); if (dk > 2.5 && vv > 1 && H.ground && !(H.fallT > 0)) { // drunk on foot: stumbles, then falls over
       if (Math.random() < dt * (dk - 2.5) * .22) { const a = Math.random() * TAU; H.fv.x += Math.cos(a) * 2.2; H.fv.y += Math.sin(a) * 2.2; H.shake = Math.max(H.shake, .3); H.stumbles = (H.stumbles || 0) + 1; }
@@ -758,8 +768,9 @@ export function createHorseRider(ctx) {
     let stick = Math.min(1, Math.hypot(input.mx || 0, input.mz || 0)); if (stick > .05) { fwdIn = -input.mz; sideIn = input.mx; }
     if (H.uiOpen || (town2 && town2.passT > 0) || H.fallT > 0) { fwdIn = sideIn = 0; stick = 0; }
     const dk = town2 ? town2.level() : 0; H.drunkK = dk; if (dk > .3) { // v33 drunk: controls answer late and drift, worse with every drink
-      const tau = Math.min(.9, dk * .1), f = 1 - Math.exp(-dt / Math.max(.01, tau)); H.lagF = (H.lagF ?? fwdIn) + (fwdIn - (H.lagF ?? fwdIn)) * f; H.lagS = (H.lagS ?? sideIn) + (sideIn - (H.lagS ?? sideIn)) * f; fwdIn = H.lagF; sideIn = H.lagS;
-      if (Math.abs(fwdIn) + Math.abs(sideIn) > .1 && dk > 1.5) sideIn += Math.sin(H.t * .9) * Math.min(.55, (dk - 1.5) * .09) + Math.sin(H.t * 2.3 + 1) * Math.min(.25, (dk - 1.5) * .04); } else { H.lagF = fwdIn; H.lagS = sideIn; }
+      const held = Math.abs(fwdIn) + Math.abs(sideIn) > .05, tau = Math.min(.9, dk * .1), f = 1 - Math.exp(-dt / Math.max(.01, tau)); // v34: drunk input answers late on PRESS, but letting go always stops at once
+      const lagT = (cur, raw) => Math.abs(raw) < .05 ? 0 : Math.sign(raw) !== Math.sign(cur ?? 0) ? raw * f : cur + (raw - cur) * f; H.lagF = lagT(H.lagF, fwdIn); H.lagS = lagT(H.lagS, sideIn); fwdIn = H.lagF; sideIn = H.lagS;
+      if (held && dk > 1.5) sideIn += Math.sin(H.t * .9) * Math.min(.55, (dk - 1.5) * .09) + Math.sin(H.t * 2.3 + 1) * Math.min(.25, (dk - 1.5) * .04); } else { H.lagF = fwdIn; H.lagS = sideIn; }
     const run = !!keys.ShiftLeft || !!keys.ShiftRight || (stick > .92 && fwdIn > .6);
     const jump = keys.Space || input.jump;
     if (H.fallT > 0) H.fallT -= dt; if (town2) town2.tick(dt);

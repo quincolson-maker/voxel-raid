@@ -21,7 +21,7 @@ function mats() { if (MATS) return MATS;
   plank.wrapS = plank.wrapT = THREE.RepeatWrapping;
   const S = o => new THREE.MeshStandardMaterial(o);
   MATS = { plank: S({ map: plank, roughness: .88 }), dark: S({ color: 0x4a3322, roughness: .9 }), roof: S({ color: 0x5a5048, roughness: .75, metalness: .25 }), glass: new THREE.MeshPhysicalMaterial({ color: 0x9fb8c4, roughness: .05, transparent: true, opacity: .35, envMapIntensity: 1.5 }),
-    iron: S({ color: 0x30302e, roughness: .5, metalness: .8 }), red: S({ color: 0x8a2a20, roughness: .8 }), crate: S({ map: plank, color: 0xc9a070, roughness: .9 }), felt: S({ color: 0x2c4a2a, roughness: 1 }), lamp: new THREE.MeshBasicMaterial({ color: 0xffd38a }) };
+    iron: S({ color: 0x30302e, roughness: .5, metalness: .8 }), steel: S({ color: 0xaeb4b8, roughness: .42, metalness: .85 }), grate: S({ color: 0x8d9296, roughness: .55, metalness: .8 }), concrete: S({ color: 0x9c9a94, roughness: .96 }), wood: S({ map: plank, color: 0xb8b0a4, roughness: .92 }), red: S({ color: 0x8a2a20, roughness: .8 }), crate: S({ map: plank, color: 0xc9a070, roughness: .9 }), felt: S({ color: 0x2c4a2a, roughness: 1 }), lamp: new THREE.MeshBasicMaterial({ color: 0xffd38a }) };
   return MATS; }
 function signTex(txt, bg = '#3a2414', fg = '#f1dfb0', w = 512, h = 128, font = 'bold 64px Georgia,serif') { return canvasTex(w, h, (x) => { x.fillStyle = bg; x.fillRect(0, 0, w, h); x.strokeStyle = fg; x.lineWidth = 6; x.strokeRect(8, 8, w - 16, h - 16); x.fillStyle = fg; x.font = font; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(txt, w / 2, h / 2 + 4); }); }
 
@@ -56,39 +56,62 @@ export function createTown(c) {
   T.onStruct = (x, z, y) => T.floorAt(x, z, y) > hAt(x, z) + .25;
   T.wallHit = (x, z, r, y) => { for (const w of T.walls) { if (y + 1.7 < w[4] || y > w[5] - .05) continue; const ex = w[2] - w[0], ez = w[3] - w[1], L = ex * ex + ez * ez, t = L ? Math.max(0, Math.min(1, ((x - w[0]) * ex + (z - w[1]) * ez) / L)) : 0; if (Math.hypot(x - w[0] - ex * t, z - w[1] - ez * t) < r + .08) return true; } return false; };
 
-  // ---- fire lookout tower ----
-  function tower(cx, cz, kind) {
-    let gMax = -1e9, gMin = 1e9; for (let x = -4.5; x <= 4.5; x += 1.5) for (let z = -4.5; z <= 6; z += 1.5) { const h = hAt(cx + x, cz + z); gMax = Math.max(gMax, h); gMin = Math.min(gMin, h); }
-    const s = struct(cx, cz, 0, gMax + .15), dn = gMin - s.y0 - 1, L = 16, A = 3.95, B = 5.05; s.kind = kind; T.towers.push(s);
-    for (const [x, z] of [[-3, -3], [3, -3], [-3, 3], [3, 3]]) box(s, M.dark, x, (dn + L + 1.2) / 2, z, .32, L + 1.2 - dn, .32);
-    for (let y = 4; y < L; y += 4) for (const [x, z, w, d] of [[0, -3, 6, .16], [0, 3, 6, .16], [-3, 0, .16, 6], [3, 0, .16, 6]]) box(s, M.dark, x, y - .1, z, w, .18, d);
-    for (let y = 0; y < L; y += 4) for (const sd of [-3, 3]) { const ang = Math.atan2(4, 6), len = Math.hypot(6, 4); for (const k of [1, -1]) { const g = new THREE.BoxGeometry(len, .12, .1); g.rotateZ(ang * k); g.translate(0, y + 2, sd); (s.geo.get(M.dark) || s.geo.set(M.dark, []).get(M.dark)).push(g); const g2 = new THREE.BoxGeometry(.1, .12, len); g2.rotateX(-ang * k); g2.translate(sd, y + 2, 0); s.geo.get(M.dark).push(g2); } }
-    // four switchback flights (lanes A / B on the +z side), landings at the ends, ramps for the feet + visible treads
-    const gs = hAt(cx - 3.3, cz + A) - s.y0;
-    for (let i = 0; i < 4; i++) { const lane = i % 2 ? B : A, ya = i === 0 ? gs : i * 4, yb = (i + 1) * 4, up = i % 2 === 0; // even flights climb +x, odd climb -x
-      floor(s, -3, 3, lane - .55, lane + .55, up ? ya : yb, up ? yb : ya, 'x');
-      const n = 14; for (let k = 0; k < n; k++) { const t = (k + .5) / n, x = up ? -3 + 6 * t : 3 - 6 * t, y = ya + (yb - ya) * t; box(s, M.plank, x, y - .05, lane, 6 / n + .03, .07, 1.05); }
-      for (const ez of [lane - .55, lane + .55]) { const len = Math.hypot(6, yb - ya), g = new THREE.BoxGeometry(len, .22, .06); g.rotateZ((up ? 1 : -1) * Math.atan2(yb - ya, 6)); g.translate(0, (ya + yb) / 2 - .12, ez); s.geo.get(M.dark).push(g); }
-      const lx = up ? 3.6 : -3.6; floor(s, lx - .6, lx + .6, 3.4, 5.6, yb); box(s, M.plank, lx, yb - .06, 4.5, 1.2, .12, 2.2);
-      wall(s, up ? 4.2 : -4.2, 3.4, up ? 4.2 : -4.2, 5.6, yb, yb + 1.1); wall(s, lx - .6, 5.6, lx + .6, 5.6, yb, yb + 1.1); box(s, M.dark, up ? 4.2 : -4.2, yb + .55, 4.5, .06, 1.1, 2.2);
-      wall(s, -3, lane + .55 + (i % 2 ? 0 : -1.1) + (i % 2 ? 0 : 1.1), 3, lane + .55, ya, yb + 1.2 - (i % 2 ? 0 : 99)); } // outer handrail along lane B (inner lane A is shielded by B)
-    // deck + cab
-    floor(s, -3.6, 3.6, -3.6, 3.4, L); box(s, M.plank, 0, L - .08, -.1, 7.2, .16, 7);
-    for (const [ax, az, bx, bz] of [[-3.6, -3.6, 3.6, -3.6], [3.6, -3.6, 3.6, 3.4], [-3.6, -3.6, -3.6, 3.4], [-2.6, 3.4, 3.6, 3.4], [-4.2, 3.4, -3.6, 3.4]]) { wall(s, ax, az, bx, bz, L, L + 1.1); box(s, M.dark, (ax + bx) / 2, L + 1.05, (az + bz) / 2, Math.abs(bx - ax) + .08, .08, Math.abs(bz - az) + .08); }
-    const C = 2.6, HH = 2.5; for (const [ax, az, bx, bz] of [[-C, -C, C, -C], [C, -C, C, C], [-C, C, C, C], [-C, -C, -C, 1], [-C, 2.2, -C, C]]) { wall(s, ax, az, bx, bz, L, L + HH);
-      const w = Math.abs(bx - ax) || .1, d = Math.abs(bz - az) || .1, mx = (ax + bx) / 2, mz = (az + bz) / 2; box(s, M.plank, mx, L + .5, mz, w + .1, 1, d + .1); box(s, M.glass, mx, L + 1.55, mz, w, 1.1, d); box(s, M.dark, mx, L + 2.2, mz, w + .1, .2, d + .1); }
-    for (const [x, z] of [[-C, -C], [C, -C], [-C, C], [C, C], [-C, 1], [-C, 2.2]]) box(s, M.dark, x, L + HH / 2, z, .14, HH, .14);
-    { const g = new THREE.ConeGeometry(4.6, 1.6, 4, 1); g.rotateY(Math.PI / 4); g.translate(0, L + HH + .8, 0); (s.geo.get(M.roof) || s.geo.set(M.roof, []).get(M.roof)).push(g); }
-    box(s, M.red, 0, L + HH + 1.75, 0, .08, .5, .08);
+  // ---- v34 fire lookout: a US Forest Service style steel tower (Aermotor-like) ----
+  // Tapered galvanized lattice (4 angled legs, girts + X bracing every 4 m) on concrete footings; an external switchback
+  // stair on the +z side (two 1.1 m lanes, 4 flights of 4 m, railed landings at each level, the foot at ground height);
+  // a railed catwalk around a square wooden cab (windows on all four sides, door facing the top landing, pyramid roof).
+  // Local frame: entry at (-4.6, 4.6) walking +x; the base height y0 is the ground at the entry.
+  const TW = { L: 16, HW0: 3.6, HW1: 2.3, C: 2.4, K: 3.4, A: 4.6, B: 5.7, Z0: 4.05, Z1: 5.15, Z2: 6.25, X: 3, LX: 4.2 };
+  T.TW = TW;
+  T.entry = t => ({ foot: toW(t, -4.6, TW.A), out: toW(t, -8, TW.A), y: t.y0 });
+  T.inFoot = (t, x, z, m = 0) => { const [lx, lz] = toL(t, x, z); return Math.abs(lx) < TW.LX + .6 + m && lz > -TW.K - .6 - m && lz < TW.Z2 + .4 + m; };
+  function beam(s, mat, a, b, w, d = w) { const v = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]), len = v.length(); if (len < 1e-3) return; const g = new THREE.BoxGeometry(w, len, d);
+    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), v.multiplyScalar(1 / len))); g.translate((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2); (s.geo.get(mat) || s.geo.set(mat, []).get(mat)).push(g); }
+  function rail(s, ax, az, bx, bz, y, col = true) { if (col) wall(s, ax, az, bx, bz, y, y + 1.1); const n = Math.max(1, Math.round(Math.hypot(bx - ax, bz - az) / 1.2));
+    beam(s, M.steel, [ax, y + 1.05, az], [bx, y + 1.05, bz], .05); beam(s, M.steel, [ax, y + .55, az], [bx, y + .55, bz], .035); for (let k = 0; k <= n; k++) { const t = k / n, x = ax + (bx - ax) * t, z = az + (bz - az) * t; beam(s, M.steel, [x, y, z], [x, y + 1.08, z], .05); } }
+  function tower(cx, cz, kind, rot = 0) {
+    const { L, HW0, HW1, C, K, A, B, Z0, Z1, Z2, X, LX } = TW; const s = struct(cx, cz, rot, 0); const gL = (x, z) => { const [wx, wz] = toW(s, x, z); return hAt(wx, wz); };
+    s.y0 = gL(-4.6, A); s.kind = kind; T.towers.push(s); const G = (x, z) => gL(x, z) - s.y0, hw = y => HW0 + (HW1 - HW0) * Math.max(0, y) / L;
+    // concrete footings + legs (each leg leans in from its footing to the top corner)
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { const g0 = G(sx * HW0, sz * HW0), bx = sx * hw(g0), bz = sz * hw(g0); box(s, M.concrete, bx, g0 - .35, bz, .9, 1.3, .9);
+      beam(s, M.steel, [bx, g0 + .3, bz], [sx * HW1, L, sz * HW1], .2); wall(s, bx, bz, bx, bz, g0 - 1, L); }
+    // girts at each level + X bracing on every face, per level
+    const lv = [0, 4, 8, 12, L]; for (let k = 0; k < lv.length - 1; k++) { const y0 = lv[k], y1 = lv[k + 1], h0 = hw(y0), h1 = hw(y1);
+      for (const [ux, uz] of [[1, 0], [0, 1]]) for (const sg of [-1, 1]) { const P0 = (h, t, y) => ux ? [t * h, y, sg * h] : [sg * h, y, t * h];
+        beam(s, M.steel, P0(h1, -1, y1), P0(h1, 1, y1), .1); if (k === 0) beam(s, M.steel, P0(h0, -1, y0 + .35), P0(h0, 1, y0 + .35), .1);
+        beam(s, M.steel, P0(h0, -1, y0 + .35), P0(h1, 1, y1), .05); beam(s, M.steel, P0(h0, 1, y0 + .35), P0(h1, -1, y1), .05); } }
+    // switchback stair: flights alternate lanes A (+x) / B (-x); landings at x = +-3..4.2 at 4, 8, 12 (and the top landing at 16)
+    const gFoot = Math.min(.4, Math.max(-.4, G(-X, A))); // the first tread sits on the ground at the foot (no lip)
+    for (let i = 0; i < 4; i++) { const lane = i % 2 ? B : A, up = i % 2 === 0, ya = i === 0 ? gFoot : i * 4, yb = (i + 1) * 4, zl = lane - .55, zr = lane + .55;
+      floor(s, -X, X, zl, zr, up ? ya : yb, up ? yb : ya, 'x');
+      const n = Math.round((yb - ya) / .21); for (let k = 0; k < n; k++) { const t = (k + .5) / n, x = up ? -X + 2 * X * t : X - 2 * X * t, y = ya + (yb - ya) * (k + 1) / n; box(s, M.grate, x, y - .03, lane, 2 * X / n + .05, .05, 1.0); }
+      for (const ez of [zl + .04, zr - .04]) beam(s, M.steel, [up ? -X : X, ya - .15, ez], [up ? X : -X, yb - .15, ez], .06, .22); // stringers
+      for (const ez of [zl, zr]) if (ez !== Z1 || up) beam(s, M.steel, [up ? -X : X, ya + 1, ez], [up ? X : -X, yb + 1, ez], .045); // sloped handrails
+      if (i < 3) { const sx = up ? 1 : -1, lx0 = sx * X, lx1 = sx * LX; floor(s, Math.min(lx0, lx1), Math.max(lx0, lx1), Z0, Z2, yb); box(s, M.grate, (lx0 + lx1) / 2, yb - .04, (Z0 + Z2) / 2, LX - X, .08, Z2 - Z0);
+        rail(s, lx1, Z0, lx1, Z2, yb); rail(s, lx0, Z0, lx1, Z0, yb); rail(s, lx0, Z2, lx1, Z2, yb); } }
+    wall(s, -X, Z0, X, Z0, -3, L + 1.2); wall(s, -X, Z1, X, Z1, -3, L + 1.2); wall(s, -X, Z2, X, Z2, -3, L + 1.2); // stair sides: solid stringers + rails (never fall off)
+    wall(s, -X, Z1 + .05, -X, Z2 - .05, -3, 3.6); wall(s, X, Z0 + .05, X, Z1 - .05, -3, 0); // no walking under the flights
+    for (const [x, z] of [[LX, Z0], [LX, Z2], [-LX, Z0], [-LX, Z2], [X, Z2], [-X, Z2]]) { const g0 = G(x, z), top = x > 0 ? 12 : L; box(s, M.concrete, x, g0 - .3, z, .5, 1, .5); beam(s, M.steel, [x, g0, z], [x, top, z], .12); if (Math.abs(x) === LX) wall(s, x, z, x, z, g0 - 1, top); }
+    // catwalk (railed, cantilevered round the cab) + the top landing that joins it
+    floor(s, -K, K, -K, K, L); box(s, M.plank, 0, L - .08, 0, 2 * K, .16, 2 * K); floor(s, -LX, -2.2, 3.0, Z2, L); box(s, M.grate, -3.2, L - .05, (3.0 + Z2) / 2, 2.0, .1, Z2 - 3.0);
+    for (const [ax, az, bx, bz] of [[K, -K, K, K], [-K, -K, K, -K], [-K, -K, -K, 3.0], [-2.2, K, K, K], [-LX, 3.0, -LX, Z2], [-LX, Z2, -X, Z2], [-LX, 3.0, -K, 3.0], [-2.2, K, -2.2, Z1]]) rail(s, ax, az, bx, bz, L);
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) beam(s, M.steel, [sx * HW1, L - .1, sz * HW1], [sx * K, L - .1, sz * K], .12); // catwalk outriggers
+    // the cab: weathered board siding to the sill, glass all round (steel mullions), header, pyramid roof, door on the +z side
+    const HH = 2.6, door = [-1.6, -.4]; for (const [ax, az, bx, bz] of [[-C, -C, C, -C], [C, -C, C, C], [-C, -C, -C, C], [-C, C, door[0], C], [door[1], C, C, C]]) { wall(s, ax, az, bx, bz, L, L + HH);
+      const w = Math.abs(bx - ax), d = Math.abs(bz - az), mx = (ax + bx) / 2, mz = (az + bz) / 2, W = Math.max(w, d); box(s, M.wood, mx, L + .5, mz, (w || .1) + .1, 1, (d || .1) + .1); box(s, M.glass, mx, L + 1.55, mz, w || .04, 1.1, d || .04); box(s, M.wood, mx, L + 2.35, mz, (w || .1) + .1, .5, (d || .1) + .1);
+      const nm = Math.max(1, Math.round(W / .9)); for (let k = 0; k <= nm; k++) { const t = k / nm, x = ax + (bx - ax) * t, z = az + (bz - az) * t; box(s, M.steel, x, L + 1.55, z, .05, 1.1, .05); } box(s, M.steel, mx, L + 1.02, mz, (w || .05) + .06, .05, (d || .05) + .06); }
+    box(s, M.wood, door[0] - .05, L + 1.3, C, .1, 2.6, .12); box(s, M.wood, door[1] + .05, L + 1.3, C, .1, 2.6, .12); box(s, M.wood, (door[0] + door[1]) / 2, L + 2.25, C, door[1] - door[0], .3, .12); // door frame (open)
+    { const g = new THREE.ConeGeometry((C + .55) * Math.SQRT2, 1.7, 4, 1); g.rotateY(Math.PI / 4); g.translate(0, L + HH + .85, 0); (s.geo.get(M.roof) || s.geo.set(M.roof, []).get(M.roof)).push(g); }
+    beam(s, M.iron, [0, L + HH + 1.6, 0], [0, L + HH + 2.4, 0], .03); box(s, M.wood, 0, L + .02, 0, 2 * C, .04, 2 * C); // lightning rod, cab floor
     if (kind === 'armory') { // desk with the Tommy gun, a box with the Golden Buffalo
-      box(s, M.dark, 1.2, L + .78, -1.7, 1.7, .06, .8); for (const [x, z] of [[.45, -2], [1.95, -2], [.45, -1.4], [1.95, -1.4]]) box(s, M.dark, x, L + .38, z, .07, .76, .07); wall(s, .35, -1.3, 2.05, -1.3, L, L + .8);
+      box(s, M.wood, 1.2, L + .78, -1.7, 1.7, .06, .8); for (const [x, z] of [[.45, -2], [1.95, -2], [.45, -1.4], [1.95, -1.4]]) box(s, M.dark, x, L + .38, z, .07, .76, .07); wall(s, .35, -1.3, 2.05, -1.3, L, L + .8);
       box(s, M.crate, -1.4, L + .3, -1.8, 1.5, .6, .6); wall(s, -2.15, -1.5, -.65, -1.5, L, L + .6);
       s.tommySpot = spot(s, 1.2, L, -.7, 'tommy', 'Take the Tommy gun', 1.5); s.goldSpot = spot(s, -1.4, L, -.9, 'gold', 'Take the Golden Buffalo', 1.5); }
-    else { box(s, M.dark, 0, L + .55, -1.9, 3.2, 1.1, .7); wall(s, -1.6, -1.5, 1.6, -1.5, L, L + 1.1); const sg = new THREE.Mesh(new THREE.PlaneGeometry(2.4, .6), new THREE.MeshBasicMaterial({ map: signTex('GUN UPGRADES', '#2a1a0c', '#ffd77a'), toneMapped: false })); sg.position.set(0, L + 1.75, -2.5); s.signs = [sg];
+    else { box(s, M.dark, 0, L + .55, -1.9, 3.2, 1.1, .7); wall(s, -1.6, -1.5, 1.6, -1.5, L, L + 1.1); const sg = new THREE.Mesh(new THREE.PlaneGeometry(2.4, .6), new THREE.MeshBasicMaterial({ map: signTex('GUN UPGRADES', '#2a1a0c', '#ffd77a'), toneMapped: false })); sg.position.set(0, L + 1.75, -2.3); s.signs = [sg];
       for (const [x, col] of [[-1, 0xcd7f32], [0, 0xc0c0c0], [1, 0xffd700]]) box(s, new THREE.MeshStandardMaterial({ color: col, metalness: 1, roughness: .3 }), x, L + 1.18, -2.0, .4, .14, .3);
       s.shopSpot = spot(s, 0, L, -.8, 'shop', 'Gun upgrade station', 1.7); }
     const g = finish(s); for (const sg of s.signs || []) g.add(sg);
-    const lab = new THREE.Mesh(new THREE.PlaneGeometry(3.2, .7), new THREE.MeshStandardMaterial({ map: signTex(kind === 'armory' ? 'LOOKOUT No.1' : 'LOOKOUT No.2'), roughness: .8 })); lab.position.set(0, L - .7, 3.62); g.add(lab);
+    const lab = new THREE.Mesh(new THREE.PlaneGeometry(1.8, .45), new THREE.MeshStandardMaterial({ map: signTex(kind === 'armory' ? 'LOOKOUT No.1' : 'LOOKOUT No.2'), roughness: .8 })); lab.position.set(-4.85, 1.6, A); lab.rotation.y = -Math.PI / 2; g.add(lab); // sign at the stair foot
     return s; }
 
   // ---- the town: saloon + general store side by side, boardwalk porch, hitching rail ----
@@ -217,7 +240,7 @@ export function createTown(c) {
   T.openDarts = openDarts; T.openShop = openShop; T.closeUI = () => { closeUI(); closeDarts(); ck.close(); }; T.ckNew = ckNew; T.ckMoves = ckMoves; T.ckApply = ckApply; T.ckAI = ckAI; T.D = D;
 
   // ---- build: towers at the two trail tops furthest apart, the town on flat meadow ground ----
-  T.build = (sites) => { for (const [x, z, k] of sites.towers) tower(x, z, k); if (sites.town) town(...sites.town); return T; };
+  T.build = (sites) => { for (const [x, z, k, r] of sites.towers) tower(x, z, k, r || 0); if (sites.town) town(...sites.town); return T; };
   return T;
 }
 

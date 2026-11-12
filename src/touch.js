@@ -26,6 +26,10 @@ export function initTouch(input, look, act, unlockAudio) {
     if (l > R) { dx *= R / l; dy *= R / l; } knob.style.transform = `translate(${dx}px,${dy}px)`; const dz = l < 6 ? 0 : 1; input.mx = dz * dx / R; input.mz = dz * dy / R; });
   const jend = e => { lookEnd(e.pointerId); if (e.pointerId !== jid) return; jid = null; input.mx = input.mz = 0; restStick(); dbg(); };
   for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) joy.addEventListener(ev, jend);
+  // v34 dead-man: a release anywhere ends the stick; no finger on the glass = no input (missed touchend / pointercancel / system gesture)
+  for (const ev of ['pointerup', 'pointercancel']) addEventListener(ev, e => { if (e.pointerId === jid) jend(e); else lookEnd(e.pointerId); }, true);
+  const touchReset = () => { jid = null; input.mx = input.mz = 0; lk.clear(); restStick(); dbg(); }; window.__touchReset = touchReset;
+  for (const ev of ['touchend', 'touchcancel']) addEventListener(ev, e => { if (!e.touches || e.touches.length === 0) touchReset(); }, true);
   lookEl.addEventListener('pointerdown', e => { e.preventDefault(); unlockAudio(); cap(lookEl, e); lookStart(e.pointerId, e.clientX, e.clientY); });
   lookEl.addEventListener('pointermove', e => { if (!lk.has(e.pointerId)) return; e.preventDefault(); lookMove(e.pointerId, e.clientX, e.clientY); });
   for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) lookEl.addEventListener(ev, e => lookEnd(e.pointerId));
