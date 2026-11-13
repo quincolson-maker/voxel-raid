@@ -72,7 +72,8 @@ const wait = ms => `new Promise(r => setTimeout(r, ${ms}))`;
     R.coop = { hostLog: await h.evaluate(() => __horse.state.temple.state.log.length), clientLog: await c.evaluate(() => __horse.state.temple.state.log.length) }; assert.equal(R.coop.hostLog, 14); assert.equal(R.coop.clientLog, 14);
     R.coop.gold = await c.evaluate(async () => { const H = __horse.state, o = H.town2.spots.find(q => q.kind === 'tp-gold'); __P.pos.set(o.x, o.y, o.z); H.vy = 0; await new Promise(r => setTimeout(r, 1500)); const s0 = H.guns.state.score; H.town2.use(); return H.guns.state.score - s0; }); assert.equal(R.coop.gold, 100000);
     // a client's sun hit is a known weapon for the host (not rejected)
-    R.coop.sunHit = await h.evaluate(() => { const Z = __horse.state.zombies, o = Z.spawn('walker', [0, 60]); o.hold = true; const id = [...__hnet.state.remotes.keys()][0]; const ok = Z.remoteHit({ id: o.id, d: 400, h: 0, w: 'sun', s: 1 }, id); return { ok, dead: !o.alive, rejected: Z.state.rejected || {} }; });
-    assert.equal(R.coop.sunHit.ok, true); assert.equal(R.coop.sunHit.dead, true);
+    R.coop.sunHit = await h.evaluate(() => { const Z = __horse.state.zombies, id = [...__hnet.state.remotes.keys()][0], Rm = __horse.state.netRemotes().find(q => q.id === id), far = Z.spawn('walker', [Rm.s.x + 250, Rm.s.z]), o = Z.spawn('walker', [Rm.s.x + 20, Rm.s.z]);
+      const farOk = Z.remoteHit({ id: far.id, d: 400, h: 0, w: 'sun', s: 1 }, id), ok = Z.remoteHit({ id: o.id, d: 400, h: 0, w: 'sun', s: 2 }, id); return { farOk, ok, dead: !o.alive, rejected: Z.state.rejected || {} }; });
+    assert.equal(R.coop.sunHit.farOk, false); assert.equal(R.coop.sunHit.ok, true); assert.equal(R.coop.sunHit.dead, true);
     R.errors = errors.filter(e => !ignorable(e)); console.log(JSON.stringify(R)); assert.deepEqual(R.errors, []); console.log('PASS horse-temple');
   } catch (e) { console.log(JSON.stringify(R)); console.error('FAIL', e.message, errors.slice(0, 5)); process.exitCode = 1; } finally { if (br) await br.close(); srv.kill(); } })();
