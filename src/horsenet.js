@@ -23,17 +23,20 @@ export function createHorseNet({ horse, P, msg }) {
   const enabled = () => !QS.has('solo') && (!!LOBBY_URL || LOOP || !LOCAL);
   const isHost = () => S.role === 'host', isClient = () => S.role === 'client';
   const peerOf = id => { for (const [peer, p] of S.peers) if (p === id) return peer; return null; };
-  let hiWait = null;
+  let hiWait = null; S.gen = 0; S.timers = new Set(); // v36: every session attempt has a generation; old callbacks / timers are ignored
+  const later = (f, ms) => { const g = S.gen, t = setTimeout(() => { S.timers.delete(t); if (S.gen === g) f(); }, ms); S.timers.add(t); return t; };
+  const withTimeout = (p, ms, why) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error(why)), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
   H.netRole = () => S.role; H.callsign = () => callsign(); H.colors = COLORS; H.netRemotes = () => [...S.remotes.values()];
   H.zSend = m => { if (!net.open || S.role === 'solo') return; net.send(m); }; // host: zombie snapshot to everyone; client: its hits to the host
   H.zSendTo = (id, m) => { if (!isHost() || !net.open) return; const p = peerOf(id); if (p) net.send(m, p); };
   H.netShot = m => { if (!net.open || S.role === 'solo') return; net.send(isHost() ? { ...m, id: 'P1' } : m); };
-  const net = createNet((m, from) => {
-    if (m.t === 'full') { if (hiWait) { hiWait(null); hiWait = null; } return; }
+  const netRx = (m, from) => {
+    if (m.t === 'full') { if (hiWait) hiWait(null); return; }
     if (m.t === 'vs') { routeVoice(m, from); return; }
-    if (m.t === 'hi') { S.role = 'client'; S.me = H.me = m.me; if (m.herd) horse.applyHerd(m.herd); for (const id of m.ids || []) addRemote(id); if (hiWait) { hiWait(true); hiWait = null; } return; }
+    if (m.t === 'hi') { if (!hiWait) return; /* v36: only while joining */ S.role = 'client'; S.me = H.me = m.me; if (m.herd) horse.applyHerd(m.herd); for (const id of m.ids || []) addRemote(id); hiWait(true); return; }
     onMsg(m, from);
-  }, onStatus);
+  };
+  const net = createNet(netRx, onStatus);
   const voice = createVoice({ me: () => S.me, onChange: voiceUI,
     send: m => { if (isHost()) { const p = peerOf(m.to); if (p) net.send({ ...m, f: 'P1' }, p); } else if (isClient()) net.send({ ...m, f: S.me }); } });
   function routeVoice(m, from) {
@@ -55,16 +58,17 @@ export function createHorseNet({ horse, P, msg }) {
     }
     if (s === 'closed') {
       if (isHost()) { const id = S.peers.get(peer); if (!id) return; S.peers.delete(peer); removeRemote(id); net.send({ t: 'left', id }); advertise(); msg(id + ' left', 2); }
-      else if (isClient()) hostLeft();
+      else if (isClient()) hostLeft(); else if (hiWait) hiWait(null); // the host went away while we were joining
     }
   }
   function addRemote(id) { if (!id || id === S.me) return null; if (S.remotes.has(id)) return S.remotes.get(id);
     const R = { id, av: horse.avatar(id, COLORS[id] || '#fff'), s: null }; S.remotes.set(id, R); if (S.remotes.size + 1 <= VOICE_MESH) voice.peer(id); return R; }
   function removeRemote(id) { voice.drop(id); const R = S.remotes.get(id); if (!R) return; R.av.dispose(); S.remotes.delete(id); }
-  function reset() { for (const id of [...S.remotes.keys()]) removeRemote(id); S.peers.clear(); voice.stop(); advert.stop();
-    try { if (net.peer && !net.peer.destroyed) net.peer.destroy(); } catch (_) {} net.conns.clear(); net.open = false; net.peer = null;
-    S.role = 'solo'; S.code = null; S.me = H.me = 'P1'; H.follow = false; for (const o of H.horses) o.net = null; }
-  function hostLeft() { reset(); msg('Host left — finding another Horse Rider lobby…', 3); setTimeout(() => auto(), 1200); }
+  function reset() { S.gen++; for (const t of S.timers) clearTimeout(t); S.timers.clear(); if (hiWait) hiWait(null); // settle a pending join
+    for (const id of [...S.remotes.keys()]) removeRemote(id); S.peers.clear(); voice.stop(); advert.stop(); net.reset();
+    S.role = 'solo'; S.code = null; S.me = H.me = 'P1'; H.follow = false; for (const o of H.horses) o.net = null;
+    S.fwd.clear(); S.last = null; S.footSp = 0; S.netT = 0; S.herdT = 0; S.pbT = 0; S.vT = 0; S.mergeT = 8; S.hbT = 0; } // v36: nothing of the old session survives
+  function hostLeft() { reset(); msg('Host left — finding another Horse Rider lobby…', 3); later(() => auto(), 1200); }
   function onMsg(m, from) {
     switch (m.t) {
       case 'p': { const id = isHost() ? S.peers.get(from) : m.id; if (!id || id === S.me) return; const R = S.remotes.get(id) || addRemote(id); if (R) R.s = m; if (isHost()) { if (S.remotes.size + 1 <= 4) net.send({ ...m, id }, null, from); else S.fwd.set(id, { ...m, id }); } break; }
@@ -87,15 +91,18 @@ export function createHorseNet({ horse, P, msg }) {
   }
   const lobbyList = () => !LOBBY_URL ? Promise.resolve([]) : fetch(LOBBY_URL + '/lobbies', { cache: 'no-store', signal: AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined }).then(r => r.json()).then(j => Array.isArray(j.lobbies) ? j.lobbies : []).catch(() => []);
   async function tryJoin(code) {
-    reset(); S.status = 'joining ' + code;
-    try { await net.join(code); } catch (_) { reset(); return false; }
-    const ok = await new Promise(res => { hiWait = res; setTimeout(() => { if (hiWait) { hiWait = null; res(null); } }, 6000); });
-    if (!ok) { reset(); return false; }
+    reset(); S.status = 'joining ' + code; const g = S.gen;
+    // v36: the hi / full handler is in place before the connection opens (a fast host can answer at once)
+    let tm = null; const hiP = new Promise(res => { hiWait = v => { hiWait = null; clearTimeout(tm); res(v); }; }); tm = setTimeout(() => { if (S.gen === g && hiWait) hiWait(null); }, 26000);
+    try { await net.join(code); } catch (_) { if (S.gen === g) reset(); return false; }
+    if (S.gen !== g) return false; clearTimeout(tm); tm = setTimeout(() => { if (S.gen === g && hiWait) hiWait(null); }, 6000); // connected: the host says hi within 6 s
+    const ok = await hiP;
+    if (S.gen !== g) return false; if (!ok) { reset(); return false; }
     S.code = code; voice.start(S.remotes.size + 1 <= VOICE_MESH ? [...S.remotes.keys()] : []); msg('Joined a Horse Rider lobby — voice is on', 3); return true;
   }
   async function host() {
-    reset(); S.role = 'host'; S.me = H.me = 'P1'; S.status = 'hosting';
-    try { S.code = await net.host(); } catch (e) { reset(); S.status = 'offline'; msg('Multiplayer unavailable — riding solo', 3); return false; }
+    reset(); S.role = 'host'; S.me = H.me = 'P1'; S.status = 'hosting'; const g = S.gen;
+    try { const code = await withTimeout(net.host(), 20000, 'host timeout'); if (S.gen !== g) return false; S.code = code; } catch (e) { if (S.gen !== g) return false; reset(); S.status = 'offline'; msg('Multiplayer unavailable — riding solo', 3); return false; }
     S.hbT = 0; advertise(); voice.start([]); msg('Horse Rider lobby open — other riders join automatically', 3); return true;
   }
   // HORSE RIDER tap (or a lobby row): join an open Horse Rider lobby with a free slot, else host one
@@ -131,5 +138,5 @@ export function createHorseNet({ horse, P, msg }) {
       lobbyList().then(list => { const o = list.filter(l => l.mode === 'horse' && l.code !== S.code && l.players < l.max && l.code < S.code)[0]; if (o && isHost() && !S.remotes.size) auto(o.code); }); }
     H.online = S.role === 'solo' ? '' : '👥 ' + (1 + S.remotes.size) + '/' + MAX_PLAYERS;
   }
-  return { state: S, net, voice, auto, tick, enabled, prime: () => { if (enabled()) voice.prime(); } };
+  return { state: S, net, voice, auto, tick, enabled, tryJoin, host, reset, hostLeft, rx: (m, from) => netRx(m, from), status: (s, p) => onStatus(s, p), prime: () => { if (enabled()) voice.prime(); } };
 }

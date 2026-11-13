@@ -27,8 +27,8 @@ export function createNet(onMsg, onStatus) {
   const refresh = () => { N.open = [...N.conns.values()].some(c => c.ok); };
   function wire(c) {
     const id = c.peer; c.ok = false; c.lastRx = now(); N.conns.set(id, c);
-    c.on('open', () => { c.ok = true; c.lastRx = now(); refresh(); onStatus('open', id); });
-    c.on('data', d => { c.lastRx = now(); if (d && d.t !== 'hb') onMsg(d, id); });
+    c.on('open', () => { if (N.conns.get(id) !== c) return; c.ok = true; c.lastRx = now(); refresh(); onStatus('open', id); }); // v36: an old session's connection never talks into a newer one
+    c.on('data', d => { if (N.conns.get(id) !== c) return; c.lastRx = now(); if (d && d.t !== 'hb') onMsg(d, id); });
     const closed = () => { if (N.conns.get(id) === c) { N.conns.delete(id); refresh(); onStatus('closed', id); } };
     c.on('close', closed); c.on('error', closed);
   }
@@ -38,13 +38,13 @@ export function createNet(onMsg, onStatus) {
     const attempt = () => {
       const code = Array.from({ length: 5 }, () => ALPH[Math.floor(Math.random() * ALPH.length)]).join('');
       const peer = mkPeer(pid(code), { debug: 0 }); N.peer = peer;
-      peer.on('open', () => { N.role = 'host'; N.code = code; res(code); });
-      peer.on('connection', c => {
+      peer.on('open', () => { if (N.peer !== peer) return; N.role = 'host'; N.code = code; res(code); });
+      peer.on('connection', c => { if (N.peer !== peer) { try { c.close(); } catch (_) {} return; }
         if (N.conns.size >= MAX_PLAYERS - 1) { c.on('open', () => { c.send({ t: 'full' }); setTimeout(() => c.close(), 400); }); return; }
         wire(c);
       });
       peer.on('disconnected', () => { try { if (!peer.destroyed) peer.reconnect(); } catch (_) {} });
-      peer.on('error', e => { if (e.type === 'unavailable-id' && ++tries < 4) { peer.destroy(); attempt(); } else if (!N.code) rej(e); else onStatus('error', e.type); });
+      peer.on('error', e => { if (N.peer !== peer) return; if (e.type === 'unavailable-id' && ++tries < 4) { peer.destroy(); attempt(); } else if (!N.code) rej(e); else onStatus('error', e.type); });
     };
     attempt();
   });
@@ -52,12 +52,14 @@ export function createNet(onMsg, onStatus) {
     if (!window.Peer && !LOOP) { rej(new Error('PeerJS missing')); return; }
     const peer = mkPeer(null, { debug: 0 }); N.peer = peer; let done = false;
     const t = setTimeout(() => { if (!done) { done = true; rej(new Error('Could not reach room ' + code)); } }, 20000);
-    peer.on('open', () => {
+    peer.on('open', () => { if (N.peer !== peer) { if (!done) { done = true; clearTimeout(t); rej(new Error('stale')); } return; }
       const c = peer.connect(pid(code), { reliable: true, serialization: 'json' }); wire(c);
       c.on('open', () => { if (!done) { done = true; clearTimeout(t); N.role = 'client'; N.code = code; res(); } });
     });
-    peer.on('error', e => { if (!done) { done = true; clearTimeout(t); rej(new Error(e.type === 'peer-unavailable' ? 'Room ' + code + ' not found' : e.type)); } else onStatus('error', e.type); });
+    peer.on('error', e => { if (N.peer !== peer) return; if (!done) { done = true; clearTimeout(t); rej(new Error(e.type === 'peer-unavailable' ? 'Room ' + code + ' not found' : e.type)); } else onStatus('error', e.type); });
   });
+  // v36: drop every connection and the peer, forget the role / code (a new session starts clean)
+  N.reset = () => { const p = N.peer; N.peer = null; try { if (p && !p.destroyed) p.destroy(); } catch (_) {} const old = [...N.conns.values()]; N.conns.clear(); for (const c of old) { try { c.close(); } catch (_) {} } N.open = false; N.role = 'solo'; N.code = null; };
   // send(msg) broadcasts (host) / goes to host (client); send(msg, peerId) targets one; except skips one peer.
   N.send = (m, to, except) => { for (const [id, c] of N.conns) { if (!c.ok || (to && id !== to) || id === except) continue; try { c.send(m); } catch (_) {} } };
   setInterval(() => { for (const [id, c] of N.conns) { if (!c.ok) continue; try { c.send({ t: 'hb' }); } catch (_) {} if (now() - c.lastRx > 9000) { try { c.close(); } catch (_) {} if (N.conns.get(id) === c) { N.conns.delete(id); refresh(); onStatus('closed', id); } } } }, 1500);
