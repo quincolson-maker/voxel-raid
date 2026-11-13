@@ -102,8 +102,8 @@ export function createHrZombies(c) {
     return best; }
   function assistPoints() { const out = []; for (const o of Z.list) if (o.alive) { out.push({ c: headPos(o, new THREE.Vector3()), z: o }); out.push({ c: new THREE.Vector3(o.pos.x, o.pos.y + 1.15 * o.K.s, o.pos.z), z: o }); } return out; }
   function damage(o, dmg, head, p, dir, by, from) { if (!o || !o.alive) return false; o.hp -= dmg; o.flinch = Math.min(1, o.flinch + (head ? .8 : .45)); if (dir) o.push = [dir.x * (dmg > 150 ? 2.5 : .8), dir.z * (dmg > 150 ? 2.5 : .8)];
-    if (o.hp <= 0) { kill(o, head, by); if (from && c.sendTo) { c.sendTo(from, { t: 'zk', h: head ? 1 : 0 }); c.creditRemote && c.creditRemote(from, head); } } return true; }
-  function kill(o, head, by) { if (!o.alive) return; o.alive = false; o.hp = 0; o.st = 2; o.deadT = 0; o.fallDir = rnd() < .5 ? 1 : -1; if (by !== 'remote') { Z.kills++; if (head) Z.heads++; }
+    if (o.hp <= 0) { kill(o, head, by); if (from && c.sendTo) { c.sendTo(from, { t: 'zk', h: head ? 1 : 0, b: Z.byBandit ? 1 : 0 }); c.creditRemote && c.creditRemote(from, head); } } return true; }
+  function kill(o, head, by) { if (!o.alive) return; o.alive = false; o.hp = 0; o.st = 2; o.deadT = 0; o.fallDir = rnd() < .5 ? 1 : -1; if (by !== 'remote' && by !== 'bandit') { Z.kills++; if (head) Z.heads++; }
     if (sfx.at && sfx.ctx) sfx.at(o.pos, () => { sfx.tone('sawtooth', 120, 40, .22, .7); sfx.nz('lowpass', 300, 1, .25, .4); }, .3); }
   function onHit(o, w, head, p, dir, mul = 1) { // a local player's bullet hit this zombie
     const dmg = Math.round((ZSET.dmg[w] || 50) * (head ? ZSET.head : 1) * mul);
@@ -183,7 +183,7 @@ export function createHrZombies(c) {
       let o = Z.list.find(q => q.id === id); if (!o) { if (st === 2) continue; o = spawn(KIND_LIST[ki] || 'walker', [x, z], id); o.yaw = yaw; }
       o.net = { x, z, yaw, st, sp }; if (st === 2 && o.alive) kill(o, false, 'remote'); else if (o.alive) o.hp = hp; }
     for (const o of [...Z.list]) if (!seen.has(o.id) && o.alive) despawn(o); }
-  function remoteHit(m, from) { if (!m || !Number.isFinite(m.id) || !Number.isFinite(m.d)) return; const o = Z.list.find(q => q.id === m.id); if (!o) return; damage(o, Math.max(0, Math.min(2000, m.d)), !!m.h, null, null, 'remote', from); }
+  function remoteHit(m, from) { if (!m || !Number.isFinite(m.id) || !Number.isFinite(m.d)) return; const o = Z.list.find(q => q.id === m.id); if (!o) return; Z.byBandit = !!m.b; damage(o, Math.max(0, Math.min(2000, m.d)), !!m.h, null, null, 'remote', from); Z.byBandit = false; }
   function confirmKill(m) { Z.kills++; if (m && m.h) Z.heads++; } // the host says my shot killed one
   function remoteHurt(m) { if (!m || !Number.isFinite(m.d)) return; hurtMe(Math.max(0, Math.min(60, m.d)), Math.max(0, Math.min(80, m.hz || 0))); }
 

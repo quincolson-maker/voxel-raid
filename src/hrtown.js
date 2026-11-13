@@ -21,7 +21,7 @@ function mats() { if (MATS) return MATS;
   plank.wrapS = plank.wrapT = THREE.RepeatWrapping;
   const S = o => new THREE.MeshStandardMaterial(o);
   MATS = { plank: S({ map: plank, roughness: .88 }), dark: S({ color: 0x4a3322, roughness: .9 }), roof: S({ color: 0x5a5048, roughness: .75, metalness: .25 }), glass: new THREE.MeshPhysicalMaterial({ color: 0x9fb8c4, roughness: .05, transparent: true, opacity: .35, envMapIntensity: 1.5 }),
-    iron: S({ color: 0x30302e, roughness: .5, metalness: .8 }), steel: S({ color: 0xaeb4b8, roughness: .42, metalness: .85 }), grate: S({ color: 0x8d9296, roughness: .55, metalness: .8 }), concrete: S({ color: 0x9c9a94, roughness: .96 }), wood: S({ map: plank, color: 0xb8b0a4, roughness: .92 }), red: S({ color: 0x8a2a20, roughness: .8 }), crate: S({ map: plank, color: 0xc9a070, roughness: .9 }), felt: S({ color: 0x2c4a2a, roughness: 1 }), lamp: new THREE.MeshBasicMaterial({ color: 0xffd38a }) };
+    iron: S({ color: 0x30302e, roughness: .5, metalness: .8 }), steel: S({ color: 0xaeb4b8, roughness: .42, metalness: .85 }), grate: S({ color: 0x8d9296, roughness: .55, metalness: .8 }), concrete: S({ color: 0x9c9a94, roughness: .96 }), wood: S({ map: plank, color: 0xb8b0a4, roughness: .92 }), red: S({ color: 0x8a2a20, roughness: .8 }), crate: S({ map: plank, color: 0xc9a070, roughness: .9 }), felt: S({ color: 0x2c4a2a, roughness: 1 }), brass: S({ color: 0xc9a245, roughness: .3, metalness: .9 }), mirror: S({ color: 0xc8d0d4, roughness: .04, metalness: 1 }), bGreen: S({ color: 0x2f5a30, roughness: .15, metalness: .1 }), bAmber: S({ color: 0x8a4a12, roughness: .15, metalness: .1 }), bone: S({ color: 0xe8dcc0, roughness: .7 }), black: S({ color: 0x15110e, roughness: .35, metalness: .1 }), ivory: S({ color: 0xf4efe0, roughness: .4 }), lamp: new THREE.MeshBasicMaterial({ color: 0xffd38a }) };
   return MATS; }
 function signTex(txt, bg = '#3a2414', fg = '#f1dfb0', w = 512, h = 128, font = 'bold 64px Georgia,serif') { return canvasTex(w, h, (x) => { x.fillStyle = bg; x.fillRect(0, 0, w, h); x.strokeStyle = fg; x.lineWidth = 6; x.strokeRect(8, 8, w - 16, h - 16); x.fillStyle = fg; x.font = font; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(txt, w / 2, h / 2 + 4); }); }
 
@@ -47,6 +47,7 @@ export function createTown(c) {
   const toW = (s, x, z) => [s.cx + x * s.c + z * s.s, s.cz - x * s.s + z * s.c], toL = (s, x, z) => { const dx = x - s.cx, dz = z - s.cz; return [dx * s.c - dz * s.s, dx * s.s + dz * s.c]; };
   function floor(s, x0, x1, z0, z1, ya, yb = ya, axis = 'x') { s.floors.push({ x0, x1, z0, z1, ya, yb, axis }); s.R = Math.max(s.R, Math.hypot(Math.max(Math.abs(x0), Math.abs(x1)), Math.max(Math.abs(z0), Math.abs(z1))) + 2); }
   function wall(s, ax, az, bx, bz, ya, yb) { const [wx, wz] = toW(s, ax, az), [vx, vz] = toW(s, bx, bz); T.walls.push([wx, wz, vx, vz, s.y0 + ya, s.y0 + yb]); }
+  function cyl(s, mat, x, y, z, r, h, n = 14) { const g = new THREE.CylinderGeometry(r, r, h, n); g.translate(x, y, z); if (!s.geo.has(mat)) s.geo.set(mat, []); s.geo.get(mat).push(g); }
   function box(s, mat, x, y, z, w, h, d, ry = 0) { const g = new THREE.BoxGeometry(w, h, d); if (ry) g.rotateY(ry); g.translate(x, y, z); if (mat.map) { const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * Math.max(w, d) / 2, uv.getY(i) * h / 2); } (s.geo.get(mat) || s.geo.set(mat, []).get(mat)).push(g); }
   function finish(s) { const g = new THREE.Group(); g.position.set(s.cx, s.y0, s.cz); g.rotation.y = s.rot; for (const [m, gs] of s.geo) { const me = new THREE.Mesh(mergeGeometries(gs), m); me.castShadow = !mobile || m !== M.glass; me.receiveShadow = true; g.add(me); } s.geo.clear(); scene.add(g); s.g = g; return g; }
   function spot(s, x, y, z, kind, label, r = 1.6) { const [wx, wz] = toW(s, x, z), o = { x: wx, z: wz, y: s.y0 + y, kind, label, r, s }; T.spots.push(o); return o; }
@@ -117,20 +118,52 @@ export function createTown(c) {
 
   // ---- the town: saloon + general store side by side, boardwalk porch, hitching rail ----
   function town(cx, cz, rot) {
-    let gMax = -1e9; for (let x = -12; x <= 11; x += 1.5) for (let z = -4; z <= 9; z += 1.5) { const [wx, wz] = [cx + x * Math.cos(rot) + z * Math.sin(rot), cz - x * Math.sin(rot) + z * Math.cos(rot)]; gMax = Math.max(gMax, hAt(wx, wz)); }
-    const s = struct(cx, cz, rot, gMax + .02), F = .45, WH = 4.3; s.kind = 'town'; T.town = s;
-    for (let x = -12; x <= 11; x += 2) for (let z = -3.4; z <= 8.6; z += 2) box(s, M.dark, x, (F - 2.5) / 2, z, .24, 2.5 + F, .24); // stilts down to the ground
-    floor(s, -11.2, 10.2, -2.4, 8, F); box(s, M.plank, -.5, F - .06, 2.8, 21.4, .12, 10.8); // boardwalk + floors
-    floor(s, -11.2, 10.2, -3.4, -2.4, 0, F, 'z'); box(s, M.plank, -.5, F / 2 - .05, -2.9, 21.4, .1, 1);
-    for (const [x0, x1, door, name] of [[-11, -1, [-6.8, -5.2], 'SALOON'], [1, 10, [4.7, 6.3], 'GENERAL STORE']]) { const mx = (x0 + x1) / 2, w = x1 - x0;
-      for (const [ax, az, bx, bz] of [[x0, 8, x1, 8], [x0, 0, x0, 8], [x1, 0, x1, 8], [x0, 0, door[0], 0], [door[1], 0, x1, 0]]) { wall(s, ax, az, bx, bz, F, F + WH); box(s, M.plank, (ax + bx) / 2, F + WH / 2, (az + bz) / 2, Math.abs(bx - ax) + .16, WH, Math.abs(bz - az) + .16); }
-      box(s, M.plank, mx, F + WH + 1.2, 0, w + .2, 2.4, .2); box(s, M.roof, mx, F + WH + .15, 4, w + .6, .2, 8.6); box(s, M.dark, mx, F + 2.9, -1.3, w + .2, .12, 2.6); // false front, roof, porch roof
+    let gMax = -1e9; for (let x = -18; x <= 11; x += 1.5) for (let z = -4; z <= 11; z += 1.5) { const [wx, wz] = [cx + x * Math.cos(rot) + z * Math.sin(rot), cz - x * Math.sin(rot) + z * Math.cos(rot)]; gMax = Math.max(gMax, hAt(wx, wz)); }
+    const s = struct(cx, cz, rot, gMax + .02), F = .45, WH = 4.3, Y2 = F + 3.6; s.kind = 'town'; T.town = s; s.F = F; s.Y2 = Y2; // v35: the saloon is bigger (x -17..-1, z 0..10) with an upper floor at Y2
+    for (let x = -18; x <= 11; x += 2) for (let z = -3.4; z <= 10.6; z += 2) box(s, M.dark, x, (F - 2.5) / 2, z, .24, 2.5 + F, .24); // stilts down to the ground
+    floor(s, -17.2, 10.2, -2.4, 10, F); box(s, M.plank, -3.5, F - .06, 3.8, 27.4, .12, 12.8); // boardwalk + floors
+    floor(s, -17.2, 10.2, -3.4, -2.4, 0, F, 'z'); box(s, M.plank, -3.5, F / 2 - .05, -2.9, 27.4, .1, 1);
+    for (const [x0, x1, door, name, D, HT] of [[-17, -1, [-6.8, -5.2], 'SALOON', 10, 7.6], [1, 10, [4.7, 6.3], 'GENERAL STORE', 8, WH]]) { const mx = (x0 + x1) / 2, w = x1 - x0, sal = name === 'SALOON';
+      for (const [ax, az, bx, bz] of [[x0, D, x1, D], [x0, 0, x0, D], [x1, 0, x1, D], [x0, 0, door[0], 0], [door[1], 0, x1, 0]]) { wall(s, ax, az, bx, bz, F, F + HT); box(s, M.plank, (ax + bx) / 2, F + HT / 2, (az + bz) / 2, Math.abs(bx - ax) + .16, HT, Math.abs(bz - az) + .16); }
+      if (sal) box(s, M.plank, (door[0] + door[1]) / 2, F + 2.9 + (HT - 2.9) / 2, 0, door[1] - door[0] + .2, HT - 2.9, .16); // wall above the door
+      box(s, M.plank, mx, F + HT + 1.2, 0, w + .2, 2.4, .2); box(s, M.roof, mx, F + HT + .15, D / 2, w + .6, .2, D + .6); box(s, M.dark, mx, F + 2.9, -1.3, w + .2, .12, 2.6); // false front, roof, porch roof
       for (const x of [x0 + .2, mx, x1 - .2]) box(s, M.dark, x, F + 1.4, -2.3, .14, 2.9, .14);
       for (const x of [x0 + 1.6, x1 - 1.6]) if (x < door[0] - .8 || x > door[1] + .8) box(s, M.glass, x, F + 1.7, -.02, 1.4, 1.2, .06);
-      for (const k of [0, 1]) box(s, M.dark, door[k] + (k ? -.38 : .38), F + 1.25, -.05, .72, 1.1, .05); // batwing doors
-      const sg = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(w - 1, 7.5), 1.1), new THREE.MeshStandardMaterial({ map: signTex(name, name === 'SALOON' ? '#5a1a12' : '#1a2a3a'), roughness: .8 })); sg.position.set(mx, F + WH + 1.2, -.12); sg.rotation.y = Math.PI; (s.signs = s.signs || []).push(sg); }
-    // saloon: bar counter (drinks), bottles, dartboard on the side wall; store: counter + the jacket on a stand
-    box(s, M.dark, -7, F + .55, 5.5, 6, 1.1, .6); wall(s, -10, 5.5, -4, 5.5, F, F + 1.1); for (let i = 0; i < 9; i++) box(s, M.glass, -9.6 + i * .7, F + 1.6, 7.6, .12, .4, .12); box(s, M.dark, -7, F + 1.35, 7.7, 6, .06, .4);
+      if (sal) for (const x of [-15.5, -12.5, -9.5, -3.5]) box(s, M.glass, x, Y2 + 1.5, -.02, 1.2, 1.1, .06); // upstairs windows
+      if (!sal) for (const k of [0, 1]) box(s, M.dark, door[k] + (k ? -.38 : .38), F + 1.25, -.05, .72, 1.1, .05); // batwing doors (the saloon's swing: src/hrsaloon.js)
+      const sg = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(w - 1, 7.5), 1.1), new THREE.MeshStandardMaterial({ map: signTex(name, sal ? '#5a1a12' : '#1a2a3a'), roughness: .8 })); sg.position.set(mx, F + HT + 1.2, -.12); sg.rotation.y = Math.PI; (s.signs = s.signs || []).push(sg); }
+    // ---- v35 saloon interior: upper floor (mezzanine) over the left third, a stair up along its edge, balcony rail; the back bar with mirror + bottles
+    floor(s, -17, -11.5, 0, 10, Y2); box(s, M.plank, -14.25, Y2 - .1, 5, 5.5, .2, 10); for (const z of [1, 3.5, 6, 8.5]) box(s, M.dark, -14.25, Y2 - .32, z, 5.5, .24, .2); // floor + joists
+    for (const z of [.25, 2.8]) box(s, M.dark, -11.55, F + (Y2 - F) / 2, z, .22, Y2 - F, .22); // posts
+    floor(s, -11.5, -10.4, 2.8, 8.4, F, Y2, 'z'); floor(s, -11.5, -10.4, 8.4, 10, Y2); box(s, M.plank, -10.95, Y2 - .08, 9.2, 1.1, .16, 1.6);
+    { const n = 17; for (let k = 0; k < n; k++) { const z = 2.8 + (k + .5) * 5.6 / n, y = F + (Y2 - F) * (k + 1) / n; box(s, M.plank, -10.95, y - .05, z, 1.1, .1, 5.6 / n + .04); }
+      for (const x of [-11.5, -10.4]) { const g = new THREE.Vector3(); beam(s, M.dark, [x, F + .1, 2.8], [x, Y2 - .1, 8.4], .08, .3); } }
+    wall(s, -10.4, 2.8, -10.4, 10, F, Y2 + 1.1); wall(s, -11.5, 2.8, -11.5, 8.4, F, Y2 + 1.1); wall(s, -11.5, 0, -11.5, 2.8, Y2, Y2 + 1.1); // stair sides + balcony rail (solid)
+    beam(s, M.dark, [-10.4, F + 1.05, 2.8], [-10.4, Y2 + 1.05, 8.4], .07); beam(s, M.dark, [-10.4, Y2 + 1.05, 8.4], [-10.4, Y2 + 1.05, 10], .07); beam(s, M.dark, [-11.5, Y2 + 1.05, 0], [-11.5, Y2 + 1.05, 2.8], .08);
+    for (let z = .3; z <= 2.8; z += .35) box(s, M.dark, -11.5, Y2 + .5, z, .05, 1, .05); for (let z = 8.6; z <= 10; z += .35) box(s, M.dark, -10.4, Y2 + .5, z, .05, 1, .05);
+    for (let k = 0; k <= 8; k++) { const z = 2.8 + k * .7, y = F + (Y2 - F) * k / 8; box(s, M.dark, -10.4, y + .55, z, .05, 1.05, .05); }
+    // bar: counter with a brass foot rail + top edge, back bar (shelves, bottles, mirror), antlers + skull over it
+    box(s, M.dark, -7, F + .55, 5.5, 6, 1.1, .6); wall(s, -10, 5.5, -4, 5.5, F, F + 1.1); box(s, M.brass, -7, F + .2, 5.12, 6, .06, .06); box(s, M.brass, -7, F + 1.12, 5.2, 6.05, .04, .1); for (let x = -9.7; x <= -4.2; x += 1.1) box(s, M.brass, x, F + .1, 5.17, .04, .2, .04);
+    box(s, M.dark, -7, F + .5, 9.55, 6.2, 1, .7); box(s, M.mirror, -7, F + 1.95, 9.92, 4.8, 1.3, .04); for (const y of [F + 1.35, F + 2.75, F + 3.2]) box(s, M.dark, -7, y, 9.75, 6.2, .05, .4);
+    { const r = rng(7), bc = [M.bGreen, M.bAmber, M.glass, M.bGreen, M.bAmber]; for (const y of [F + 1.38, F + 2.78]) for (let i = 0; i < 22; i++) { const x = -9.9 + i * .27 + r() * .05; if (y < 2 && x > -9.4 && x < -4.6) continue; box(s, bc[(r() * 5) | 0], x, y + .17, 9.75, .08, .3 + r() * .08, .08); }
+      for (let i = 0; i < 14; i++) box(s, bc[i % 5], -9.6 + i * .2, F + 1.17, 9.5, .07, .26, .07); }
+    box(s, M.bone, -7, F + 4.0, 9.85, .32, .26, .32); beam(s, M.bone, [-7.1, F + 4.08, 9.8], [-7.9, F + 4.5, 9.75], .05); beam(s, M.bone, [-6.9, F + 4.08, 9.8], [-6.1, F + 4.5, 9.75], .05); beam(s, M.bone, [-7.6, F + 4.33, 9.8], [-7.7, F + 4.7, 9.75], .04); beam(s, M.bone, [-6.4, F + 4.33, 9.8], [-6.3, F + 4.7, 9.75], .04); box(s, M.dark, -7, F + 4.05, 9.95, .6, .5, .05);
+    // round tables + chairs, a piano, spittoons, the bandits' table (under the upper floor), the dealer's dim corner, a small stage
+    const rtable = (x, z, chairs = 4) => { cyl(s, M.dark, x, F + .74, z, .55, .05); cyl(s, M.dark, x, F + .37, z, .07, .74); cyl(s, M.dark, x, F + .02, z, .3, .04); wall(s, x - .3, z, x + .3, z, F, F + .9);
+      for (let k = 0; k < chairs; k++) { const a = k / chairs * TAU + .4, cx2 = x + Math.cos(a) * .85, cz2 = z + Math.sin(a) * .85; box(s, M.dark, cx2, F + .45, cz2, .42, .05, .42, -a); box(s, M.dark, cx2 + Math.cos(a) * .2, F + .75, cz2 + Math.sin(a) * .2, .06, .6, .4, -a); for (const [u, v] of [[-.16, -.16], [.16, -.16], [-.16, .16], [.16, .16]]) box(s, M.dark, cx2 + u, F + .22, cz2 + v, .04, .44, .04); } };
+    rtable(-4.2, 1.6); rtable(-3, 7.2, 3); rtable(-14.2, 6.2, 4); rtable(-8.6, 8.1, 0);
+    box(s, M.black, -1.75, F + .7, 8.6, .55, 1.4, 1.6); box(s, M.black, -1.75, F + 1.45, 8.6, .6, .1, 1.65); box(s, M.ivory, -2.07, F + .82, 8.6, .12, .04, 1.4); for (let k = 0; k < 10; k++) box(s, M.black, -2.08, F + .85, 7.98 + k * .14, .08, .03, .05);
+    cyl(s, M.dark, -2.7, F + .3, 8.6, .2, .6); // piano + stool
+    for (const [x, z] of [[-9.9, 4.8], [-4.1, 4.8], [-12.2, 9.5]]) { cyl(s, M.brass, x, F + .12, z, .17, .24); cyl(s, M.brass, x, F + .25, z, .12, .03); }
+    box(s, M.plank, -15.4, F + .2, 1.9, 3.2, .4, 2.8); floor(s, -17, -13.8, .5, 3.3, F + .4); wall(s, -13.8, .5, -13.8, 3.3, F, F + .35); box(s, M.red, -16.95, F + 2, 1.9, .06, 3.1, 2.8); // stage + curtain
+    box(s, M.dark, -16.3, F + .5, 8.8, .9, 1, 1.6); box(s, M.dark, -16.4, F + 1.1, 9.6, .5, .04, .5); // dealer's crate table in the dark corner
+    // upstairs: three slot machines on stools along the left wall (the machines themselves: src/hrsaloon.js), a settee, rail
+    for (const z of [3, 5.2, 7.4]) { cyl(s, M.dark, -15.25, Y2 + .35, z, .2, .7); cyl(s, M.red, -15.25, Y2 + .72, z, .23, .06); wall(s, -16.95, z - .5, -16.2, z - .5, Y2, Y2 + 2); wall(s, -16.95, z + .5, -16.2, z + .5, Y2, Y2 + 2); wall(s, -16.2, z - .5, -16.2, z + .5, Y2, Y2 + 1.2); }
+    box(s, M.red, -13, Y2 + .3, 9.5, 2, .5, .6); box(s, M.red, -13, Y2 + .7, 9.8, 2, .5, .15);
+    // kerosene lamps (2 warm lights, no shadows), light shafts + dust are in src/hrsaloon.js
+    for (const [x, y, z] of [[-7, F + 3.2, 3], [-4, F + 3.2, 7], [-14.2, Y2 - .5, 6.2], [-14, Y2 + 2.4, 5]]) { box(s, M.iron, x, y + .45, z, .02, .7, .02); box(s, M.lamp, x, y, z, .16, .24, .16); box(s, M.brass, x, y - .14, z, .22, .04, .22); }
+    // wanted posters
+    for (const [x, y, z, ry, name] of [[-1.12, F + 1.8, 6.5, -Math.PI / 2, 'BLACK BART'], [-16.95, F + 1.8, 5, Math.PI / 2, 'THE KID'], [-9.2, F + 2, .1, 0, 'DUTCH']]) { const pm = new THREE.Mesh(new THREE.PlaneGeometry(.6, .8), new THREE.MeshStandardMaterial({ map: wantedTex(name), roughness: .95 })); pm.position.set(x, y, z); pm.rotation.y = ry; s.signs.push(pm); }
     const board = new THREE.Mesh(new THREE.CircleGeometry(.23, 40), new THREE.MeshStandardMaterial({ map: dartTex(), roughness: .9 })); board.position.set(-1.12, F + 1.73, 3.5); board.rotation.y = -Math.PI / 2; (s.signs = s.signs || []).push(board);
     box(s, M.dark, 5.5, F + .55, 5.5, 6, 1.1, .6); wall(s, 2.5, 5.5, 8.5, 5.5, F, F + 1.1); for (let i = 0; i < 5; i++) box(s, M.crate, 2.3 + i * 1.3, F + 1.9, 7.6, 1, .5, .6);
     { box(s, M.dark, -9, F + .74, 2.6, 1.1, .06, 1.1); box(s, M.dark, -9, F + .37, 2.6, .12, .74, .12); for (const z of [1.75, 3.45]) { box(s, M.dark, -9, F + .45, z, .45, .05, .45); box(s, M.dark, -9, F + .22, z, .06, .44, .06); } // checkers table + two chairs
@@ -141,9 +174,12 @@ export function createTown(c) {
     const g = finish(s); for (const sg of s.signs) g.add(sg); T.board = board;
     s.ckSpot = spot(s, -9, F, 1.5, 'checkers', 'Play checkers', 1.3);
     s.drinkSpot = spot(s, -7, F, 4.5, 'drink', 'Order a whiskey', 1.6); s.dartSpot = spot(s, -2.6, F, 3.5, 'darts', 'Play darts', 1.5); s.storeSpot = spot(s, 5.5, F, 4.5, 'store', 'General store', 1.7);
-    const [ax, az] = toW(s, -.5, 2.8), hw = 16, hd = 11, wide = Math.abs(Math.sin(rot)) > .5; T.safe.push({ x: ax, z: az, hw: wide ? hd : hw, hd: wide ? hw : hd, town: true });
+    const [ax, az] = toW(s, -3.5, 3.6), hw = 19, hd = 13.5, wide = Math.abs(Math.sin(rot)) > .5; T.safe.push({ x: ax, z: az, hw: wide ? hd : hw, hd: wide ? hw : hd, town: true });
     T.npcAt = [[toW(s, -7, 6.5), s.y0 + F, rot], [toW(s, 5.5, 6.5), s.y0 + F, rot]]; // bartender, storekeeper (facing the room)
     return s; }
+  function wantedTex(name) { return canvasTex(192, 256, (x, w, h) => { x.fillStyle = '#d9c59a'; x.fillRect(0, 0, w, h); x.fillStyle = 'rgba(90,60,20,.25)'; for (let i = 0; i < 40; i++) x.fillRect(Math.random() * w, Math.random() * h, 6, 6);
+    x.fillStyle = '#2a1a0c'; x.textAlign = 'center'; x.font = 'bold 34px Georgia,serif'; x.fillText('WANTED', w / 2, 40); x.font = '14px Georgia,serif'; x.fillText('DEAD OR ALIVE', w / 2, 60); x.beginPath(); x.arc(w / 2, 115, 32, 0, TAU); x.fill(); x.fillRect(w / 2 - 45, 145, 90, 40);
+    x.fillStyle = '#d9c59a'; x.fillRect(w / 2 - 36, 106, 72, 8); x.fillStyle = '#2a1a0c'; x.font = 'bold 18px Georgia,serif'; x.fillText(name, w / 2, 210); x.font = 'bold 22px Georgia,serif'; x.fillText('$500 REWARD', w / 2, 238); }); }
   function ckTex() { return canvasTex(256, 256, (x, w) => { const q = w / 8; for (let r = 0; r < 8; r++) for (let cc = 0; cc < 8; cc++) { x.fillStyle = (r + cc) % 2 ? '#5b3a1f' : '#e2cc98'; x.fillRect(cc * q, r * q, q, q); if ((r + cc) % 2 && (r < 3 || r > 4)) { x.fillStyle = r < 3 ? '#1d1d1d' : '#c0392b'; x.beginPath(); x.arc(cc * q + q / 2, r * q + q / 2, q * .36, 0, TAU); x.fill(); } } }); }
   function dartTex() { return canvasTex(256, 256, (x, w) => { const c = w / 2, R = c * .98, k = R / 170; x.fillStyle = '#111'; x.beginPath(); x.arc(c, c, R, 0, TAU); x.fill();
     for (let i = 0; i < 20; i++) { const a0 = (i * 18 - 9 - 90) * Math.PI / 180, a1 = a0 + 18 * Math.PI / 180, dark = i % 2 === 0;
@@ -154,7 +190,7 @@ export function createTown(c) {
   T.nearSpot = () => { if (H.mounted) return null; let best = null, bd = 1e9; for (const o of T.spots) { if (Math.abs(P.pos.y - o.y) > 1.3) continue; const d = Math.hypot(P.pos.x - o.x, P.pos.z - o.z); if (d < o.r && d < bd) { bd = d; best = o; } } return best; };
   T.label = o => !o ? '' : o.kind === 'tommy' && H.guns && H.guns.state.owned.tommy ? '' : o.kind === 'gold' && H.guns && H.guns.state.owned.gold ? '' : o.label;
   T.touchLabel = o => ({ tommy: 'TAKE', gold: 'TAKE', shop: 'SHOP', drink: 'DRINK', darts: 'DARTS', checkers: 'CHECKERS', store: 'STORE' })[o.kind] || '';
-  T.use = () => { const o = T.nearSpot(); if (!o || !T.label(o)) return false; const g = H.guns;
+  T.use = () => { const o = T.nearSpot(); if (!o || !T.label(o)) return false; const g = H.guns; if (T.onUse && T.onUse(o)) { sfx.ui && sfx.ui(); return true; }
     if (o.kind === 'tommy') { g.give('tommy'); g.draw('tommy'); msg('Tommy gun — 100-round drum, full auto (4)', 3); if (o.s.tommyMesh) o.s.tommyMesh.visible = false; }
     else if (o.kind === 'gold') { g.give('gold'); g.draw('gold'); msg('The Golden Buffalo — aim, then scroll / pinch / + − to zoom across the map (5)', 4); if (o.s.goldMesh) o.s.goldMesh.visible = false; }
     else if (o.kind === 'shop') openShop('guns'); else if (o.kind === 'store') openShop('store'); else if (o.kind === 'drink') drink(); else if (o.kind === 'darts') openDarts(); else if (o.kind === 'checkers') ck.open();

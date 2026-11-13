@@ -15,6 +15,7 @@ import { createGuns } from './hrguns.js';
 import { createHrZombies } from './hrzombies.js';
 import { createFlora } from './hrflora.js';
 import { createTown, wearJacket } from './hrtown.js';
+import { createSaloon } from './hrsaloon.js';
 import { buildFeatures, buildMask, createChunks, createWater } from './hrterrain.js';
 import { makeRawH, trailSegments, segDist as segD, createSky, terrainMaterial as terrainMat2, loadTerrainTextures, buildTerrain, createGrass, loadRockModels } from './hrworld.js';
 const $ = id => document.getElementById(id);
@@ -67,7 +68,7 @@ function makeProcRider(color) {
   for (const s of [-1, 1]) { const a = box(g, .1, .42, .12, cloth, s * .25, .42, -.12); a.rotation.x = .9; const l = box(g, .14, .5, .16, pants, s * .2, .02, -.05); l.rotation.x = .35; l.rotation.z = s * .25; }
   g.userData.kind = 'proc'; return g;
 }
-function procAnim(hz, dt, speed, graze) {
+function procAnim(hz, dt, speed, graze) { // (also animates the hired bandits' horses)
   const u = hz.userData, k = Math.min(1, Math.abs(speed) / 4); u.phase += dt * (2.2 + Math.abs(speed) * .9);
   const gallop = Math.abs(speed) > 9, a = (.25 + .35 * Math.min(1, Math.abs(speed) / 12)) * k;
   u.legs.forEach((L, i) => { const off = gallop ? [0, .5, 2.6, 3.1][i] : [0, Math.PI, Math.PI, 0][i]; const s = Math.sin(u.phase + off); L.rotation.x = s * a; L.userData.low.rotation.x = Math.max(0, -Math.cos(u.phase + off)) * a * 1.4; });
@@ -365,10 +366,11 @@ export function createHorseRider(ctx) {
           if (mg > .8) continue; const sc = above * 2 + rel * .25 + mg * 3 + rr * .04; if (sc < bs) { bs = sc; best = [x, z, n ? 'station' : 'armory', rot, +mg.toFixed(2), +above.toFixed(2)]; } } }
       if (!best) best = [t[0] + 8, t[1] + 8, n ? 'station' : 'armory', 0, -1, -1]; return best; });
     let town = null, ts = 1e9; for (let d = 95; d <= 230; d += 15) for (let a = 0; a < TAU; a += TAU / 24) { const x = PEN.x + Math.cos(a) * d, z = PEN.z + Math.sin(a) * d;
-      let bad = false; for (const [u, v] of [[-16, -11], [16, -11], [-16, 11], [16, 11], [0, 0], [-16, 0], [16, 0], [0, 11], [0, -11]]) { const px = x + u, pz = z + v; if ((Math.abs(px - PEN.x) < 40 && Math.abs(pz - PEN.z) < 40) || clearing(px, pz, 3) || inRange(px, pz, 6) || F.trailDist(px, pz) < 10 || F.waterDist(px, pz) < 8 || trailDist(px, pz) < 4) { bad = true; break; } } if (bad) continue;
-      const sc = flat(x, z, 13, 9) + d * .004; if (sc < ts) { ts = sc; town = [x, z, Math.atan2(x - PEN.x, z - PEN.z)]; } }
-    ZONES = tw.map(t => [t[0], t[1], 9, 9]); if (town) ZONES.push([town[0], town[1], 16, 16]);
+      let bad = false; for (const [u, v] of [[-20, -14], [20, -14], [-20, 14], [20, 14], [0, 0], [-20, 0], [20, 0], [0, 14], [0, -14]]) { const px = x + u, pz = z + v; if ((Math.abs(px - PEN.x) < 40 && Math.abs(pz - PEN.z) < 40) || clearing(px, pz, 3) || inRange(px, pz, 6) || F.trailDist(px, pz) < 10 || F.waterDist(px, pz) < 8 || trailDist(px, pz) < 4) { bad = true; break; } } if (bad) continue;
+      const sc = flat(x, z, 17, 12) + d * .004; if (sc < ts) { ts = sc; town = [x, z, Math.atan2(x - PEN.x, z - PEN.z)]; } }
+    ZONES = tw.map(t => [t[0], t[1], 9, 9]); if (town) ZONES.push([town[0], town[1], 22, 22]);
     town2 = H.town2 = createTown({ scene, hAt, H, P, mobile, msg, sfx, camera, send: m => H.zSend && H.zSend(m), jacket: on => { if (real()) wearJacket(rider, on); } }).build({ towers: tw, town });
+    createSaloon({ scene, H, P, T: town2, camera, sfx, msg, mobile, input, keys, fx: ctx.fx, canvas: GX.renderer.domElement, makeHorse: () => makeHorse(...PROC_COATS[(Math.random() * 5) | 0]), procAnim, blocked: (x, z, r) => blocked(x, z, r), groundAt: (x, z, y) => town2.floorAt(x, z, y) }); // v35
     H.obstWalls = town2.walls; H.places = { towers: tw, town, tops: [tops[A], tops[B]].map(t => [Math.round(t[0]), Math.round(t[1]), Math.round(t[2] - BASE)]), townFlat: +ts.toFixed(2) }; }
   // woods: conifers + broadleaf trees, instanced, with a near (detailed) / far (low-poly) LOD swapped around the player
   function buildTrees() {
@@ -601,6 +603,7 @@ export function createHorseRider(ctx) {
   function nearestHorse() { let best = null, bd = MOUNT_R; for (const h of H.horses) { if (H.ridden.has(h)) continue; const d = Math.hypot(h.pos.x - P.pos.x, h.pos.z - P.pos.z); if (d < bd) { bd = d; best = h; } } return best; }
   function use() {
     if (!H.on || H.cd > 0) return false;
+    if (H.saloon && H.saloon.isOpen()) { H.saloon.close(); H.cd = COOLDOWN; return true; } if (H.saloon && H.saloon.dance) { H.saloon.endDance(); H.cd = COOLDOWN; return true; } // v35: E stands up / leaves
     if (H.mounted) { if (H.mountT > 0 || H.dismT > 0) return false; H.wantOff = true; H.cd = COOLDOWN; return true; } // rein in, then step down
     if (town2 && town2.use()) { H.cd = COOLDOWN; return true; }
     const h = nearestHorse(); if (!h) { msg('Walk up to a horse to ride it', 1.5); return false; }
@@ -695,6 +698,7 @@ export function createHorseRider(ctx) {
       else if (stick <= .05 && fA > 0) { H.backT = 0; target = H.shiftT >= .3 ? SPRINT : GAIT_SP[H.cruise]; }
       else { H.backT = 0; coast = true; target = Math.abs(tA) > .2 ? Math.min(Math.max(H.speed, 0), GAIT_SP[1]) : 0; } // reins slack: ease down to a stop (a walk while turning)
       if (Math.abs(H.speed) < .3 && fA <= 0) H.cruise = Math.min(H.cruise, 2);
+      target *= H.horseMul || 1; // v35: snow / green / the crash
     } else brake = true;
     // stamina: galloping drains it; a winded horse drops to a canter until it recovers
     if (target > 12.5 && H.speed > 11) { H.stam = Math.max(0, H.stam - dt * (target > 16 ? 7.5 : 4)); if (H.stam <= 0) { H.winded = 5; msg('Your horse is winded — ease off', 1.6); } }
@@ -744,9 +748,9 @@ export function createHorseRider(ctx) {
   }
   function walk(dt, fwdIn, sideIn, stick, run, jump) {
     if ((H.aimK || 0) > .5) { run = false; stick = Math.min(stick, .45); } // aiming: walk, don't run
-    const slow = !!keys.AltLeft, sp = stick > .05 ? (stick < .5 ? 1.8 * stick / .5 : run ? 7.2 : lerp(1.8, 4.6, Math.min(1, (stick - .5) / .4))) : run && fwdIn > 0 ? 7.2 : slow ? 1.8 : 4.6;
+    const slow = !!keys.AltLeft, sp = stick > .05 ? (stick < .5 ? 1.8 * stick / .5 : run ? 7.2 : lerp(1.8, 4.6, Math.min(1, (stick - .5) / .4))) : run && fwdIn > 0 ? 7.2 : slow ? 1.8 : 4.6; const spM = sp * (H.speedMul || 1);
     const f = tmp.set(-Math.sin(P.yaw), 0, -Math.cos(P.yaw)), rx = -f.z, rz = f.x;
-    let mx = f.x * fwdIn + rx * sideIn, mz = f.z * fwdIn + rz * sideIn; const l = Math.hypot(mx, mz); if (l > .12) { mx *= sp / l; mz *= sp / l; } else mx = mz = 0; // v34: a tiny leftover input is no input (never 'stuck running')
+    let mx = f.x * fwdIn + rx * sideIn, mz = f.z * fwdIn + rz * sideIn; const l = Math.hypot(mx, mz); if (l > .12) { mx *= spM / l; mz *= spM / l; } else mx = mz = 0; // v34: a tiny leftover input is no input (never 'stuck running')
     H.fv.x += (mx - H.fv.x) * Math.min(1, dt * 9); H.fv.y += (mz - H.fv.y) * Math.min(1, dt * 9); // momentum: ease into and out of a run
     { const dk = H.drunkK || 0, vv = Math.hypot(H.fv.x, H.fv.y); if (dk > 2.5 && vv > 1 && H.ground && !(H.fallT > 0)) { // drunk on foot: stumbles, then falls over
       if (Math.random() < dt * (dk - 2.5) * .22) { const a = Math.random() * TAU; H.fv.x += Math.cos(a) * 2.2; H.fv.y += Math.sin(a) * 2.2; H.shake = Math.max(H.shake, .3); H.stumbles = (H.stumbles || 0) + 1; }
@@ -773,14 +777,14 @@ export function createHorseRider(ctx) {
     const h = H.mounted;
     let fwdIn = 0, sideIn = 0; if (keys.KeyW || keys.ArrowUp) fwdIn += 1; if (keys.KeyS || keys.ArrowDown) fwdIn -= 1; if (keys.KeyD || keys.ArrowRight) sideIn += 1; if (keys.KeyA || keys.ArrowLeft) sideIn -= 1;
     let stick = Math.min(1, Math.hypot(input.mx || 0, input.mz || 0)); if (stick > .05) { fwdIn = -input.mz; sideIn = input.mx; }
-    if (H.uiOpen || (town2 && town2.passT > 0) || H.fallT > 0) { fwdIn = sideIn = 0; stick = 0; }
+    if (H.uiOpen || H.seated || (town2 && town2.passT > 0) || H.fallT > 0) { fwdIn = sideIn = 0; stick = 0; }
     const dk = town2 ? town2.level() : 0; H.drunkK = dk; if (dk > .3) { // v33 drunk: controls answer late and drift, worse with every drink
       const held = Math.abs(fwdIn) + Math.abs(sideIn) > .05, tau = Math.min(.9, dk * .1), f = 1 - Math.exp(-dt / Math.max(.01, tau)); // v34: drunk input answers late on PRESS, but letting go always stops at once
       const lagT = (cur, raw) => Math.abs(raw) < .05 ? 0 : Math.sign(raw) !== Math.sign(cur ?? 0) ? raw * f : cur + (raw - cur) * f; H.lagF = lagT(H.lagF, fwdIn); H.lagS = lagT(H.lagS, sideIn); fwdIn = H.lagF; sideIn = H.lagS;
       if (held && dk > 1.5) sideIn += Math.sin(H.t * .9) * Math.min(.55, (dk - 1.5) * .09) + Math.sin(H.t * 2.3 + 1) * Math.min(.25, (dk - 1.5) * .04); } else { H.lagF = fwdIn; H.lagS = sideIn; }
     const run = !!keys.ShiftLeft || !!keys.ShiftRight || (stick > .92 && fwdIn > .6);
     const jump = keys.Space || input.jump;
-    if (H.fallT > 0) H.fallT -= dt; if (town2) town2.tick(dt);
+    if (H.fallT > 0) H.fallT -= dt; if (town2) town2.tick(dt); if (H.saloon) H.saloon.tick(dt);
     if (H.dead) { H.fv.x = H.fv.y = 0; } else if (h) ride(h, dt, stick > .05 ? 0 : fwdIn, stick > .05 ? 0 : sideIn, stick, jump); else walk(dt, fwdIn, sideIn, stick, run, jump);
     for (const o of H.horses) { if (o === h) continue;
       if (H.ridden.has(o) || (H.follow && o.net)) { netHorse(o, dt); if (H.ridden.has(o)) dustEmit(o, dt); continue; } // ridden by another player / herd mirrored from the host
@@ -821,7 +825,7 @@ export function createHorseRider(ctx) {
   function camClear(from, to) { // pull the camera in front of tree trunks / rocks between it and the subject
     const dx = to.x - from.x, dz = to.z - from.z; for (let t = .3; t <= 1.001; t += .175) { const x = from.x + dx * t, z = from.z + dz * t;
       for (const [ox, oz, or] of obstNear(x, z)) if (Math.abs(ox - x) < or + .35 && Math.abs(oz - z) < or + .35 && Math.hypot(ox - x, oz - z) < or + .3) { to.x = from.x + dx * (t - .2); to.z = from.z + dz * (t - .2); to.y = from.y + (to.y - from.y) * (t - .2); return; } } }
-  function syncCamera(dt) { if (H.fovSave) { camera.fov = H.fovSave; H.fovSave = 0; camera.updateProjectionMatrix(); } camRig(dt); if (guns) guns.scopeCam(dt); } // the scope takes over after the rig
+  function syncCamera(dt) { if (H.fovSave) { camera.fov = H.fovSave; H.fovSave = 0; camera.updateProjectionMatrix(); } camRig(dt); if (guns) guns.scopeCam(dt); if (H.saloon) H.saloon.postCam(); } // the scope takes over after the rig
   function drunkCam(h) { // v33/34 drunk sway, double / triple vision, tunnel vision, hiccups and the fall-over camera
     { const dk = H.drunkK || 0; if (dk > .05) { const t = H.t, k = Math.min(2.8, dk / 5); camera.rotateZ(Math.sin(t * .55) * .09 * k + Math.sin(t * 1.3) * .02 * k); camera.rotateY(Math.sin(t * .43 + 1) * .03 * k); camera.rotateX(Math.sin(t * .71) * .025 * k); }
       { const k = Math.min(1.9, Math.pow(dk / 6, 1.3)); if (H.drunkPass) { H.drunkPass.enabled = k > .03; H.drunkPass.uniforms.uK.value = k; H.drunkPass.uniforms.uT.value = H.t; } else { const f = k > .03 ? `blur(${(Math.min(1, k) * 2.2).toFixed(1)}px)` : ''; if (GX.renderer.domElement.style.filter !== f) GX.renderer.domElement.style.filter = f; } }
@@ -829,7 +833,7 @@ export function createHorseRider(ctx) {
   }
   function camRig(dt) {
     const h = H.mounted;
-    if (!h && (H.fp || !real())) { if (camera.fov !== 75) { camera.fov = 75; camera.updateProjectionMatrix(); } camera.position.set(P.pos.x, P.pos.y + 1.62 + (H.ground ? Math.abs(Math.cos(P.bob)) * .04 : 0), P.pos.z); camera.rotation.set(P.pitch, P.yaw, 0, 'YXZ'); H.camInit = false; drunkCam(h); return; }
+    if (!h && (H.fp || !real())) { if (camera.fov !== 75) { camera.fov = 75; camera.updateProjectionMatrix(); } camera.position.set(P.pos.x, P.pos.y + (H.seated ? 1.12 : 1.62) + (H.ground && !H.seated ? Math.abs(Math.cos(P.bob)) * .04 : 0), P.pos.z); camera.rotation.set(P.pitch, P.yaw, 0, 'YXZ'); H.camInit = false; drunkCam(h); return; }
     let fov, k;
     const ak = H.aimK || 0;
     if (!h) { const pitch = Math.max(-.85, Math.min(.6, P.pitch)), dist = 2.75 * Math.min(1.3, H.zoom) * (1 - .45 * ak), rx = Math.cos(P.yaw), rz = -Math.sin(P.yaw), v = H.fv.length();

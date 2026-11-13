@@ -286,7 +286,7 @@ export function createGuns(c) {
   function holster() { if (!state.weapon) return; state.weapon = null; state.aiming = false; state.reloading = false; input.ads = false; click(1800, .1); syncUI(); }
   const ORDER = ['revolver', 'rifle', 'sniper', 'tommy', 'gold'], owned = () => ORDER.filter(w => state.owned[w]);
   function cycle() { const o = owned(); if (!state.weapon) draw(o[0]); else { const i = o.indexOf(state.weapon); if (i < 0 || i === o.length - 1) holster(); else draw(o[i + 1]); } } // phone: holstered -> six-shooter -> rifle -> buffalo -> (tommy, golden buffalo once owned) -> holstered
-  function reload() { const w = state.weapon; if (!w || state.reloading || state.cycling || state.ammo[w] >= maxAmmo(w)) return false; state.reloading = true; clock.reload = (w === 'rifle' ? S.reloadRifle : w === 'sniper' ? S.reloadSniper : w === 'tommy' ? S.reloadTommy : w === 'gold' ? S.reloadGold : S.reloadRevolver) * S.tierReload[tier(w)]; state.rlLen = clock.reload; state.rlStep = 0; click(1500, .1); return true; }
+  function reload() { const w = state.weapon; if (!w || state.reloading || state.cycling || state.ammo[w] >= maxAmmo(w)) return false; state.reloading = true; clock.reload = (H.reloadMul || 1) * (w === 'rifle' ? S.reloadRifle : w === 'sniper' ? S.reloadSniper : w === 'tommy' ? S.reloadTommy : w === 'gold' ? S.reloadGold : S.reloadRevolver) * S.tierReload[tier(w)]; state.rlLen = clock.reload; state.rlStep = 0; click(1500, .1); return true; }
 
   // ChatGPT's horseback arc clamp (kept): a direction behind the horse is turned back to the limit; returns whether it was clamped
   function clampHorse(dir) { const h = H.mounted; if (!h) return false; const fx_ = -Math.sin(h.yaw), fz = -Math.cos(h.yaw), hx = dir.x, hz = dir.z, l = Math.hypot(hx, hz); if (l < 1e-4) return false;
@@ -416,7 +416,7 @@ export function createGuns(c) {
     else { m.lever.rotation.x = lever * .95; m.hammer.rotation.x = -.45; m.group.rotateX(rec * .15); m.group.translateZ(rec * .04); } }
 
   const swV = new THREE.Vector3();
-  function swayVec() { if (SCOPED(state.weapon) && state.scoped) return swV.set(0, 0, 0); const m = !!H.mounted, sp = Math.abs(m ? H.speed : H.fv.length()), amp = (m ? .0025 + sp * .0011 : .0006 + sp * .0005) * (state.aiming ? 1 : 2) * (state.weapon === 'rifle' || state.weapon === 'tommy' ? .8 : SCOPED(state.weapon) ? 1.3 : 1);
+  function swayVec() { if (SCOPED(state.weapon) && state.scoped) return swV.set(0, 0, 0); const m = !!H.mounted, sp = Math.abs(m ? H.speed : H.fv.length()), amp = (m ? .0025 + sp * .0011 : .0006 + sp * .0005) * (state.aiming ? 1 : 2) * (H.swayMul || 1) * (state.weapon === 'rifle' || state.weapon === 'tommy' ? .8 : SCOPED(state.weapon) ? 1.3 : 1);
     camera.getWorldDirection(v1); const rt = v2.crossVectors(v1, UP).normalize(); return swV.copy(rt).multiplyScalar(Math.sin(clock.sway * 1.7) * amp).addScaledVector(UP, Math.sin(clock.sway * 2.9 + 1) * amp * .8); }
 
   // ---- input (only while Horse Rider runs; nothing global outside the mode) ----
@@ -426,7 +426,7 @@ export function createGuns(c) {
     else if (e.code === 'KeyX') holster(); else if (e.code === 'KeyR') { reloadHeld = true; reload(); } };
   const onKeyUp = e => { if (e.code === 'KeyR') reloadHeld = false; };
   const okPointer = () => H.on && !mobile && (document.pointerLockElement || c.dev);
-  const onDown = e => { if (!okPointer() || H.uiOpen) return; if (e.button === 0) { if (!state.weapon && !H.mountT) { draw(state.last); return; } fireHeld = true; firePend = true; } if (e.button === 2) aimHeld = true; };
+  const onDown = e => { if (!okPointer() || H.uiOpen || H.noGun) return; if (e.button === 0) { if (!state.weapon && !H.mountT) { draw(state.last); return; } fireHeld = true; firePend = true; } if (e.button === 2) aimHeld = true; };
   const onUp = e => { if (e.button === 0) fireHeld = false; if (e.button === 2) aimHeld = false; };
   addEventListener('wheel', e => { if (H.on && state.weapon === 'gold' && state.scopeK > .5) zoom(e.deltaY < 0 ? 1 : -1, 1.18); }, { passive: true });
   { let pd = 0; addEventListener('touchmove', e => { if (!(H.on && state.weapon === 'gold' && state.scopeK > .5) || e.touches.length !== 2) { pd = 0; return; } const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); if (pd && Math.abs(d - pd) > 14) { zoom(d > pd ? 1 : -1, 1.12); pd = d; } else if (!pd) pd = d; }, { passive: true }); }
@@ -464,7 +464,8 @@ export function createGuns(c) {
     flash.visible = clock.flash > 0; if (light) light.intensity = clock.flash > 0 ? 14 * clock.flash / .05 : 0;
     updateTargets(dt);
     const w = state.weapon; if (w && (H.mountT > 0 || H.dismT > 0)) { for (const m of Object.values(models)) m.group.visible = false; state.aiming = false; H.scoped = false; H.gunAim = false; H.gunFace = null; return; }
-    if (!w) { for (const m of Object.values(models)) m.group.visible = false; state.aiming = false; H.scoped = false; state.aimK += (0 - state.aimK) * Math.min(1, dt * 10); H.aimK = state.aimK; H.gunFace = null; return; }
+    if (w && H.noGun) holster();
+    if (!state.weapon) { for (const m of Object.values(models)) m.group.visible = false; state.aiming = false; H.scoped = false; state.aimK += (0 - state.aimK) * Math.min(1, dt * 10); H.aimK = state.aimK; H.gunFace = null; return; }
     state.aiming = !!(aimHeld || input.ads);
     const scoping = SCOPED(w) && state.aiming; state.scopeT = scoping ? state.scopeT + dt : 0;
     const wantSteady = scoping && (mobile ? state.scopeT > .7 : !!(keys.ShiftLeft || keys.ShiftRight)); // phones settle by themselves after a moment in the scope

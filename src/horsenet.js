@@ -73,7 +73,9 @@ export function createHorseNet({ horse, P, msg }) {
       case 'herd': if (isClient()) horse.applyHerd(m.h); break;
       case 'zs': if (isClient() && H.zombies) H.zombies.apply(m); break; // the host's zombies (host-authoritative)
       case 'zh': if (isHost() && H.zombies) H.zombies.remoteHit(m, S.peers.get(from)); break; // a client shot one
-      case 'zk': if (isClient() && H.zombies) { H.zombies.confirmKill(m); if (H.guns) H.guns.credit(!!m.h); } break; // host-confirmed kill: my points
+      case 'zk': if (isClient() && H.zombies) { if (m.b) { H.saloon && H.saloon.banditKill(); } else { H.zombies.confirmKill(m); if (H.guns) H.guns.credit(!!m.h); } } break;
+      case 'sv': if (isHost() && H.saloon) H.saloon.netIn(m, S.peers.get(from)); break; // v35: a client's slot spin (the host draws the reels)
+      case 'svr': if (isClient() && H.saloon) H.saloon.netRes(m); break; // host-confirmed kill: my points
       case 'dt': if (isHost() && H.town2) H.town2.netIn(m, S.peers.get(from)); break; // darts: a client's throw / challenge (host runs the match)
       case 'dts': if (isClient() && H.town2) H.town2.netState(m); break;
       case 'ck': if (isHost() && H.town2) H.town2.ck.netIn(m, S.peers.get(from)); break; // checkers move / challenge (host runs the game)
@@ -119,7 +121,7 @@ export function createHorseNet({ horse, P, msg }) {
         if (!has && d < VOICE_NEAR && voice.links.size < VOICE_MESH) voice.peer(R.id); else if (has && d > VOICE_FAR) voice.drop(R.id); } }
     if (net.open && S.netT <= 0) { S.netT = rate;
       const st = { t: 'p', x: +x.toFixed(2), y: +(h ? h.pos.y : P.pos.y).toFixed(2), z: +z.toFixed(2), yw: +(h ? P.yaw : (H.bodyYaw ?? P.yaw)).toFixed(3), m: h ? h.id : -1, hy: h ? +h.yaw.toFixed(3) : 0, sp: +(h ? H.speed : S.footSp).toFixed(2) };
-      if (horse.gunNet) Object.assign(st, horse.gunNet()); st.n = callsign().slice(0, 14); if (H.dead) st.dd = 1; if (isHost()) st.id = 'P1'; net.send(st); }
+      if (horse.gunNet) Object.assign(st, horse.gunNet()); if (H.saloon) Object.assign(st, H.saloon.netState()); st.n = callsign().slice(0, 14); if (H.dead) st.dd = 1; if (isHost()) st.id = 'P1'; net.send(st); }
     if (isHost() && net.open && S.herdT <= 0) { S.herdT = .25; net.send({ t: 'herd', h: horse.herd() }); }
     if (isHost() && S.code && (S.hbT = (S.hbT || 0) - dt) <= 0) { S.hbT = 5; try { localStorage.setItem('hr_mycode', JSON.stringify({ code: S.code, t: Date.now() })); } catch (_) {} }
     // v34: never stay offline: retry the lobby in the background (cold lobby server, PeerJS hiccup, came back from the background)
