@@ -113,9 +113,14 @@ float zn(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(mix(z
   const pickKind = () => { const w = Z.wave, r = rnd(); if (w >= 3 && r < Math.min(.15, .04 * w)) return 'brute'; if (w >= 2 && r < Math.min(.5, .12 * w)) return 'runner'; return 'walker'; };
 
   // ---- who they go for: players on foot or riding (their horse), loose horses outside the pen ----
-  function players() { const out = []; if (!Z.dead) { const h = H.mounted; out.push({ id: H.me || 'P1', me: true, x: h ? h.pos.x : P.pos.x, y: h ? h.pos.y : P.pos.y, z: h ? h.pos.z : P.pos.z, horse: h || null }); }
-    for (const r of (c.remotes ? c.remotes() : [])) if (r && r.s && !r.s.dd) { const h = r.s.m >= 0 ? H.horses[r.s.m] : null; out.push({ id: r.id, me: false, x: h ? h.pos.x : r.s.x, y: h ? h.pos.y : r.s.y, z: h ? h.pos.z : r.s.z, horse: h }); }
-    return out; }
+  // v37 perf: the player list is rebuilt once per tick (not per zombie), into persistent objects keyed by id, so a target a
+  // zombie picked up to .5 s ago still follows that player's live position instead of a stale copy.
+  const PL = [], PLO = new Map(); let plT = -1;
+  const plSet = (id, me, x, y, z, horse) => { let q = PLO.get(id); if (!q) PLO.set(id, q = { id, me }); q.me = me; q.x = x; q.y = y; q.z = z; q.horse = horse; q.gone = false; PL.push(q); };
+  function refreshPlayers() { for (const q of PL) q.gone = true; PL.length = 0; if (!Z.dead) { const h = H.mounted; plSet(H.me || 'P1', true, h ? h.pos.x : P.pos.x, h ? h.pos.y : P.pos.y, h ? h.pos.z : P.pos.z, h || null); }
+    for (const r of (c.remotes ? c.remotes() : [])) if (r && r.s && !r.s.dd) { const h = r.s.m >= 0 ? H.horses[r.s.m] : null; plSet(r.id, false, h ? h.pos.x : r.s.x, h ? h.pos.y : r.s.y, h ? h.pos.z : r.s.z, h); }
+    if (PLO.size > PL.length + 16) for (const [k, q] of PLO) if (q.gone) PLO.delete(k); plT = Z.t; }
+  function players() { if (plT !== Z.t) refreshPlayers(); return PL; }
   function chooseTarget(o) { let best = null, bd = 1e9;
     for (const p of players()) { const up = (p.y ?? o.pos.y) - o.pos.y > 2.6, sf = inPenSafe(p.x, p.z) || up, d = Math.hypot(p.x - o.pos.x, p.z - o.pos.z) + (sf ? 40 : 0); if (d < bd) { bd = d; best = { kind: 'player', p, x: p.x, z: p.z, safe: sf, up }; } }
     for (const h of H.horses) { if (H.ridden && H.ridden.has(h)) continue; if (h === H.mounted || inPenSafe(h.pos.x, h.pos.z)) continue; const d = Math.hypot(h.pos.x - o.pos.x, h.pos.z - o.pos.z) * 1.3; if (d < bd) { bd = d; best = { kind: 'horse', h, x: h.pos.x, z: h.pos.z, safe: false }; } }
@@ -163,7 +168,7 @@ float zn(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(mix(z
     if (!run || o.st === 1) for (const [s, L] of [[1, 'Left'], [-1, 'Right']]) { const r = raised[s > 0 ? 0 : 1]; c.aimBone(root, Bn[L + 'Arm'], Bn[L + 'ForeArm'], [s * r[0], r[1] + sw * s + (o.st === 1 ? Math.sin(o.anim * 9) * .3 : 0), r[2]]); c.aimBone(root, Bn[L + 'ForeArm'], Bn[L + 'Hand'], [s * .05, .02, 1]); } }
   function stepHost(o, dt) {
     if (o.hold) { o.sp = 0; o.st = 0; return; } // dev / tests: stand still
-    const T = o.tgt = (o.retT = (o.retT || 0) - dt) <= 0 || !o.tgt ? chooseTarget(o) : o.tgt; if (o.retT <= 0) o.retT = .5;
+    const T = o.tgt = (o.retT = (o.retT || 0) - dt) <= 0 || !o.tgt || (o.tgt.kind === 'player' && o.tgt.p.gone) ? chooseTarget(o) : o.tgt; if (o.retT <= 0) o.retT = .5;
     let tx = T ? (T.kind === 'horse' ? T.h.pos.x : T.p.x) : PEN.x, tz = T ? (T.kind === 'horse' ? T.h.pos.z : T.p.z) : PEN.z;
     const dist = Math.hypot(tx - o.pos.x, tz - o.pos.z), reach = o.K.reach + (T && (T.kind === 'horse' || T.p.horse) ? .8 : 0), safe = T && (T.kind === 'horse' ? inPenSafe(tx, tz) : inPenSafe(T.p.x, T.p.z) || ((T.p.y ?? o.pos.y) - o.pos.y > 2.6));
     o.cd -= dt;
@@ -187,12 +192,18 @@ float zn(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(mix(z
     pushOutOfPen(o.pos); if (H.town2 && H.town2.towers) for (const t of H.town2.towers) if (H.town2.inFoot(t, o.pos.x, o.pos.z, 0)) { o.pos.x -= mx * 1.5; o.pos.z -= mz * 1.5; } // lookouts are solid for them
     o.pos.x = Math.max(-WALK, Math.min(WALK, o.pos.x)); o.pos.z = Math.max(-WALK, Math.min(WALK, o.pos.z));
     // v34 stuck watchdog: no progress toward the target for 8 s (while not at a safe-zone edge), or far from every player -> come back near them
-    const nd = players().reduce((m, p) => Math.min(m, Math.hypot(p.x - o.pos.x, p.z - o.pos.z)), 1e9);
+    let nd = 1e9; for (const p of players()) { const d = Math.hypot(p.x - o.pos.x, p.z - o.pos.z); if (d < nd) nd = d; }
     if (!o.prog || Z.t - o.prog.t > 1) { if (o.prog && !safe && dist > reach + .5 && o.prog.d - dist < .4) o.stuckT = (o.stuckT || 0) + (Z.t - o.prog.t); else if (o.prog) o.stuckT = 0; o.prog = { t: Z.t, d: dist }; }
     o.farT = nd > 140 ? (o.farT || 0) + dt : 0;
     if ((o.stuckT || 0) > 8 || nd > 250 || o.farT > 30) relocate(o, o.stuckT > 8 ? 'stuck' : 'far'); }
-  function separate() { const L = Z.list; for (let i = 0; i < L.length; i++) { const a = L[i]; if (!a.alive) continue; for (let j = i + 1; j < L.length; j++) { const b = L[j]; if (!b.alive) continue;
-    const dx = b.pos.x - a.pos.x, dz = b.pos.z - a.pos.z, d = Math.hypot(dx, dz), r = .55 * (a.K.s + b.K.s) / 2; if (d < r && d > 1e-4) { const k = (r - d) / 2 / d; a.pos.x -= dx * k; a.pos.z -= dz * k; b.pos.x += dx * k; b.pos.z += dz * k; pushOutOfPen(a.pos); pushOutOfPen(b.pos); } } } }
+  // v37 perf: neighbours from a 1.2 m grid (reused buckets) instead of every pair; same push rule as before
+  const SG = new Map(), SGK = [], SC = 1.2;
+  function separate() { const L = Z.list; for (const k of SGK) SG.get(k).length = 0; SGK.length = 0;
+    for (let i = 0; i < L.length; i++) { const a = L[i]; if (!a.alive) continue; const k = (Math.floor(a.pos.x / SC) + 2048) * 4096 + Math.floor(a.pos.z / SC) + 2048; let b = SG.get(k); if (!b) SG.set(k, b = []); if (!b.length) SGK.push(k); b.push(a); }
+    for (let i = 0; i < L.length; i++) { const a = L[i]; if (!a.alive) continue; const cx = Math.floor(a.pos.x / SC) + 2048, cz = Math.floor(a.pos.z / SC) + 2048;
+      for (let gx = cx - 1; gx <= cx + 1; gx++) for (let gz = cz - 1; gz <= cz + 1; gz++) { const bk = SG.get(gx * 4096 + gz); if (!bk) continue;
+        for (const b of bk) { if (b.id <= a.id) continue; const dx = b.pos.x - a.pos.x, dz = b.pos.z - a.pos.z; if (dx > 1 || dx < -1 || dz > 1 || dz < -1) continue; const d = Math.hypot(dx, dz), r = .55 * (a.K.s + b.K.s) / 2;
+          if (d < r && d > 1e-4) { const k = (r - d) / 2 / d; a.pos.x -= dx * k; a.pos.z -= dz * k; b.pos.x += dx * k; b.pos.z += dz * k; pushOutOfPen(a.pos); pushOutOfPen(b.pos); } } } } }
 
   function tick(dt) {
     if (!Z.on || !H.on) return; Z.t += dt;
@@ -204,18 +215,18 @@ float zn(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(mix(z
     for (const h of H.horses) { if (h.hp == null) h.hp = ZSET.horseHp; if (h.panic > 0) h.panic -= dt; if (h.hp < ZSET.horseHp && (inPenSafe(h.pos.x, h.pos.z) || (Z.t % 1 < dt && h.panic <= 0))) h.hp = Math.min(ZSET.horseHp, h.hp + (inPenSafe(h.pos.x, h.pos.z) ? 12 : 2) * dt); }
     if (host) { // waves: a steady trickle that thickens; capped (phones lower)
       if ((Z.waveT += dt) > ZSET.waveSecs) { Z.waveT = 0; Z.wave++; c.msg && c.msg(`Wave ${Z.wave} — more of the dead are coming down from the mountains`, 3); }
-      const live = Z.list.filter(o => o.alive).length; if (Z.wasRole === 'client') Z.spawnT = Math.min(Z.spawnT, 1); // just became the host: keep the horde coming
+      let live = 0; for (const o of Z.list) if (o.alive) live++; Z.live = live; if (Z.wasRole === 'client') Z.spawnT = Math.min(Z.spawnT, 1); // just became the host: keep the horde coming
       Z.spawnT -= dt; if (Z.spawnT <= 0 && live < Z.cap) { Z.spawnT = live < Z.cap * .5 ? .4 : Math.min(1.2, Math.max(.75, (7 - Z.wave * .7) / 3) * (rnd() * .5 + .75)); spawn(pickKind()); } }
     Z.wasRole = Z.role();
     const cam = c.camera.position;
-    for (const o of [...Z.list]) { o.anim += dt; o.flinch = Math.max(0, o.flinch - dt * 2.5);
+    Z.frame = (Z.frame || 0) + 1; for (let li = Z.list.length - 1; li >= 0; li--) { const o = Z.list[li]; if (!o) continue; o.anim += dt; o.flinch = Math.max(0, o.flinch - dt * 2.5);
       if (!o.alive) { o.deadT += dt; const k = Math.min(1, o.deadT / .7); o.g.rotation.x = -k * 1.45 * (o.kind === 'brute' ? .95 : 1) ; o.g.rotation.z = k * .2 * o.fallDir; if (o.deadT > 4) o.pos.y -= dt * .6; if (o.deadT > 6.5) { despawn(o); continue; } pose(o, dt, 0); continue; }
       if (host) stepHost(o, dt); else if (o.net) { const n = o.net, k = Math.min(1, dt * 8); o.pos.x += (n.x - o.pos.x) * k; o.pos.z += (n.z - o.pos.z) * k; o.yaw += Math.atan2(Math.sin(n.yaw - o.yaw), Math.cos(n.yaw - o.yaw)) * k; o.st = n.st; o.sp = n.sp; }
       if (host && (!Number.isFinite(o.pos.x) || !Number.isFinite(o.pos.z) || !Number.isFinite(o.pos.y) || Math.abs(o.pos.x) > WALK + 1 || Math.abs(o.pos.z) > WALK + 1 || o.pos.y < hAt(o.pos.x, o.pos.z) - 1)) { if (!relocate(o, 'bad')) { o.pos.set(PEN.x + 30, hAt(PEN.x + 30, PEN.z + 30), PEN.z + 30); } } // NaN / under the map / outside the world
       o.pos.y = hAt(o.pos.x, o.pos.z); o.g.rotation.set(-o.flinch * .25, o.yaw, 0);
       const dc = Math.hypot(cam.x - o.pos.x, cam.z - o.pos.z); o.g.visible = dc < (mobile ? 220 : 320);
       if (o.B.zAt && (o.zNear !== dc < 60)) { o.zNear = dc < 60; for (const m of o.B.zAt) if (m.material !== ZM.eye) m.visible = o.zNear; } // eyes glow at any range; the rest only up close
-      if (o.g.visible && (dc < 90 || ((Z.t * 10 + o.id) | 0) % 3 === 0)) { Z.posedN = (Z.posedN || 0) + 1; PF.s('z.pose'); pose(o, dc < 90 ? dt : dt * 3, o.sp, dc < (mobile ? 30 : 55)); PF.e('z.pose'); }
+      if (o.g.visible && (dc < 90 || (Z.frame + o.id) % 3 === 0)) { Z.posedN = (Z.posedN || 0) + 1; PF.s('z.pose'); pose(o, dc < 90 ? dt : dt * 3, o.sp, dc < (mobile ? 30 : 55)); PF.e('z.pose'); }
       if ((o.groanT -= dt) <= 0) { o.groanT = 4 + rnd() * 7; if (dc < 45 && sfx.groan && sfx.ctx) sfx.at ? zAt(o.pos, () => sfx.groan(), .3) : sfx.groan(); } }
     PF.s('z.sep'); if (host) separate(); PF.e('z.sep');
     if (Z.role() === 'host' && (Z.snapT -= dt) <= 0) { Z.snapT = .12; c.send && c.send(snap()); }
@@ -251,10 +262,12 @@ float zn(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(mix(z
   // ---- HUD: health, wave, kills; red hurt flash ----
   let el = null, fl = null;
   function hud() { if (!el) { el = document.createElement('div'); el.id = 'hrZ'; document.body.appendChild(el); fl = document.createElement('div'); fl.id = 'hrHurt'; document.body.appendChild(fl); }
-    const live = Z.list.filter(o => o.alive).length, h = H.mounted;
-    el.style.display = H.on && Z.on ? '' : 'none'; fl.style.display = H.on ? '' : 'none'; fl.style.opacity = Z.dead > 0 ? .85 : (Z.flash * .7).toFixed(2);
+    let live = 0; for (const o of Z.list) if (o.alive) live++; const h = H.mounted;
+    const dsp = H.on && Z.on ? '' : 'none', fds = H.on ? '' : 'none', op = Z.dead > 0 ? '0.85' : (Z.flash * .7).toFixed(2);
+    if (el.style.display !== dsp) el.style.display = dsp; if (fl.style.display !== fds) fl.style.display = fds; if (fl.__op !== op) { fl.__op = op; fl.style.opacity = op; }
+    if (dsp) return;
     const hh = h ? Math.round(100 * (h.hp ?? ZSET.horseHp) / ZSET.horseHp) : null;
-    el.innerHTML = `<b class="hp"><i style="width:${Math.round(Z.hp)}%"></i></b>${hh != null ? `<b class="hp horse"><i style="width:${hh}%"></i></b>` : ''}<span>☠ WAVE ${Z.wave} · ${live} near · ${Z.kills} down${Z.heads ? ` (${Z.heads} ◉)` : ''}</span>${Z.dead > 0 ? '<em>OVERRUN</em>' : inTown(P.pos.x, P.pos.z) ? '<em class="safe">🛡 SAFE ZONE · TOWN</em>' : inPenSafe(P.pos.x, P.pos.z) && !h ? '<em class="safe">SAFE IN THE PEN</em>' : ''}`; }
+    const html = `<b class="hp"><i style="width:${Math.round(Z.hp)}%"></i></b>${hh != null ? `<b class="hp horse"><i style="width:${hh}%"></i></b>` : ''}<span>☠ WAVE ${Z.wave} · ${live} near · ${Z.kills} down${Z.heads ? ` (${Z.heads} ◉)` : ''}</span>${Z.dead > 0 ? '<em>OVERRUN</em>' : inTown(P.pos.x, P.pos.z) ? '<em class="safe">🛡 SAFE ZONE · TOWN</em>' : inPenSafe(P.pos.x, P.pos.z) && !h ? '<em class="safe">SAFE IN THE PEN</em>' : ''}`; if (html !== el.__h) { el.__h = html; el.innerHTML = html; } }
   const netState = () => ({ dd: Z.dead > 0 ? 1 : 0 });
   return { state: Z, list: Z.list, settings: ZSET, kinds: ZKINDS, tick, spawn, damage, onHit, rayHit, assistPoints, headPos, snap, apply, remoteHit, remoteHurt, confirmKill, hurtMe, netState, inPenRect, inPenSafe, inSafeZone, inTown, despawn,
     clear() { for (const o of [...Z.list]) despawn(o); } };

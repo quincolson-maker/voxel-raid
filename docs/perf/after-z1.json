@@ -1,0 +1,179 @@
+{
+ "label": "after-z1",
+ "base": "http://localhost:8767",
+ "when": "2026-11-13T05:43:55.412Z",
+ "machine": "box headless Chrome/SwiftShader",
+ "scen": {
+  "z40": {
+   "samples": 18,
+   "frameMed": 16.7,
+   "frameP95": 16.7,
+   "frameMax": 3683.1,
+   "cpuMed": 0.3,
+   "cpuP95": 0.5,
+   "per": {
+    "zombies": 0.16,
+    "hud": 0.04,
+    "herd": 0.03,
+    "z.sep": 0.03,
+    "player": 0.02,
+    "z.pose": 0.02,
+    "town": 0.01,
+    "build": 0.01,
+    "guns": 0.01,
+    "net": 0.01,
+    "cam": 0.01,
+    "saloon": 0.01,
+    "trees": 0,
+    "chunks": 0
+   },
+   "render": {
+    "calls": 0,
+    "tris": 0,
+    "points": 0,
+    "lines": 0,
+    "geoms": 11,
+    "tex": 3,
+    "progs": 2
+   },
+   "zombies": {
+    "total": 40,
+    "alive": 40,
+    "visible": 40,
+    "dressed": 0,
+    "posedPerFrame": 40,
+    "snapAgeMs": null
+   },
+   "trees": {
+    "cNear": 7,
+    "cFar": 4617,
+    "bNear": 8,
+    "bFar": 378
+   },
+   "dpr": 0.95,
+   "canvas": [
+    1216,
+    684
+   ],
+   "passes": [
+    "direct"
+   ],
+   "gpu": "n/a (no EXT_disjoint_timer_query_webgl2)",
+   "count": 40
+  },
+  "z150": {
+   "samples": 18,
+   "frameMed": 16.7,
+   "frameP95": 16.8,
+   "frameMax": 2966.6,
+   "cpuMed": 0.8,
+   "cpuP95": 1.2,
+   "per": {
+    "zombies": 0.56,
+    "z.sep": 0.08,
+    "z.pose": 0.04,
+    "hud": 0.04,
+    "herd": 0.03,
+    "player": 0.03,
+    "saloon": 0.02,
+    "build": 0.02,
+    "cam": 0.01,
+    "chunks": 0.01,
+    "town": 0.01,
+    "guns": 0.01,
+    "trees": 0,
+    "net": 0
+   },
+   "render": {
+    "calls": 0,
+    "tris": 0,
+    "points": 0,
+    "lines": 0,
+    "geoms": 11,
+    "tex": 3,
+    "progs": 2
+   },
+   "zombies": {
+    "total": 150,
+    "alive": 150,
+    "visible": 150,
+    "dressed": 0,
+    "posedPerFrame": 150,
+    "snapAgeMs": null
+   },
+   "trees": {
+    "cNear": 7,
+    "cFar": 4617,
+    "bNear": 8,
+    "bFar": 378
+   },
+   "dpr": 0.95,
+   "canvas": [
+    1216,
+    684
+   ],
+   "passes": [
+    "direct"
+   ],
+   "gpu": "n/a (no EXT_disjoint_timer_query_webgl2)",
+   "count": 150
+  },
+  "z420": {
+   "samples": 18,
+   "frameMed": 16.7,
+   "frameP95": 16.7,
+   "frameMax": 3616.5,
+   "cpuMed": 1.2,
+   "cpuP95": 1.8,
+   "per": {
+    "zombies": 1.13,
+    "z.sep": 0.21,
+    "z.pose": 0.11,
+    "hud": 0.04,
+    "saloon": 0.02,
+    "build": 0.02,
+    "herd": 0.02,
+    "player": 0.02,
+    "cam": 0.01,
+    "guns": 0.01,
+    "town": 0.01,
+    "net": 0,
+    "chunks": 0,
+    "trees": 0
+   },
+   "render": {
+    "calls": 0,
+    "tris": 0,
+    "points": 0,
+    "lines": 0,
+    "geoms": 11,
+    "tex": 3,
+    "progs": 2
+   },
+   "zombies": {
+    "total": 420,
+    "alive": 420,
+    "visible": 420,
+    "dressed": 0,
+    "posedPerFrame": 420,
+    "snapAgeMs": null
+   },
+   "trees": {
+    "cNear": 7,
+    "cFar": 4617,
+    "bNear": 8,
+    "bFar": 378
+   },
+   "dpr": 0.95,
+   "canvas": [
+    1216,
+    684
+   ],
+   "passes": [
+    "direct"
+   ],
+   "gpu": "n/a (no EXT_disjoint_timer_query_webgl2)",
+   "count": 420
+  }
+ }
+}
