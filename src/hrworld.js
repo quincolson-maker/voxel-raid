@@ -243,11 +243,11 @@ export function createGrass(scene, T, PEN, SEG, opt) {
   const fill = (rows) => { const b = bufs[LH.back], px = SPAN / (HM - 1); for (let n = 0; n < rows && LH.row < HM; n++, LH.row++) { const j = LH.row; for (let i = 0; i < HM; i++) b[j * HM + i] = THREE.DataUtils.toHalfFloat(hAt(LH.nx + i * px, LH.nz + j * px) - LH.off); } // relative to the map centre: half floats stay cm-accurate up in the mountains
     if (LH.row >= HM) { texs[LH.back].needsUpdate = true; U.uHm.value = texs[LH.back]; U.uHmO.value.set(LH.nx, LH.nz, SPAN, LH.off); LH.cur = LH.back; LH.back = 1 - LH.back; LH.row = HM + 1; } };
   const U = { uHm: { value: texs[0] }, uHmO: { value: new THREE.Vector4(-1e5, -1e5, SPAN, 0) }, uMask: { value: opt.mask || null }, uMH: { value: opt.maskHalf || 1 }, uBase: { value: T.BASE }, uCam: { value: new THREE.Vector3() }, uN: { value: N }, uCell: { value: cell }, uR: { value: R }, uTime: { value: 0 },
-    uPen: { value: new THREE.Vector4(PEN.x, PEN.z, PEN.hw, PEN.hd) }, uSeg: { value: SEG.map(s => new THREE.Vector4(...s)) }, uSunV: { value: new THREE.Vector3() }, uSunC: { value: new THREE.Color() }, uWind: { value: 1 } };
+    uCave: { value: opt.cave ? new THREE.Vector4(...opt.cave) : new THREE.Vector4(1e6, 1e6, 0, 0) }, uPen: { value: new THREE.Vector4(PEN.x, PEN.z, PEN.hw, PEN.hd) }, uSeg: { value: SEG.map(s => new THREE.Vector4(...s)) }, uSunV: { value: new THREE.Vector3() }, uSunC: { value: new THREE.Color() }, uWind: { value: 1 } };
   const m = new THREE.MeshStandardMaterial({ roughness: .78, metalness: 0, side: THREE.DoubleSide });
   m.onBeforeCompile = sh => { Object.assign(sh.uniforms, U);
     sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
-attribute float aH; attribute float aHead; uniform sampler2D uHm, uMask; uniform float uBase, uN, uCell, uR, uTime, uWind, uMH; uniform vec3 uCam; uniform vec4 uHmO; varying vec3 vGC; varying float vTr;
+uniform vec4 uCave; attribute float aH; attribute float aHead; uniform sampler2D uHm, uMask; uniform float uBase, uN, uCell, uR, uTime, uWind, uMH; uniform vec3 uCam; uniform vec4 uHmO; varying vec3 vGC; varying float vTr;
 ${GLSL_NOISE}
 ${GLSL_TRAIL}
 float hgt(vec2 p){ return texture2D(uHm,((p-uHmO.xy)/uHmO.z*127.+.5)/128.).r+uHmO.w; }
@@ -256,7 +256,7 @@ float h1(vec2 p){return fract(sin(dot(p,vec2(41.3,289.1)))*43758.5453);}`)
 vec2 jit=vec2(h1(cw),h1(cw+17.3)); vec2 base=(cw+jit)*uCell; float dCam=length(base-uCam.xz); float rnd=h1(cw+5.1), rot=h1(cw+9.7)*6.2832;
 float pen=penM(base); float td=trailD(base); vec2 lq=(base-uHmO.xy)/uHmO.z-vec2(.004); float e=min(min(lq.x,lq.y),1.-max(lq.x,lq.y)); vec2 mk=texture2D(uMask,base/(2.*uMH)+.5).rg; float tdM=mix(99.,(1.-mk.r)*8.,step(.004,mk.r)), wd=mix(99.,(1.-mk.g)*30.,step(.004,mk.g));
 float hC=hgt(base), hX=hgt(base+vec2(1.,0.)), hZ=hgt(base+vec2(0.,1.)); float slope=length(vec2(hX-hC,hZ-hC));
-float macro=fbm3(base*.0035); float keep=step(rnd,1.-smoothstep(uR*.45,uR,dCam)*.75)*step(.4,pen)*step(1.05+h1(cw+3.)*.6,td)*step(slope,.5)*step(hC-uBase,185.+vn(base*.01)*50.)*step(0.,e)*step(2.2+h1(cw+6.)*.8,tdM)*step(1.6,wd);
+float macro=fbm3(base*.0035); float keep=step(rnd,1.-smoothstep(uR*.45,uR,dCam)*.75)*step(.4,pen)*step(1.05+h1(cw+3.)*.6,td)*step(slope,.5)*step(hC-uBase,185.+vn(base*.01)*50.)*step(0.,e)*step(2.2+h1(cw+6.)*.8,tdM)*step(1.6,wd)*step(.5,max(abs(base.x-uCave.x)-uCave.z,abs(base.y-uCave.y)-uCave.w)); // none inside Bandit Falls
 keep*=1.-step(h1(cw+8.),smoothstep(.7,.92,vn(base*.08)*.7+vn(base*.35)*.3)*.85); // worn patches
 float sc=keep*(1.-smoothstep(uR*.72,uR,dCam))*(.55+h1(cw+1.)*.75)*mix(.7,1.25,smoothstep(.3,.7,macro))*mix(1.,1.3,1.-smoothstep(2.,14.,wd))*mix(1.,.6,smoothstep(90.,170.,hC-uBase)); float flower=step(h1(cw+11.),.03+.17*smoothstep(.62,.85,vn(base*.022+3.1))); // patchy wildflower meadows
 float cr=cos(rot), sr=sin(rot); vec3 lp=vec3(position.x*cr-position.z*sr, position.y, position.x*sr+position.z*cr)*sc; lp.y*=mix(.75,1.35,vn(base*.11));

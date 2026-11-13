@@ -19,6 +19,7 @@ import { createHrZombies } from './hrzombies.js';
 import { createFlora } from './hrflora.js';
 import { createTown, wearJacket } from './hrtown.js';
 import { createSaloon } from './hrsaloon.js';
+import { pickCaveSite, makePad, caveRect, createCave } from './hrcave.js';
 import { createBuild } from './hrbuild.js';
 import { buildFeatures, buildMask, createChunks, createWater } from './hrterrain.js';
 import { makeRawH, trailSegments, segDist as segD, createSky, terrainMaterial as terrainMat2, loadTerrainTextures, buildTerrain, createGrass, loadRockModels } from './hrworld.js';
@@ -41,7 +42,9 @@ function h0(x, z) { const d = Math.hypot(x - PEN.x, z - PEN.z); return BASE + (r
 // mountain trails, ponds and the creek are carved into the height field (deterministic, same for every player): src/hrterrain.js
 let FEAT = null; const featAvoid = (x, z) => (Math.abs(x - PEN.x) < 75 && Math.abs(z - PEN.z) < 75) || clearing(x, z, 12) || inRange(x, z, 14) || trailDist(x, z) < 10;
 export function features() { return FEAT || (FEAT = buildFeatures(h0, { BASE, WALK, avoid: featAvoid })); }
-export function hAt(x, z) { return (FEAT || features()).carve(x, z, h0(x, z)); }
+// v38 Bandit Falls: a flattened notch for the waterfall hideout, picked once from the carved terrain (same on every machine)
+let CAVE_SITE = null, CAVEPAD = null; const NOCAVE = typeof location !== 'undefined' && new URLSearchParams(location.search).get('cave') === '0';
+export function hAt(x, z) { const h = (FEAT || features()).carve(x, z, h0(x, z)); return CAVEPAD ? CAVEPAD(x, z, h) : h; }
 
 function std(color, o = {}) { return new THREE.MeshStandardMaterial({ color, roughness: o.r ?? .85, metalness: o.m ?? 0, ...(o.map ? { map: o.map } : {}) }); }
 function box(g, w, h, d, m, x, y, z) { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); b.castShadow = true; g.add(b); return b; }
@@ -344,6 +347,7 @@ export function createHorseRider(ctx) {
   const HQ = !mobile && Q.shadow > 0; // desktop medium / high / ultra: full sky + terrain detail
   function buildWorld() {
     const F = H.F = features(); H.mask = buildMask(F, MASK_HALF, mobile ? 1024 : 2048);
+    H.hAt = hAt; if (!CAVE_SITE && !NOCAVE) { CAVE_SITE = pickCaveSite(hAt, F, { PEN, WALK, avoid: (x, z) => (Math.abs(x - PEN.x) < 120 && Math.abs(z - PEN.z) < 120) || clearing(x, z, 10) || inRange(x, z, 14) || trailDist(x, z) < 8 }); if (CAVE_SITE) CAVEPAD = makePad(CAVE_SITE); }
     const T = loadTerrainTextures(GX.renderer, HQ), XO = { mask: H.mask, maskHalf: MASK_HALF, chunkU: { value: new THREE.Vector4(0, 0, -1, 0) }, CH: CHUNK, LIM: CH_LIM };
     const mat = terrainMat2(T, PEN, SEG, BASE, HQ, XO), holeMat = terrainMat2(T, PEN, SEG, BASE, HQ, { ...XO, hole: true });
     // coarse inner square + far ring everywhere, streamed detail chunks (1.6-3.1 m grid) in a square around the player
@@ -371,12 +375,13 @@ export function createHorseRider(ctx) {
           if (mg > .8) continue; const sc = above * 2 + rel * .25 + mg * 3 + rr * .04; if (sc < bs) { bs = sc; best = [x, z, n ? 'station' : 'armory', rot, +mg.toFixed(2), +above.toFixed(2)]; } } }
       if (!best) best = [t[0] + 8, t[1] + 8, n ? 'station' : 'armory', 0, -1, -1]; return best; });
     let town = null, ts = 1e9; for (let d = 95; d <= 230; d += 15) for (let a = 0; a < TAU; a += TAU / 24) { const x = PEN.x + Math.cos(a) * d, z = PEN.z + Math.sin(a) * d;
-      let bad = false; for (const [u, v] of [[-20, -14], [20, -14], [-20, 14], [20, 14], [0, 0], [-20, 0], [20, 0], [0, 14], [0, -14]]) { const px = x + u, pz = z + v; if ((Math.abs(px - PEN.x) < 40 && Math.abs(pz - PEN.z) < 40) || clearing(px, pz, 3) || inRange(px, pz, 6) || F.trailDist(px, pz) < 10 || F.waterDist(px, pz) < 8 || trailDist(px, pz) < 4) { bad = true; break; } } if (bad) continue;
+      let bad = false; for (const [u, v] of [[-20, -14], [20, -14], [-20, 14], [20, 14], [0, 0], [-20, 0], [20, 0], [0, 14], [0, -14]]) { const px = x + u, pz = z + v; if ((Math.abs(px - PEN.x) < 40 && Math.abs(pz - PEN.z) < 40) || (CAVE_SITE && (q => Math.abs(px - q.x) < q.hw && Math.abs(pz - q.z) < q.hd)(caveRect(CAVE_SITE, 14, 10))) || clearing(px, pz, 3) || inRange(px, pz, 6) || F.trailDist(px, pz) < 10 || F.waterDist(px, pz) < 8 || trailDist(px, pz) < 4) { bad = true; break; } } if (bad) continue;
       const sc = flat(x, z, 17, 12) + d * .004; if (sc < ts) { ts = sc; town = [x, z, Math.atan2(x - PEN.x, z - PEN.z)]; } }
-    ZONES = tw.map(t => [t[0], t[1], 9, 9]); if (town) ZONES.push([town[0], town[1], 22, 22]);
+    ZONES = tw.map(t => [t[0], t[1], 9, 9]); if (town) ZONES.push([town[0], town[1], 22, 22]); if (CAVE_SITE) { const q = caveRect(CAVE_SITE, 6, 8); ZONES.push([q.x, q.z, q.hw, q.hd]); }
     town2 = H.town2 = createTown({ scene, hAt, H, P, mobile, msg, sfx, camera, send: m => H.zSend && H.zSend(m), jacket: on => { if (real()) wearJacket(rider, on); } }).build({ towers: tw, town });
     createSaloon({ scene, H, P, T: town2, camera, sfx, msg, mobile, input, keys, fx: ctx.fx, canvas: GX.renderer.domElement, makeHorse: () => makeHorse(...PROC_COATS[(Math.random() * 5) | 0]), procAnim, blocked: (x, z, r) => blocked(x, z, r), groundAt: (x, z, y) => town2.floorAt(x, z, y) }); // v35
-    H.obstWalls = town2.walls; H.places = { towers: tw, town, tops: [tops[A], tops[B]].map(t => [Math.round(t[0]), Math.round(t[1]), Math.round(t[2] - BASE)]), townFlat: +ts.toFixed(2) }; }
+    if (CAVE_SITE) H.cave = createCave({ scene, H, P, T: town2, hAt, sfx, msg, mobile, low: !HQ, site: CAVE_SITE, role: () => H.netRole ? H.netRole() : 'solo', send: m => H.zSend && H.zSend(m), remotes: () => H.netRemotes ? H.netRemotes() : [] }); // v38 Bandit Falls
+    H.obstWalls = town2.walls; H.places = { cave: H.cave ? H.cave.info() : null, towers: tw, town, tops: [tops[A], tops[B]].map(t => [Math.round(t[0]), Math.round(t[1]), Math.round(t[2] - BASE)]), townFlat: +ts.toFixed(2) }; }
   // woods: conifers + broadleaf trees, instanced, with a near (detailed) / far (low-poly) LOD swapped around the player
   function buildTrees() {
     const nT = Math.round(Q.trees * (mobile ? 2.2 : 3));
@@ -482,7 +487,7 @@ export function createHorseRider(ctx) {
   function buildGrass() {
     const tufts = Math.round(Math.min(60000, Math.max(3000, (Q.grass || 600) * 4.5)) * (mobile ? .5 : 1.15)), N = Math.round(Math.sqrt(tufts)); // v30: denser near the player on desktop
     const R = Math.min(52, Math.max(18, 9 + Math.sqrt(N * N) * .19));
-    H.grassG = createGrass(scene, H.terrain, PEN, SEG, { N, R, blades: mobile ? 4 : HQ ? 9 : 7, hAt, mask: H.mask, maskHalf: MASK_HALF, mobile }); H.grassInfo = { tufts: N * N, radius: +R.toFixed(1), tris: H.grassG.tris };
+    H.grassG = createGrass(scene, H.terrain, PEN, SEG, { N, R, blades: mobile ? 4 : HQ ? 9 : 7, hAt, mask: H.mask, maskHalf: MASK_HALF, mobile, cave: CAVE_SITE ? (q => [q.x, q.z, q.hw, q.hd])(caveRect(CAVE_SITE, 1)) : null }); H.grassInfo = { tufts: N * N, radius: +R.toFixed(1), tris: H.grassG.tris };
   }
   function buildPen() {
     const y0 = BASE, { x: cx, z: cz, hw, hd, gate } = PEN, g = new THREE.Group(); scene.add(g);
@@ -603,7 +608,7 @@ export function createHorseRider(ctx) {
   function blocked(x, z, r, skip) {
     if (Math.abs(x) > WALK || Math.abs(z) > WALK) return true;
     for (const f of H.fence) if (segDist(x, z, f) < r + .1) return true;
-    if (town2 && town2.wallHit(x, z, r, H.curY ?? -1e9)) return true; if (town2 && r >= .7) for (const t of town2.towers) if (town2.inFoot(t, x, z, r)) return true; // horses stay off the lookouts
+    if (town2 && town2.wallHit(x, z, r, H.curY ?? -1e9)) return true; if (H.cave && H.cave.wallHit(x, z, r, H.curY ?? -1e9)) return true; if (town2 && r >= .7) for (const t of town2.towers) if (town2.inFoot(t, x, z, r)) return true; // horses stay off the lookouts
     for (const [ox, oz, or] of obstNear(x, z)) if (Math.abs(ox - x) < or + r && Math.abs(oz - z) < or + r && Math.hypot(ox - x, oz - z) < or + r) return true;
     for (const h of H.horses) if (h !== skip && h !== H.mounted && Math.hypot(h.pos.x - x, h.pos.z - z) < .75 + r) return true;
     return false;
@@ -681,7 +686,10 @@ export function createHorseRider(ctx) {
       town2.registerStoreItem(item); H.tommySup = item;
     } catch (e) { console.warn('suppressor item', e); }
     zombies = H.zombies = createHrZombies({ scene, camera, P, H, hAt, PEN, EDGE, WALK, sfx, fx: ctx.fx, mobile, msg, aimBone, dismount, walker: () => H.assets && H.assets.riderSrc ? makeWalker(H.assets.riderSrc, H.assets.clips) : null,
-      remotes: () => H.netRemotes ? H.netRemotes() : [], send: m => H.zSend && H.zSend(m), sendTo: (id, m) => H.zSendTo && H.zSendTo(id, m), role: () => H.netRole ? H.netRole() : 'solo' });
+      remotes: () => H.netRemotes ? H.netRemotes() : [], send: m => H.zSend && H.zSend(m), sendTo: (id, m) => H.zSendTo && H.zSendTo(id, m), role: () => H.netRole ? H.netRole() : 'solo',
+      // v38 Bandit Falls outlaws
+      outlawBody: () => H.cave ? H.cave.outlawBody() : null, onOutlawDown: o => H.cave && H.cave.outlawDown(o), inCave: (x, z) => !!H.cave && H.cave.inside(x, z), outlawLOS: (ax, ay, az, bx, by, bz) => !H.cave || H.cave.los(ax, ay, az, bx, by, bz),
+      outlawGround: (x, z, y) => H.cave ? H.cave.floorAt(x, z, y, hAt(x, z)) : hAt(x, z), outlawSpawnY: (x, z) => H.cave ? H.cave.spawnY(x, z) : hAt(x, z), outlawBlocked: (x, z, y) => !!H.cave && H.cave.wallHit(x, z, .35, y) });
     if (mobile) { const a = document.getElementById('tAds'); if (a) a.textContent = 'AIM'; }
     loadAssets(!mobile && Q.shadow > 0).then(dress).catch(e => { H.models = 'proc'; if (!/requested/.test(e && e.message)) console.warn('horse models failed, using procedural horses', e); });
     msg(mobile ? 'HORSE RIDER — walk to the pen, tap RIDE next to a horse' : 'HORSE RIDER — walk to the pen and press E next to a horse', 5);
@@ -744,7 +752,7 @@ export function createHorseRider(ctx) {
     const ox0 = h.pos.x, oz0 = h.pos.z, gy0 = hAt(ox0, oz0); H.curY = h.pos.y; let hit = moveCircle(h.pos, fx * H.speed * dt, fz * H.speed * dt, .8, h); H.curY = null;
     if (slopeGate(h.pos, ox0, oz0, gy0, MAX_GRADE, .8, h)) { H.steepHits = (H.steepHits || 0) + 1; H.speed *= .96; }
     if (hit) { if (Math.abs(H.speed) > 5) { hu.toss = 1; H.shake = .6; sfx.step && sfx.step(true); } H.speed *= Math.abs(H.speed) > 5 ? .3 : .6; }
-    const g0 = town2 ? town2.floorAt(h.pos.x, h.pos.z, h.pos.y) : hAt(h.pos.x, h.pos.z); if (jump && H.ground && !busy && H.speed > -.5) { H.vy = 6.2; H.ground = false; }
+    let g0 = town2 ? town2.floorAt(h.pos.x, h.pos.z, h.pos.y) : hAt(h.pos.x, h.pos.z); if (H.cave) g0 = H.cave.floorAt(h.pos.x, h.pos.z, h.pos.y, g0); if (jump && H.ground && !busy && H.speed > -.5) { H.vy = 6.2; H.ground = false; }
     const gS = (g0 * 2 + hAt(h.pos.x + fx * .9, h.pos.z + fz * .9) + hAt(h.pos.x - fx * .9, h.pos.z - fz * .9)) / 4, gT = Math.max(gS, g0 - .12); // over bumps / rocks: follow the hooves' average, not every kink
     H.vy -= 22 * dt; h.pos.y += H.vy * dt; if (h.pos.y <= gT) { if (!H.ground && H.vy < -5) H.shake = Math.max(H.shake, .25); if (H.ground && h.pos.y > gT - .6) h.pos.y += (gT - h.pos.y) * Math.min(1, dt * 16); else h.pos.y = gT; if (h.pos.y < g0 - .15) h.pos.y = g0 - .15; H.vy = 0; H.ground = true; } else if (H.ground && h.pos.y - gT < .35 && H.vy <= 0) { h.pos.y += (gT - h.pos.y) * Math.min(1, dt * 16); H.vy = 0; }
     // body: lean into turns, pitch with the slope, sit back on the haunches when braking hard
@@ -779,7 +787,7 @@ export function createHorseRider(ctx) {
     const v = H.fv.length(), ox0 = P.pos.x, oz0 = P.pos.z, gy0 = hAt(ox0, oz0), onS = town2 && town2.onStruct(ox0, oz0, P.pos.y); H.curY = P.pos.y; moveCircle(P.pos, H.fv.x * dt, H.fv.y * dt, .35, null); H.curY = null;
     const nT = town2 && town2.towers.some(t => Math.hypot(P.pos.x - t.cx, P.pos.z - t.cz) < 22); // v34: you can always scramble up to a lookout, from any side
     if (!onS && !(town2 && town2.onStruct(P.pos.x, P.pos.z, P.pos.y)) && (nT ? Math.hypot(H.fv.x, H.fv.y) > 2.2 && P.pos.y - gy0 > dt * 2.2 && H.fv.multiplyScalar(.97) && false : slopeGate(P.pos, ox0, oz0, gy0, 1.3, .35, null))) H.fv.multiplyScalar(.9); // scrambling up: only up to ~52 degrees
-    const g0 = town2 ? town2.floorAt(P.pos.x, P.pos.z, P.pos.y) : hAt(P.pos.x, P.pos.z); if (jump && H.ground) { H.vy = 7; H.ground = false; }
+    let g0 = town2 ? town2.floorAt(P.pos.x, P.pos.z, P.pos.y) : hAt(P.pos.x, P.pos.z); if (H.cave) g0 = H.cave.floorAt(P.pos.x, P.pos.z, P.pos.y, g0); if (jump && H.ground) { H.vy = 7; H.ground = false; }
     H.vy -= 22 * dt; P.pos.y += H.vy * dt; if (P.pos.y <= g0) { P.pos.y = g0; H.vy = 0; H.ground = true; }
     const ob = P.bob; P.bob += dt * v * 1.6; if (H.ground && v > .5 && Math.floor(ob / Math.PI) !== Math.floor(P.bob / Math.PI)) sfx.step && sfx.step(false);
     if (H.gunFace != null) H.bodyYaw += wrapA(H.gunFace - H.bodyYaw) * Math.min(1, dt * 14); else if (v > .3) { const wy = Math.atan2(-H.fv.x, -H.fv.y); H.bodyYaw += wrapA(wy - H.bodyYaw) * Math.min(1, dt * 10); }
@@ -804,7 +812,7 @@ export function createHorseRider(ctx) {
       if (held && dk > 1.5) sideIn += Math.sin(H.t * .9) * Math.min(.55, (dk - 1.5) * .09) + Math.sin(H.t * 2.3 + 1) * Math.min(.25, (dk - 1.5) * .04); } else { H.lagF = fwdIn; H.lagS = sideIn; }
     const run = !!keys.ShiftLeft || !!keys.ShiftRight || (stick > .92 && fwdIn > .6);
     const jump = keys.Space || input.jump;
-    if (H.fallT > 0) H.fallT -= dt; PF.s('town'); if (town2) town2.tick(dt); PF.e('town'); PF.s('saloon'); if (H.saloon) H.saloon.tick(dt); PF.e('saloon'); PF.s('build'); if (H.build) H.build.tick(dt); PF.e('build'); PF.s('player');
+    if (H.fallT > 0) H.fallT -= dt; PF.s('town'); if (town2) town2.tick(dt); PF.e('town'); PF.s('saloon'); if (H.saloon) H.saloon.tick(dt); PF.e('saloon'); PF.s('cave'); if (H.cave) H.cave.update(dt); PF.e('cave'); PF.s('build'); if (H.build) H.build.tick(dt); PF.e('build'); PF.s('player');
     if (H.dead) { H.fv.x = H.fv.y = 0; } else if (h) ride(h, dt, stick > .05 ? 0 : fwdIn, stick > .05 ? 0 : sideIn, stick, jump); else walk(dt, fwdIn, sideIn, stick, run, jump);
     PF.e('player'); PF.s('herd');
     for (const o of H.horses) { if (o === h) continue;

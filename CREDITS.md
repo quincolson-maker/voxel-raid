@@ -89,3 +89,15 @@ generated procedural code: no downloaded, purchased or third-party art, models o
 - **Tommy sounds** (`assets/audio/tommy-shot.wav`, `tommy-suppressed.wav`, `tommy-reload.wav`, `brass-clink.wav`): original
   synthesized WAVs produced by the package's ChatGPT-generated script (`docs/chatgpt-drop3/tests/generate_audio.py`), from Quin.
   They are not firearm recordings.
+
+## v38 Bandit Falls — ChatGPT-generated code supplied by Quin Colson (integrated and adapted by Grok Bot)
+- **Waterfall bandit cave** (`src/hrbanditcave.js`): ChatGPT-generated code from Quin ("Bandit Falls"; the original file is kept
+  as-is in `docs/chatgpt-cave/banditcave.js`). It builds the rock shell, waterfall and pool, outlaw bar, stage, poker table,
+  slot machines, lookout ladder, vault with gate and strongboxes, lamps, colliders and gameplay markers. Changes for this game:
+  a view-distance option, lamps stay in the scene and darken when you are away, crude stand-in dancer shapes hidden (our own
+  Frontier dancers stand there instead, adult and fully costumed), the ambient light removed, the poster reads "GAME POINTS ONLY",
+  and a few extra rock solids above the mouth.
+- **Integration** (`src/hrcave.js`, hooks in `src/horse.js`, `src/hrzombies.js`, `src/hrguns.js`, `src/horsenet.js`, `src/hrworld.js`):
+  written by Grok Bot — the site in a flattened hillside notch (the same on every machine), walls / floors / bullets, the
+  no-zombie zone, the host-run outlaw guards (they shoot back), the key and vault for everyone in co-op, game-point rewards
+  (strongboxes pay once per player). Slots and tips use game points only; poker uses practice chips only. No real money.

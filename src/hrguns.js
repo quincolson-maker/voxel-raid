@@ -295,7 +295,8 @@ export function createGuns(c) {
     setTimeout(() => { e.remove(); pops.splice(pops.indexOf(e), 1); }, 1400); while (pops.length > 4) pops.shift().remove(); }
   function hitMark(head) { if (!scopeEl || state.scopeK < .5) return; const hx = scopeEl.querySelector('.hx'); if (!hx) return; hx.classList.remove('on', 'hd'); void hx.offsetWidth; hx.classList.add('on'); if (head) hx.classList.add('hd'); }
   const role = () => (H.netRole ? H.netRole() : 'solo');
-  function award(head) { const pts = head ? 15 : 10; state.score += pts; state.kills = (state.kills || 0) + 1; say(head ? `Headshot! Zombie down  +${pts}` : `Zombie down  +${pts}`); save(); return pts; } // host-authoritative in co-op (the host sends 'zk')
+  function award(head, kind) { if (kind === 'outlaw') { const p = head ? 75 : 60; state.score += p; state.outlaws = (state.outlaws || 0) + 1; say(head ? `Headshot! Outlaw down  +${p}` : `Outlaw down  +${p}`); save(); return p; } // v38 Bandit Falls guards
+    const pts = head ? 15 : 10; state.score += pts; state.kills = (state.kills || 0) + 1; say(head ? `Headshot! Zombie down  +${pts}` : `Zombie down  +${pts}`); save(); return pts; } // host-authoritative in co-op (the host sends 'zk')
   function save() { try { localStorage.setItem('hr_v33', JSON.stringify({ score: state.score, kills: state.kills || 0, spent: state.spent || 0, owned: state.owned, up: state.up, att: state.att })); } catch (_) {} }
 
   function draw(w) { if (!models[w] || !state.owned[w]) return false; if (H.mountT > 0 || H.dismT > 0) return false; if (state.weapon === w) return true;
@@ -321,6 +322,7 @@ export function createGuns(c) {
       for (const [f, y, r] of [[0, 1.3, .62], [.75, 1.35, .5], [1.25, 1.65, .32]]) { v3.set(h.pos.x + fx_ * f, h.pos.y + y, h.pos.z + fz * f); const t = raySphere(o, d, v3, r); if (t > 0 && t < best.t) best = { t, kind: 'horse' }; } }
     const zs = c.zombies && c.zombies(); if (zs) { const zh = zs.rayHit(o, d, best.t, raySphere, rayCyl); if (zh) best = { t: zh.t, kind: 'zombie', Z: zh.Z, head: zh.head }; } // the walking dead (head sphere + body)
     for (const ob of H.obst) { if (Math.abs(ob[0] - o.x) > maxT + 3 || Math.abs(ob[1] - o.z) > maxT + 3) continue; const g = hAt(ob[0], ob[1]), t = rayCyl(o, d, ob[0], ob[1], ob[2], g - .5, g + (ob[3] || 3)); if (t > 0 && t < best.t) best = { t, kind: (ob[3] || 3) > 4 ? 'tree' : 'rock' }; }
+    if (H.cave) { const t = H.cave.rayHit(o, d, best.t); if (t > 0 && t < best.t) best = { t, kind: 'rock' }; } // v38: the hideout's rock walls stop bullets
     for (const f of H.fence) { const t = raySeg(o, d, f[0], f[1], f[2], f[3], c.BASE, c.BASE + 1.45); if (t > 0 && t < best.t) best = { t, kind: 'wood' }; }
     let pt = 0, ph = o.y - hAt(o.x, o.z); for (let t = 1; t <= best.t; t += t < 40 ? 1 : 2.5) { const x = o.x + d.x * t, y = o.y + d.y * t, z = o.z + d.z * t, hh = y - hAt(x, z);
       if (hh < 0) { let a = pt, b = t; for (let k = 0; k < 7; k++) { const m = (a + b) / 2; if (o.y + d.y * m - hAt(o.x + d.x * m, o.z + d.z * m) < 0) b = m; else a = m; } if (b < best.t) best = { t: b, kind: 'ground' }; break; } pt = t; ph = hh; }
@@ -391,7 +393,7 @@ export function createGuns(c) {
         let hm = T.holes[T.hi]; if (!hm) { hm = new THREE.Mesh(new THREE.PlaneGeometry(.05, .05), mats().hole); hm.rotation.y = Math.PI / 2; T.mesh.add(hm); T.holes[T.hi] = hm; } T.hi = (T.hi + 1) % 30; hm.position.set(.027, lp.y, lp.z);
         tone('sine', 220, 120, .25, .12); nz('lowpass', 500, 1, .25, .08); if (fx && fx.debris) fx.debris(p.x, p.y, p.z, 0xc9b48a, 4, .4); }
       return; }
-    if (hit.kind === 'zombie') { const zs = c.zombies && c.zombies(); if (zs) { state.hits++; const r = hit.zr = zs.onHit(hit.Z, w, hit.head, p, d, dmgMul(w)); if (r) { hitMark(hit.head); scopePop('-' + r.dmg + (hit.head ? ' ◉' : ''), hit.head ? 'h' : ''); if (r.killed && role() !== 'client') award(hit.head); else if (hit.head && !r.killed) say('Headshot!');
+    if (hit.kind === 'zombie') { const zs = c.zombies && c.zombies(); if (zs) { state.hits++; const r = hit.zr = zs.onHit(hit.Z, w, hit.head, p, d, dmgMul(w)); if (r) { hitMark(hit.head); scopePop('-' + r.dmg + (hit.head ? ' ◉' : ''), hit.head ? 'h' : ''); if (r.killed && role() !== 'client') award(hit.head, hit.Z.kind); else if (hit.head && !r.killed) say('Headshot!');
         nz('lowpass', 700, 1, .2, .12); if (hit.head) tone('square', 1600, 900, .05, .08); } } return; }
     if (!fx) return;
     if (hit.kind === 'ground') { fx.debris && fx.debris(p.x, p.y + .03, p.z, 0x7d6a4c, 5, .55); fx.smoke && fx.smoke.emit(p.x, p.y + .05, p.z, 0, .4, 0, .55, .47, .36, .2, 1, .7, -.05, .45); }
@@ -563,6 +565,6 @@ export function createGuns(c) {
   function buy(cost, fn) { if (pts() < cost) { say('Not enough points'); return false; } state.spent = (state.spent || 0) + cost; fn(); save(); syncUI(); return true; }
   function upgrade(w) { const t = tier(w); if (t >= 3 || !state.owned[w]) return false; return buy(UP_COST[w][t], () => { state.up[w] = t + 1; state.ammo[w] = maxAmmo(w); say(`${WNAME[w]} → ${['', 'BRONZE', 'SILVER', 'GOLD'][t + 1]}`); }); }
   function purchase(w) { if (state.owned[w]) return false; return buy(PRICE[w], () => { give(w); say(`${WNAME[w]} bought`); }); }
-  function credit(head) { return award(head); }
+  function credit(head, kind) { return award(head, kind); }
   return { tommyFx: tfx, tsup, setTommySup, state, settings: S, models, save, give, upgrade, purchase, credit, pts, tier, maxAmmo, zoom, scopePop, PRICE, UP_COST, targets, range, update, scopeCam, hud, draw, holster, cycle, reload, shoot, netState, remoteShot, poseRemote, disposeRemote, aimAt, cast, syncUI };
 }

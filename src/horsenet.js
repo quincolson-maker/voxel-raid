@@ -81,14 +81,16 @@ export function createHorseNet({ horse, P, msg }) {
       case 'herd': if (isClient()) horse.applyHerd(m.h); break;
       case 'zs': if (isClient() && H.zombies) H.zombies.apply(m); break; // the host's zombies (host-authoritative)
       case 'zh': if (isHost() && H.zombies) H.zombies.remoteHit(m, S.peers.get(from)); break; // a client shot one
-      case 'zk': if (isClient() && H.zombies && H.zombies.confirmKill(m)) { if (m.b) { H.saloon && H.saloon.banditKill(); } else if (H.guns) H.guns.credit(!!m.h); } break; // v36: deduped by zombie id
+      case 'zk': if (isClient() && H.zombies && H.zombies.confirmKill(m)) { if (m.b) { H.saloon && H.saloon.banditKill(); } else if (H.guns) H.guns.credit(!!m.h, m.o ? 'outlaw' : null); } break; // v36: deduped by zombie id
       case 'sv': { const pid = isHost() ? S.peers.get(from) : null; if (!pid) break; if (H.build && H.build.owns(m.k)) H.build.netIn(m, pid); else if (H.saloon) H.saloon.netIn(m, pid); break; } // a client's build / slot / casino request: only from a registered peer, keyed by the host's own id for that connection
       case 'svr': if (isClient() && H.build && H.build.owns(m.k)) H.build.netRes(m); else if (isClient() && H.saloon) H.saloon.netRes(m); break; // the host's answer (reels, casino view: only this player's cards)
       case 'dt': if (isHost() && H.town2) H.town2.netIn(m, S.peers.get(from)); break; // darts: a client's throw / challenge (host runs the match)
       case 'dts': if (isClient() && H.town2) H.town2.netState(m); break;
       case 'ck': if (isHost() && H.town2) H.town2.ck.netIn(m, S.peers.get(from)); break; // checkers move / challenge (host runs the game)
       case 'cks': if (isClient() && H.town2) H.town2.ck.netState(m); break;
-      case 'zd': if (isClient() && H.zombies) H.zombies.remoteHurt(m); break; // a zombie hit me (host decides)
+      case 'zd': if (isClient() && H.zombies) H.zombies.remoteHurt(m); break;
+      case 'cv': if (isClient() && H.cave) H.cave.netIn(m); break; // v38 Bandit Falls: the host's hideout state
+      case 'cvk': if (isHost() && H.cave) H.cave.netIn(m, S.peers.get(from)); break; // a client took the vault key // a zombie hit me (host decides)
       case 'join': if (isClient()) addRemote(m.id); break;
       case 'meta': { const id = isHost() ? S.peers.get(from) : m.id; if (!id || id === S.me) break; const cv = validCv(m.cv); S.cv.set(id, cv); H.remoteCv && H.remoteCv(id, cv); if (isHost()) net.send({ t: 'meta', id, cv }, null, from); break; } // host: id from the authenticated peer
       case 'left': if (isClient()) removeRemote(m.id); break;
