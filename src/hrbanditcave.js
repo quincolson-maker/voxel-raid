@@ -211,17 +211,26 @@ export function createBanditCave({ position = [0, 0, 0], rotationY = 0, quality 
   }
   // Waterfall: animated, fog-compatible procedural sheets, no framebuffer sampling.
   const waterUniforms = { caveTime: { value: 0 } };
-  const waterfallMat = mat(new THREE.MeshStandardMaterial({ color: 0x83cbd0, roughness: .22, metalness: .15, transparent: true, opacity: .65, side: THREE.DoubleSide, depthWrite: false }));
-  waterfallMat.onBeforeCompile = sh => { Object.assign(sh.uniforms, waterUniforms);
+  const waterfallMat = mat(new THREE.MeshStandardMaterial({ color: 0xa9dde0, emissive: 0x25494c, roughness: .12, metalness: 0, transparent: true, opacity: .9, side: THREE.DoubleSide, depthWrite: false }));
+  waterfallMat.onBeforeCompile = sh => { Object.assign(sh.uniforms, waterUniforms); // v38.1: falling water — value-noise streaks scrolling down, soft ragged edges, white foam at the foot
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float caveTime; varying vec2 fallUV;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nfallUV=uv; transformed.z+=sin(position.x*4.+caveTime*2.)*.12;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float caveTime; varying vec2 fallUV;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nfallUV=uv; transformed.z+=sin(position.x*1.7+caveTime*1.3)*.05+(1.-uv.y)*(1.-uv.y)*.9;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+      uniform float caveTime; varying vec2 fallUV;
+      float wh(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+      float wn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(wh(i),wh(i+vec2(1,0)),f.x),mix(wh(i+vec2(0,1)),wh(i+1.),f.x),f.y);}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
-      float s=sin(fallUV.x*180.+sin(fallUV.y*23.+caveTime*7.)*2.);
-      float f=.5+.5*sin(fallUV.y*90.+caveTime*22.+s*2.);
-      diffuseColor.rgb*=.75+.4*f;diffuseColor.a*=smoothstep(0.,.06,fallUV.x)*smoothstep(0.,.06,1.-fallUV.x)*(.45+.55*f);`);
+      float t=caveTime, y=fallUV.y;
+      float a1=wn(vec2(fallUV.x*46., y*5.+t*2.6)), a2=wn(vec2(fallUV.x*97.+3., y*9.+t*4.1)), a3=wn(vec2(fallUV.x*18.+7., y*2.2+t*1.4));
+      float streak=smoothstep(.45,.95,a1*.55+a2*.3+a3*.35);
+      float edge=wn(vec2(y*6.+t*1.5,fallUV.x>.5?3.:9.))*.08;
+      float side=smoothstep(.02+edge,.16+edge,fallUV.x)*smoothstep(.02+edge,.16+edge,1.-fallUV.x);
+      float foam=smoothstep(.22,0.,y)*(.55+.45*wn(vec2(fallUV.x*30.,y*14.+t*5.)));
+      float lip=smoothstep(.93,1.,y)*.5;
+      diffuseColor.rgb=mix(diffuseColor.rgb*(.78+.3*a3),vec3(1.),clamp(streak*.75+foam+lip,0.,1.));
+      diffuseColor.a=side*clamp(.22+streak*.6+foam*.7+lip,0.,.92)*smoothstep(0.,.03,y);`);
   };
-  waterfallMat.customProgramCacheKey = () => 'bandit-waterfall-v1';
+  waterfallMat.customProgramCacheKey = () => 'bandit-waterfall-v2';
   for (const [x, w, h, z] of [[0, 19, 12, -2.2], [-8.5, 7, 16, -4], [8.5, 7, 15, -4.5], [0, 13, 6, -6]]) { solid(x, 5.2 + h / 2 - .4, z, w, h, 4.2, rock); } // v38: the cliff face the water falls from
   const sheetG = geo(new THREE.PlaneGeometry(12, 16, high ? 32 : 12, high ? 24 : 8));
   const sheet = new THREE.Mesh(sheetG, waterfallMat); sheet.position.set(0, 7.8, .9); sheet.renderOrder = 2; group.add(sheet);
@@ -229,6 +238,15 @@ export function createBanditCave({ position = [0, 0, 0], rotationY = 0, quality 
   floor(0, 4, 17, 12, -.4);
   const mistMat = mat(new THREE.MeshBasicMaterial({ color: 0xc8e1da, transparent: true, opacity: .08, blending: THREE.AdditiveBlending, depthWrite: false, fog: true }));
   const mistMesh = new THREE.InstancedMesh(sphereG, mistMat, high ? 16 : 7); group.add(mistMesh);
+  const foamMat = mat(new THREE.MeshBasicMaterial({ color: 0xe8f6f4, transparent: true, opacity: .55, depthWrite: false, fog: true })); // v38.1: churned water where the fall lands
+  foamMat.onBeforeCompile = sh => { Object.assign(sh.uniforms, waterUniforms); sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 fUV;').replace('#include <begin_vertex>', '#include <begin_vertex>\nfUV=uv;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float caveTime; varying vec2 fUV; float fh(vec2 p){return fract(sin(dot(p,vec2(41.3,289.1)))*15731.7);} float fn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(fh(i),fh(i+vec2(1,0)),f.x),mix(fh(i+vec2(0,1)),fh(i+1.),f.x),f.y);}')
+      .replace('#include <color_fragment>', '#include <color_fragment>\nvec2 q=fUV-.5; float r=length(q*vec2(1.,2.2))*2.; float n=fn(fUV*vec2(26.,11.)+vec2(0.,caveTime*1.6))*.6+fn(fUV*vec2(61.,23.)-vec2(caveTime*.7,0.))*.4; diffuseColor.a*=smoothstep(1.,.35,r)*smoothstep(.35,.75,n+.35*(1.-r));'); };
+  foamMat.customProgramCacheKey = () => 'bandit-foam-v1';
+  const foam = new THREE.Mesh(planeG, foamMat); foam.rotation.x = -Math.PI / 2; foam.scale.set(13, 5.5, 1); foam.position.set(0, -.04, 1.6); foam.renderOrder = 3; group.add(foam);
+  const splashMat = mat(new THREE.MeshBasicMaterial({ color: 0xf2fbfa, transparent: true, opacity: .7, depthWrite: false, fog: true }));
+  const splashCount = high ? 56 : 20, splashMesh = new THREE.InstancedMesh(sphereG, splashMat, splashCount); group.add(splashMesh);
+  const splashData = new Float32Array(splashCount * 4); for (let i = 0; i < splashCount; i++) { splashData[i * 4] = (rand() - .5) * 10; splashData[i * 4 + 1] = rand(); splashData[i * 4 + 2] = .7 + rand() * .8; splashData[i * 4 + 3] = (rand() - .5) * 1.4; }
   // Vault gate, key and chests. Gate is movable; its Box3 stays in returned array.
   const gate = new THREE.Group(); gate.position.set(0, 0, -76); group.add(gate);
   const gateBars = new THREE.InstancedMesh(boxG, iron, 15); gate.add(gateBars);
@@ -270,7 +288,8 @@ export function createBanditCave({ position = [0, 0, 0], rotationY = 0, quality 
   const sb = staticBatches.get(rock); if (sb) { for (let i = 0; i < sb.p.length; i += 3) { const k = rough(sb.p[i], sb.p[i+1], sb.p[i+2]); sb.c.push(.25 + k*.12,.23 + k*.09,.20 + k*.06); } }
   finish(rockParts, rock, true);
   for (const [material, b] of staticBatches) finish(b, material, material === rock);
-  for (const b of instanceBatches.values()) { const mesh = new THREE.InstancedMesh(b.g, b.material, b.matrices.length);
+  for (const b of instanceBatches.values()) { if (b.material === rock && !b.g.attributes.color) { b.g = geo(b.g.clone()); const n = b.g.attributes.position.count, w = new Float32Array(n * 3); for (let i = 0; i < n; i++) { const k = rough(b.g.attributes.position.getX(i) * 3, b.g.attributes.position.getY(i) * 3, b.g.attributes.position.getZ(i) * 3); w[i * 3] = .9 + k * .5; w[i * 3 + 1] = .88 + k * .45; w[i * 3 + 2] = .85 + k * .4; } b.g.setAttribute('color', new THREE.Float32BufferAttribute(w, 3)); } // v38.1: no colour attribute read as black
+    const mesh = new THREE.InstancedMesh(b.g, b.material, b.matrices.length);
     for (let i = 0; i < b.matrices.length; i++) mesh.setMatrixAt(i, b.matrices[i]);
     if (b.material === rock) { // instanceColor supplies vertex color for shared cone geometry
       for (let i = 0; i < mesh.count; i++) mesh.setColorAt(i, color.setRGB(.28,.25,.21));
@@ -279,7 +298,7 @@ export function createBanditCave({ position = [0, 0, 0], rotationY = 0, quality 
   }
   for (const b of localColliders) colliders.push(b.applyMatrix4(group.matrixWorld));
   // Dynamic bounds are conservative and fixed. Never recomputed during update.
-  for (const mesh of [danceMesh, flameMesh, emberMesh, mistMesh]) { mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 5, -43), 75); }
+  for (const mesh of [danceMesh, flameMesh, emberMesh, mistMesh, splashMesh]) { mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 5, -43), 75); }
   const keyOrigin = new THREE.Vector3(), keyLocal = new THREE.Vector3(0,1,-48);
   const inverseWorld = group.matrixWorld.clone().invert();
   const result = { group, colliders, spawnPoints, lootPoints, interactions, update, dispose, lights: lightData.map(d => d.l), dancerSpots: dancerParts.map(d => world(d.x, .45, d.z)), entrance,
@@ -320,6 +339,7 @@ export function createBanditCave({ position = [0, 0, 0], rotationY = 0, quality 
     for (let i=0;i<emberCount;i++) { const j=i*4, life=(time*.35+emberData[j+1])%1, a=emberData[j]+time*.5, r=emberData[j+2]*life;
       M.compose(V.set(Math.cos(a)*r,.7+life*3.5,-48+Math.sin(a)*r),Q,S.setScalar(.022*(1-life))); emberMesh.setMatrixAt(i,M); } emberMesh.instanceMatrix.needsUpdate=true;
     for(let i=0;i<danceMesh.count;i++){const d=dancerParts[i]; E.set(0,Math.sin(time*1.8+d.phase)*.35,Math.sin(time*2.4+d.phase)*.09);Q.setFromEuler(E);M.compose(V.set(d.x,1.2,d.z),Q,S.set(.75,.55,.75));danceMesh.setMatrixAt(i,M);}danceMesh.instanceMatrix.needsUpdate=true;
+    Q.identity();for(let i=0;i<splashCount;i++){const j=i*4,life=(time*splashData[j+2]+splashData[j+1])%1;M.compose(V.set(splashData[j]+splashData[j+3]*life*.6,.05+Math.sin(life*Math.PI)*1.5*splashData[j+2],1.2+life*1.6),Q,S.setScalar(.09*(1-life*.6)));splashMesh.setMatrixAt(i,M);}splashMesh.instanceMatrix.needsUpdate=true;
     Q.identity();for(let i=0;i<mistMesh.count;i++){const a=i*2.399,timeP=(time*.13+i*.17)%1;M.compose(V.set(Math.sin(a)*5,.15+timeP*1.8,1.4+Math.cos(a)*1.6),Q,S.set(1+timeP*1.8,.2+timeP*.5,.7+timeP));mistMesh.setMatrixAt(i,M);}mistMesh.instanceMatrix.needsUpdate=true;
     gate.position.y += ((result.state.vaultOpen?4.7:0)-gate.position.y)*Math.min(1,dt*3);
     if(keyHook.active){keyGroup.position.y=keyOrigin.y+Math.sin(time*2)*.12;keyGroup.rotation.y=time;}
