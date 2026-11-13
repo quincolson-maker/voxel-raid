@@ -75,13 +75,13 @@ export function createHorseNet({ horse, P, msg }) {
     switch (m.t) {
       case 'p': { const id = isHost() ? S.peers.get(from) : m.id; if (!id || id === S.me) return; const R = S.remotes.get(id) || addRemote(id); if (R) R.s = m; if (isHost()) { if (S.remotes.size + 1 <= 4) net.send({ ...m, id }, null, from); else S.fwd.set(id, { ...m, id }); } break; }
       case 'pb': if (isClient() && Array.isArray(m.a)) for (const q of m.a) if (q && q.id && q.id !== S.me) { const R = S.remotes.get(q.id) || addRemote(q.id); if (R) R.s = q; } break; // v33: big lobbies, the host batches everyone's latest state
-      case 'sh': { const id = isHost() ? S.peers.get(from) : m.id; if (!id || id === S.me) return; horse.remoteShot && horse.remoteShot(id, m); if (isHost()) net.send({ t: 'sh', w: m.w, o: m.o, e: m.e, id }, null, from); break; } // gunshots: visual + sound only
+      case 'sh': { const id = isHost() ? S.peers.get(from) : m.id; if (!id || id === S.me) return; horse.remoteShot && horse.remoteShot(id, m); if (isHost()) net.send({ t: 'sh', w: m.w, o: m.o, e: m.e, id, ...(m.sp === 1 ? { sp: 1 } : {}) }, null, from); break; } // gunshots: visual + sound only
       case 'herd': if (isClient()) horse.applyHerd(m.h); break;
       case 'zs': if (isClient() && H.zombies) H.zombies.apply(m); break; // the host's zombies (host-authoritative)
       case 'zh': if (isHost() && H.zombies) H.zombies.remoteHit(m, S.peers.get(from)); break; // a client shot one
       case 'zk': if (isClient() && H.zombies && H.zombies.confirmKill(m)) { if (m.b) { H.saloon && H.saloon.banditKill(); } else if (H.guns) H.guns.credit(!!m.h); } break; // v36: deduped by zombie id
-      case 'sv': if (isHost() && H.build && H.build.owns(m.k)) H.build.netIn(m, S.peers.get(from)); else if (isHost() && H.saloon) H.saloon.netIn(m, S.peers.get(from)); break; // v35: a client's slot spin (the host draws the reels)
-      case 'svr': if (isClient() && H.build && H.build.owns(m.k)) H.build.netRes(m); else if (isClient() && H.saloon) H.saloon.netRes(m); break; // host-confirmed kill: my points
+      case 'sv': { const pid = isHost() ? S.peers.get(from) : null; if (!pid) break; if (H.build && H.build.owns(m.k)) H.build.netIn(m, pid); else if (H.saloon) H.saloon.netIn(m, pid); break; } // a client's build / slot / casino request: only from a registered peer, keyed by the host's own id for that connection
+      case 'svr': if (isClient() && H.build && H.build.owns(m.k)) H.build.netRes(m); else if (isClient() && H.saloon) H.saloon.netRes(m); break; // the host's answer (reels, casino view: only this player's cards)
       case 'dt': if (isHost() && H.town2) H.town2.netIn(m, S.peers.get(from)); break; // darts: a client's throw / challenge (host runs the match)
       case 'dts': if (isClient() && H.town2) H.town2.netState(m); break;
       case 'ck': if (isHost() && H.town2) H.town2.ck.netIn(m, S.peers.get(from)); break; // checkers move / challenge (host runs the game)

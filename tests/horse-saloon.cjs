@@ -16,12 +16,12 @@ const base = process.argv[2] || 'http://localhost:8767';
     // 2) seated slots upstairs
     setPts(1000); goL(-15.25, s.Y2, 5.2); o.slotSpot = H.spot && H.spot.kind; H.cd = 0; __horse.use(); o.seated = !!H.seated && H.fp && S.isOpen(); o.ui = !document.getElementById('hrSaloon').hidden;
     const sy = S.seatYaw; __P.yaw = sy + 3; step(.1); o.yawClamped = Math.abs(((__P.yaw - sy + Math.PI * 3) % (Math.PI * 2)) - Math.PI) <= 1.26;
-    S.setBet(100); const p0 = g.pts(); o.spun = S.spin(); o.afterBet = g.pts() - p0; step(3); o.last = S.last; o.paid = g.pts() - p0 === -100 + S.last.win; o.payOk = S.last.win === M.slotPay(S.last.r, 100);
+    S.setBet(100); const p0 = g.pts(); o.spun = S.spin(); o.afterBet = g.pts() - p0; step(3); o.last = S.last; o.paid = g.pts() - p0 === -100 + S.last.win; o.payOk = S.last.win === M.themedMultiplier(S.last.r, S.seat ? S.seat.theme : S.slots[1].theme) * 100;
     setPts(100000); let spins = 0; for (let i = 0; i < 30; i++) { if (S.spin()) spins++; step(2.6); } o.spins = spins;
     setPts(50); S.setBet(100); o.overBet = S.spin(); S.setBet(10); o.smallBet = S.spin(); step(3);
     H.cd = 0; __horse.use(); o.stood = !H.seated && !S.isOpen();
     // host draws the reels for a client
-    { let got = null; const keep = H.zSendTo; H.zSendTo = (id, m) => { got = m; }; S.netIn({ t: 'sv', k: 'slot', bet: 10, n: 9 }, 'P2'); H.zSendTo = keep; o.hostReels = got && got.t === 'svr' && got.n === 9 && got.r.length === 3; }
+    { let got = null; const keep = H.zSendTo; H.zSendTo = (id, m) => { got = m; }; S.netIn({ t: 'sv', k: 'slot', bet: 10, n: 9, machine: 1 }, 'P2'); H.zSendTo = keep; o.hostReels = got && got.t === 'svr' && got.n === 9 && got.r.length === 3; }
     // 3) hire bandits
     setPts(1000); goL(-12.9, s.F, 6.2); o.banditSpot = H.spot && H.spot.kind; H.cd = 0; __horse.use(); o.hireUI = S.isOpen(); for (let i = 0; i < 7; i++) S.hire(); o.hired = S.bandits.length; o.ptsAfterHire = g.pts(); S.close();
     // walk out of town: they follow

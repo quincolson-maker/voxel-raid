@@ -6,6 +6,7 @@
 // weighty acceleration, stamina, camera-relative steering, free look, lean into turns, obstacle avoidance, hoof dust.
 // On foot the same rigged person is shown in third person (idle / walk / run blend; C toggles first person). If the models fail to load (or ?prochorse=1) the older procedural horse/rider are used.
 import * as THREE from 'three';
+import { createTommySuppressorItem } from './hrtommy-store.js';
 import { GLTFLoader } from '../addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from '../addons/utils/BufferGeometryUtils.js';
 import { clone as cloneSkinned } from '../addons/utils/SkeletonUtils.js';
@@ -662,6 +663,12 @@ export function createHorseRider(ctx) {
     P.yaw = Math.atan2(SPAWN.x - PEN.x, SPAWN.z - PEN.z); P.pitch = -.05; P.hp = 100;
     GX.setLighting('day', false); setupSky();
     guns = H.guns = createGuns({ scene, camera, P, H, hAt, sfx, fx: ctx.fx, msg, mobile, input, keys, renderer: GX.renderer, rig: () => real() ? rider : null, aimBone, twistBone, RANGE, BASE, dev: new URLSearchParams(location.search).has('dev'), send: m => H.netShot && H.netShot(m), zombies: () => zombies });
+    if (town2 && town2.registerStoreItem && guns.models.tommy.setSuppressor) try { // v36: Tommy suppressor (900 pts, saved with the guns; needs the Tommy)
+      const gs = guns.state, item = createTommySuppressorItem({ weapon: guns.models.tommy, price: 900, owned: gs.att.tsup.owned, equipped: gs.att.tsup.equipped,
+        wallet: { spend: n => { if (!gs.owned.tommy) { msg && msg('Buy the Tommy first'); return false; } if (guns.pts() < n) { msg && msg('Not enough points'); return false; } gs.spent = (gs.spent || 0) + n; return true; } },
+        onChange: st => { gs.att.tsup = { owned: st.owned, equipped: st.equipped }; guns.save(); msg && msg(st.equipped ? 'Suppressor fitted' : 'Suppressor removed'); } });
+      town2.registerStoreItem(item); H.tommySup = item;
+    } catch (e) { console.warn('suppressor item', e); }
     zombies = H.zombies = createHrZombies({ scene, camera, P, H, hAt, PEN, EDGE, WALK, sfx, fx: ctx.fx, mobile, msg, aimBone, dismount, walker: () => H.assets && H.assets.riderSrc ? makeWalker(H.assets.riderSrc, H.assets.clips) : null,
       remotes: () => H.netRemotes ? H.netRemotes() : [], send: m => H.zSend && H.zSend(m), sendTo: (id, m) => H.zSendTo && H.zSendTo(id, m), role: () => H.netRole ? H.netRole() : 'solo' });
     if (mobile) { const a = document.getElementById('tAds'); if (a) a.textContent = 'AIM'; }

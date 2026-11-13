@@ -3,6 +3,7 @@
 // (six-round cylinder, one-cartridge-at-a-time reload, lever cycle that must finish before the next rifle shot, fan fire),
 // the spread model (walk / horseback / speed / hip / ADS / fan), the small aim-assist cone and the horseback firing arc clamp.
 // Rewritten: no CDN import (uses the game's bundled three.js), no global input listeners outside Horse Rider, no per-shot
+import { buildTommyReplica, createTommyEffects } from './hrtommy.js'; // v36 Frontier (ChatGPT-generated, supplied by Quin)
 // scene.traverse raycasts (analytic ray tests against targets, horses, trees, rocks, fences and the heightfield instead),
 // realistic procedural models (extruded / lathed parts, PBR blued + case-hardened steel, brass, walnut), the gun in the rider's
 // hand with 2-bone arm IK, over-the-shoulder aim camera, recoil, black-powder smoke, shooting range targets, and shot sync.
@@ -259,8 +260,22 @@ export function createGuns(c) {
   const { scene, camera, P, H, hAt, sfx, fx, mobile, input, keys } = c;
   const state = { weapon: null, last: 'revolver', aiming: false, ammo: { revolver: S.revolverRounds, rifle: S.rifleRounds, sniper: S.sniperRounds, tommy: S.tommyRounds, gold: S.goldRounds }, owned: { revolver: true, rifle: true, sniper: true, tommy: false, gold: false }, up: { revolver: 0, rifle: 0, sniper: 0, tommy: 0, gold: 0 }, gz: S.goldFovMax, spent: 0, kills: 0, cocked: true, chambered: true, reloading: false, cycling: false, shots: 0, hits: 0, score: 0, lastHit: null, blocked: false, draw: 0, aimK: 0, scopeK: 0, breath: 1, winded: false, steady: false, scoped: false, scopeT: 0 };
   const clock = { cooldown: 0, reload: 0, lever: 0, cock: 0, flash: 0, recoil: 0, rec: 0, sway: 0, idle: 0, draw: 0 };
-  const models = { revolver: buildRevolver(), rifle: buildRifle(), sniper: buildSharps(), tommy: buildTommy(), gold: buildGold() }; for (const m of Object.values(models)) { m.group.visible = false; scene.add(m.group); } // v33 regression fix: the held guns must be in the scene
-  try { const sv = JSON.parse(localStorage.getItem('hr_v33') || sessionStorage.getItem('hr_v33') || 'null'); if (sv) { state.score = +sv.score || 0; state.kills = +sv.kills || 0; state.spent = +sv.spent || 0; Object.assign(state.owned, sv.owned || {}); Object.assign(state.up, sv.up || {}); } } catch (_) {} // points, guns and upgrades last the session for (const m of Object.values(models)) { m.group.visible = false; scene.add(m.group); }
+  const models = { revolver: buildRevolver(), rifle: buildRifle(), sniper: buildSharps(), tommy: buildTommyReplica({ quality: mobile ? 'low' : 'high' }), gold: buildGold() }; for (const m of Object.values(models)) { m.group.visible = false; scene.add(m.group); } // v33 regression fix: the held guns must be in the scene
+
+  // v36 Tommy (ChatGPT 'Frontier' pack, adapted): pooled brass, suppressor (store item, 900 pts, saved), original synthesized WAVs
+  // decoded once into the game's own AudioContext and played through its bus (positional for other riders; replaces the old
+  // Tommy report so nothing doubles). Falls back to the pack's synthesizer until the files are decoded.
+  state.att = { tsup: { owned: false, equipped: false } };
+  const tsup = () => !!(state.att.tsup && state.att.tsup.owned && state.att.tsup.equipped);
+  const tfx = createTommyEffects({ scene, audioContext: () => sfx.ctx, dest: () => sfx.dest || sfx.master, quality: mobile ? 'low' : 'high', flashOn: false, shotSound: false,
+    groundHeight: (x, z, y) => H.town2 && H.town2.floorAt ? H.town2.floorAt(x, z, y) : hAt(x, z) });
+  const WAV = { shot: 'assets/audio/tommy-shot.wav', sup: 'assets/audio/tommy-suppressed.wav', reload: 'assets/audio/tommy-reload.wav' }, wavBuf = {}; let wavCtx = null;
+  function wavLoad() { const ac = sfx.ctx; if (!ac || wavCtx === ac) return; wavCtx = ac; for (const [k, u] of Object.entries(WAV)) fetch(u).then(r => r.ok ? r.arrayBuffer() : Promise.reject(r.status)).then(b => ac.decodeAudioData(b)).then(d => { if (wavCtx === ac) wavBuf[k] = d; }).catch(() => {}); }
+  function tommyWav(kind) { const ac = sfx.ctx; if (!ac) return false; wavLoad(); const k = kind === 'reload' ? 'reload' : kind === true ? 'sup' : 'shot', b = wavBuf[k];
+    if (!b) { if (k === 'reload') tfx.sound.reload(); else tfx.sound.shot(k === 'sup', .3); return true; }
+    const src = ac.createBufferSource(), g = ac.createGain(); src.buffer = b; src.playbackRate.value = .97 + Math.random() * .06; g.gain.value = k === 'reload' ? .5 : k === 'sup' ? .45 : .7; src.connect(g); if (sfx.route) sfx.route(g); else g.connect(sfx.master); src.start(); src.onended = () => { try { src.disconnect(); g.disconnect(); } catch (_) {} }; return true; }
+  function setTommySup(on) { if (models.tommy.setSuppressor) models.tommy.setSuppressor(!!on); }
+  try { const sv = JSON.parse(localStorage.getItem('hr_v33') || sessionStorage.getItem('hr_v33') || 'null'); if (sv) { state.score = +sv.score || 0; state.kills = +sv.kills || 0; state.spent = +sv.spent || 0; Object.assign(state.owned, sv.owned || {}); Object.assign(state.up, sv.up || {}); if (sv.att && sv.att.tsup) state.att.tsup = { owned: !!sv.att.tsup.owned, equipped: !!sv.att.tsup.equipped }; } } catch (_) {} setTommySup(tsup()); // points, guns and upgrades last the session for (const m of Object.values(models)) { m.group.visible = false; scene.add(m.group); }
   const range = buildRange(scene, hAt, c.RANGE, H.obst); const targets = range.T;
   const flash = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mats().flash), flash2 = flash.clone(); flash2.rotation.y = Math.PI / 2; flash.add(flash2); flash.visible = false; flash.renderOrder = 5; scene.add(flash);
   const light = mobile ? null : new THREE.PointLight(0xffb060, 0, 9, 2); if (light) scene.add(light); // always in the scene (intensity 0) so firing never recompiles shaders
@@ -278,7 +293,7 @@ export function createGuns(c) {
   function hitMark(head) { if (!scopeEl || state.scopeK < .5) return; const hx = scopeEl.querySelector('.hx'); if (!hx) return; hx.classList.remove('on', 'hd'); void hx.offsetWidth; hx.classList.add('on'); if (head) hx.classList.add('hd'); }
   const role = () => (H.netRole ? H.netRole() : 'solo');
   function award(head) { const pts = head ? 15 : 10; state.score += pts; state.kills = (state.kills || 0) + 1; say(head ? `Headshot! Zombie down  +${pts}` : `Zombie down  +${pts}`); save(); return pts; } // host-authoritative in co-op (the host sends 'zk')
-  function save() { try { localStorage.setItem('hr_v33', JSON.stringify({ score: state.score, kills: state.kills || 0, spent: state.spent || 0, owned: state.owned, up: state.up })); } catch (_) {} }
+  function save() { try { localStorage.setItem('hr_v33', JSON.stringify({ score: state.score, kills: state.kills || 0, spent: state.spent || 0, owned: state.owned, up: state.up, att: state.att })); } catch (_) {} }
 
   function draw(w) { if (!models[w] || !state.owned[w]) return false; if (H.mountT > 0 || H.dismT > 0) return false; if (state.weapon === w) return true;
     state.weapon = w; state.last = w; state.reloading = false; state.cycling = false; clock.cooldown = .15; clock.draw = S.drawTime; state.cocked = true; state.chambered = state.ammo.rifle > 0; state.breath = 1; if (w === 'gold') state.gz = S.goldFovMax; state.winded = false;
@@ -286,7 +301,7 @@ export function createGuns(c) {
   function holster() { if (!state.weapon) return; state.weapon = null; state.aiming = false; state.reloading = false; input.ads = false; click(1800, .1); syncUI(); }
   const ORDER = ['revolver', 'rifle', 'sniper', 'tommy', 'gold'], owned = () => ORDER.filter(w => state.owned[w]);
   function cycle() { const o = owned(); if (!state.weapon) draw(o[0]); else { const i = o.indexOf(state.weapon); if (i < 0 || i === o.length - 1) holster(); else draw(o[i + 1]); } } // phone: holstered -> six-shooter -> rifle -> buffalo -> (tommy, golden buffalo once owned) -> holstered
-  function reload() { const w = state.weapon; if (!w || state.reloading || state.cycling || state.ammo[w] >= maxAmmo(w)) return false; state.reloading = true; clock.reload = (H.reloadMul || 1) * (w === 'rifle' ? S.reloadRifle : w === 'sniper' ? S.reloadSniper : w === 'tommy' ? S.reloadTommy : w === 'gold' ? S.reloadGold : S.reloadRevolver) * S.tierReload[tier(w)]; state.rlLen = clock.reload; state.rlStep = 0; click(1500, .1); return true; }
+  function reload() { const w = state.weapon; if (!w || state.reloading || state.cycling || state.ammo[w] >= maxAmmo(w)) return false; state.reloading = true; if (w === 'tommy') tommyWav('reload'); clock.reload = (H.reloadMul || 1) * (w === 'rifle' ? S.reloadRifle : w === 'sniper' ? S.reloadSniper : w === 'tommy' ? S.reloadTommy : w === 'gold' ? S.reloadGold : S.reloadRevolver) * S.tierReload[tier(w)]; state.rlLen = clock.reload; state.rlStep = 0; click(1500, .1); return true; }
 
   // ChatGPT's horseback arc clamp (kept): a direction behind the horse is turned back to the limit; returns whether it was clamped
   function clampHorse(dir) { const h = H.mounted; if (!h) return false; const fx_ = -Math.sin(h.yaw), fz = -Math.cos(h.yaw), hx = dir.x, hz = dir.z, l = Math.hypot(hx, hz); if (l < 1e-4) return false;
@@ -338,11 +353,12 @@ export function createGuns(c) {
     const mounted = !!H.mounted, land = () => { impact(hit, bd, w); state.lastHit = { kind: hit.kind, target: hit.T ? hit.T.kind : hit.kind === 'zombie' ? hit.Z.kind : null, head: !!hit.head, zr: hit.zr || null, point: hit.p.toArray().map(v => +v.toFixed(2)), mounted, weapon: w, dist: +hit.p.distanceTo(muz).toFixed(1) }; };
     if (SCOPED(w)) { const tt = hit.p.distanceTo(muz) / (w === 'gold' ? S.goldVelocity : S.sniperVelocity); effects(w, muz, bd, hit.p, false, tt); flights.push({ t: tt, land }); } else { effects(w, muz, bd, hit.p); land(); }
     clock.recoil = 1; const k = w === 'rifle' ? S.recoilRifle : w === 'tommy' ? S.recoilTommy * (state.aiming ? .6 : 1) : SCOPED(w) ? (w === 'gold' ? S.recoilGold : S.recoilSniper) * (state.scoped ? .6 : 1) : S.recoilRevolver; P.pitch += k; clock.rec += k; H.shake = Math.max(H.shake || 0, SCOPED(w) ? .35 : w === 'rifle' ? .25 : w === 'tommy' ? .08 : .15);
-    if (c.send) c.send({ t: 'sh', w: WCODE[w] || 1, o: muz.toArray().map(v => +v.toFixed(2)), e: hit.p.toArray().map(v => +v.toFixed(2)) });
+    if (w === 'tommy') tfx.emit(models.tommy); // v36: pooled brass from the ejection port (visual only: damage / ammo / cadence unchanged)
+    if (c.send) c.send({ t: 'sh', w: WCODE[w] || 1, o: muz.toArray().map(v => +v.toFixed(2)), e: hit.p.toArray().map(v => +v.toFixed(2)), ...(w === 'tommy' && tsup() ? { sp: 1 } : {}) });
     if (H.mounted && H.speed < .5) H.mounted.g.userData.spook = SCOPED(w) ? .7 : w === 'tommy' ? .25 : .4; // the horse flinches a little at the report
     return true; }
 
-  function effects(w, p, d, end, remoteShot, tt) {
+  function effects(w, p, d, end, remoteShot, tt, remoteSp) {
     const big = SCOPED(w);
     flash.position.copy(p).addScaledVector(d, .06); flash.lookAt(camera.position); flash.scale.setScalar((big ? .55 : w === 'rifle' ? .34 : .26) * (.8 + Math.random() * .4)); flash.rotation.z = Math.random() * 6.28; flash.visible = true; clock.flash = .05;
     if (light) { light.position.copy(p); light.intensity = 14; }
@@ -352,7 +368,7 @@ export function createGuns(c) {
         for (let i = 0; i < 4; i++) fx.smoke.emit(p.x - d.x * .5 - wx * .4, p.y - .3, p.z - d.z * .5 - wz * .4, wx + (Math.random() - .5) * .6, .15, wz + (Math.random() - .5) * .6, .76, .74, .7, .45, 3.2, 1, -.02, .28); } } // big black-powder cloud that hangs around the shooter
     else if (fx) { fx.tracer && fx.tracer(p.clone().addScaledVector(d, .4), end, 0xffd890, .05); fx.muzzle && fx.muzzle(p, [1, .75, .4], 1.2);
       if (fx.smoke) for (let i = 0; i < 3; i++) fx.smoke.emit(p.x + d.x * (.15 + i * .3), p.y + d.y * (.15 + i * .3), p.z + d.z * (.15 + i * .3), d.x * (1.6 - i * .4) + (Math.random() - .5) * .3, .2 + Math.random() * .2, d.z * (1.6 - i * .4) + (Math.random() - .5) * .3, .78, .76, .72, .18 + i * .08, 1.4 + i * .4, .8, -.04, .32); } // black-powder smoke
-    const shot = () => { sfx.shot(big ? [800, 55, 1] : w === 'rifle' ? [1300, 95, .8] : w === 'tommy' ? [1900, 140, .38] : [1650, 120, .65]); if (big) { tone('sine', 90, 38, .7, .5); nz('lowpass', 420, .8, .45, .9); setTimeout(() => nz('lowpass', 520, .7, .18, .7), 420); setTimeout(() => nz('lowpass', 380, .7, .1, .9), 1100); } }; // deep boom + valley echoes
+    const shot = () => { if (w === 'tommy' && tommyWav(remoteShot ? !!remoteSp : tsup())) return; sfx.shot(big ? [800, 55, 1] : w === 'rifle' ? [1300, 95, .8] : w === 'tommy' ? [1900, 140, .38] : [1650, 120, .65]); if (big) { tone('sine', 90, 38, .7, .5); nz('lowpass', 420, .8, .45, .9); setTimeout(() => nz('lowpass', 520, .7, .18, .7), 420); setTimeout(() => nz('lowpass', 380, .7, .1, .9), 1100); } }; // deep boom + valley echoes
     if (remoteShot && sfx.at) sfx.at(p, shot, .6); else if (sfx.shot) shot(); }
 
   function impact(hit, d, w) {
@@ -456,7 +472,7 @@ export function createGuns(c) {
     crossEl.classList.toggle('aim', state.aiming); crossEl.classList.toggle('no', state.blocked); }
   // ---- per frame (after the rider has been animated for this frame) ----
   function update(dt) {
-    state.upd = (state.upd || 0) + 1; dt = Math.min(dt || 0, .1);
+    state.upd = (state.upd || 0) + 1; dt = Math.min(dt || 0, .1); tfx.update(dt);
     { P.lookSmooth = mobile && state.scopeK > 0; const q = P.lookPend; // drain the filtered finger look (scope on phones); instant otherwise
       if (q && (q.x || q.y)) { const f = P.lookSmooth ? ease(dt, S.scopeTouchTau) : 1, ax = q.x * f, ay = q.y * f; P.yaw -= ax; P.pitch = Math.max(-1.553, Math.min(1.553, P.pitch - ay)); q.x -= ax; q.y -= ay; if (Math.abs(q.x) + Math.abs(q.y) < 1e-6) q.x = q.y = 0; } } for (const k of ['cooldown', 'flash', 'draw']) clock[k] = Math.max(0, clock[k] - dt); clock.sway += dt * (H.mounted ? 1 + Math.abs(H.speed) * .12 : 1); toast -= dt;
     clock.recoil = Math.max(0, clock.recoil - dt * 6); if (clock.rec > 0) { const r = Math.min(clock.rec, clock.rec * dt * 7 + dt * .01); P.pitch -= r * .8; clock.rec -= r; }
@@ -525,12 +541,13 @@ export function createGuns(c) {
   // ---- multiplayer: show other riders' guns and shots (visual only — nobody can hurt anybody) ----
   const fin = (a, n) => Array.isArray(a) && a.length === n && a.every(v => typeof v === 'number' && isFinite(v) && Math.abs(v) < 6000);
   function remoteShot(id, msg) { if (!msg || !fin(msg.o, 3) || !fin(msg.e, 3) || !WBY[msg.w]) return; const R = remote.get(id) || {}; const now = performance.now(); if (R.t && now - R.t < 90) return; R.t = now; remote.set(id, R);
-    const o = new THREE.Vector3(...msg.o), e = new THREE.Vector3(...msg.e); if (o.distanceTo(camera.position) > 600) return; const d = e.clone().sub(o).normalize(); effects(WBY[msg.w], o, d, e, true); state.remoteShots = (state.remoteShots || 0) + 1; }
-  function netState() { return { g: WCODE[state.weapon] || 0, k: state.kills || 0, pt: state.score, a: state.aiming ? 1 : 0, ap: +P.pitch.toFixed(2) }; }
+    const o = new THREE.Vector3(...msg.o), e = new THREE.Vector3(...msg.e); if (o.distanceTo(camera.position) > 600) return; const d = e.clone().sub(o).normalize(); effects(WBY[msg.w], o, d, e, true, undefined, msg.sp === 1); state.remoteShots = (state.remoteShots || 0) + 1; }
+  function netState() { return { ...(state.weapon === 'tommy' && tsup() ? { sp: 1 } : {}), g: WCODE[state.weapon] || 0, k: state.kills || 0, pt: state.score, a: state.aiming ? 1 : 0, ap: +P.pitch.toFixed(2) }; }
   function poseRemote(av, s, root, mounted) { // av: remote avatar; s: last net state
     if (!av.guns) { av.guns = {}; for (const k of ORDER) av.guns[k] = { ...models[k], group: models[k].group.clone() }; for (const m of Object.values(av.guns)) { m.group.visible = false; scene.add(m.group); } }
     const w = s && WBY[s.g] || null; for (const [k, m] of Object.entries(av.guns)) if (k !== w) m.group.visible = false; if (!w || !root || !root.visible) { if (w) av.guns[w].group.visible = false; return; }
     const yaw = typeof s.yw === 'number' ? s.yw : 0, pt = typeof s.ap === 'number' ? Math.max(-1.2, Math.min(1.2, s.ap)) : 0, dir = new THREE.Vector3(-Math.sin(yaw) * Math.cos(pt), Math.sin(pt), -Math.cos(yaw) * Math.cos(pt));
+    if (w === 'tommy') { const g = av.guns.tommy.group, on = s.sp === 1; if (g.userData.sp !== on) { g.userData.sp = on; const sup = g.getObjectByName('Tommy suppressor'), cp = g.getObjectByName('compensator'); if (sup) sup.visible = on; if (cp) cp.visible = !on; } } // their suppressor shows (display only)
     if (!poseOn(root, w, av.guns[w], dir, s.a ? 1 : 0, mounted, 0)) av.guns[w].group.visible = false; }
   function disposeRemote(av) { if (av.guns) for (const m of Object.values(av.guns)) scene.remove(m.group); }
   // dev / test helper: point the camera so the crosshair sits on a world point
@@ -544,5 +561,5 @@ export function createGuns(c) {
   function upgrade(w) { const t = tier(w); if (t >= 3 || !state.owned[w]) return false; return buy(UP_COST[w][t], () => { state.up[w] = t + 1; state.ammo[w] = maxAmmo(w); say(`${WNAME[w]} → ${['', 'BRONZE', 'SILVER', 'GOLD'][t + 1]}`); }); }
   function purchase(w) { if (state.owned[w]) return false; return buy(PRICE[w], () => { give(w); say(`${WNAME[w]} bought`); }); }
   function credit(head) { return award(head); }
-  return { state, settings: S, models, save, give, upgrade, purchase, credit, pts, tier, maxAmmo, zoom, scopePop, PRICE, UP_COST, targets, range, update, scopeCam, hud, draw, holster, cycle, reload, shoot, netState, remoteShot, poseRemote, disposeRemote, aimAt, cast, syncUI };
+  return { tommyFx: tfx, tsup, setTommySup, state, settings: S, models, save, give, upgrade, purchase, credit, pts, tier, maxAmmo, zoom, scopePop, PRICE, UP_COST, targets, range, update, scopeCam, hud, draw, holster, cycle, reload, shoot, netState, remoteShot, poseRemote, disposeRemote, aimAt, cast, syncUI };
 }

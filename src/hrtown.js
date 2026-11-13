@@ -124,7 +124,7 @@ export function createTown(c) {
     floor(s, -17.2, 10.2, -2.4, 10, F); box(s, M.plank, -3.5, F - .06, 3.8, 27.4, .12, 12.8); // boardwalk + floors
     floor(s, -17.2, 10.2, -3.4, -2.4, 0, F, 'z'); box(s, M.plank, -3.5, F / 2 - .05, -2.9, 27.4, .1, 1);
     for (const [x0, x1, door, name, D, HT] of [[-17, -1, [-6.8, -5.2], 'SALOON', 10, 7.6], [1, 10, [4.7, 6.3], 'GENERAL STORE', 8, WH]]) { const mx = (x0 + x1) / 2, w = x1 - x0, sal = name === 'SALOON';
-      for (const [ax, az, bx, bz] of [[x0, D, x1, D], [x0, 0, x0, D], [x1, 0, x1, D], [x0, 0, door[0], 0], [door[1], 0, x1, 0]]) { wall(s, ax, az, bx, bz, F, F + HT); box(s, M.plank, (ax + bx) / 2, F + HT / 2, (az + bz) / 2, Math.abs(bx - ax) + .16, HT, Math.abs(bz - az) + .16); }
+      for (const [ax, az, bx, bz] of [[x0, D, x1, D], [x0, 0, x0, D], [x1, 0, x1, D], [x0, 0, door[0], 0], [door[1], 0, x1, 0]]) { wall(s, ax, az, bx, bz, F, F + HT); if(az===0&&bz===0){const holes=[];for(const x of [x0+1.6,x1-1.6])if(x<door[0]-.8||x>door[1]+.8)holes.push([x-.7,x+.7,F+1.1,F+2.3]);if(sal)for(const x of [-15.5,-12.5,-9.5,-3.5])holes.push([x-.6,x+.6,Y2+.95,Y2+2.05]);const cuts=[ax,bx,...holes.flatMap(h=>[Math.max(ax,h[0]),Math.min(bx,h[1])]).filter(x=>x>ax&&x<bx)].sort((a,b)=>a-b);for(let k=0;k<cuts.length-1;k++){const l=cuts[k],r=cuts[k+1];if(r-l<.001)continue;const open=holes.filter(h=>h[0]<(l+r)/2&&h[1]>(l+r)/2).sort((a,b)=>a[2]-b[2]);let y=F;for(const h of open){if(h[2]>y)box(s,M.plank,(l+r)/2,(y+h[2])/2,0,r-l,h[2]-y,.16);y=Math.max(y,h[3]);}if(y<F+HT)box(s,M.plank,(l+r)/2,(y+F+HT)/2,0,r-l,F+HT-y,.16);}}else box(s,M.plank,(ax+bx)/2,F+HT/2,(az+bz)/2,Math.abs(bx-ax)+.16,HT,Math.abs(bz-az)+.16); }
       if (sal) box(s, M.plank, (door[0] + door[1]) / 2, F + 2.9 + (HT - 2.9) / 2, 0, door[1] - door[0] + .2, HT - 2.9, .16); // wall above the door
       box(s, M.plank, mx, F + HT + 1.2, 0, w + .2, 2.4, .2); box(s, M.roof, mx, F + HT + .15, D / 2, w + .6, .2, D + .6); box(s, M.dark, mx, F + 2.9, -1.3, w + .2, .12, 2.6); // false front, roof, porch roof
       for (const x of [x0 + .2, mx, x1 - .2]) box(s, M.dark, x, F + 1.4, -2.3, .14, 2.9, .14);
@@ -209,7 +209,7 @@ export function createTown(c) {
   function closeUI() { if (shopEl) shopEl.hidden = true; T.ui = null; H.uiOpen = false; }
   function openShop(which) { if (!shopEl) { shopEl = document.createElement('div'); shopEl.id = 'hrShop'; document.body.appendChild(shopEl); shopEl.addEventListener('pointerdown', e => e.stopPropagation());
       shopEl.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const a = b.dataset.a, w = b.dataset.w, g = H.guns;
-        if (a === 'x') return closeUI(); if (a === 'buy') g.purchase(w); else if (a === 'up') g.upgrade(w); else if (a === 'jacket') buyJacket(); else if (a === 'wear') { T.wear = !T.wear; save(); c.jacket && c.jacket(T.wear); } render(); }); }
+        if (a === 'x') return closeUI(); if (a === 'buy') g.purchase(w); else if (a === 'up') g.upgrade(w); else if (a === 'jacket') buyJacket(); else if(a==='extra'){const item=T.extraStoreItems?.find(i=>i.state.id===b.dataset.id);if(item)(item.state.owned?item.toggle():item.buy());} else if (a === 'wear') { T.wear = !T.wear; save(); c.jacket && c.jacket(T.wear); } render(); }); }
     T.ui = which; H.uiOpen = true; if (document.pointerLockElement) document.exitPointerLock(); shopEl.hidden = false; render(); }
   function render() { if (!shopEl || shopEl.hidden) return; const g = H.guns, S = g.state, pts = g.pts(), TN = ['', 'BRONZE', 'SILVER', 'GOLD'], cls = ['', 'b', 's', 'g'];
     let h = `<button class="x" data-a="x">✕</button>`;
@@ -219,6 +219,7 @@ export function createTown(c) {
         (t < 3 ? `<button class="${cls[t + 1]}" data-a="up" data-w="${w}" ${pts < g.UP_COST[w][t] ? 'disabled' : ''}>${TN[t + 1]} ${g.UP_COST[w][t]}</button>` : '<span>MAXED</span>') + '</div>'; }
       h += '<div style="opacity:.7;font-size:12px">Each tier: more damage, a bigger magazine, faster reloads and fire rate.</div>'; }
     else { h += `<h3>GENERAL STORE</h3><div class="pt">${pts} points</div><div class="row"><span class="nm">Black windbreaker · HORSE RIDER on the back</span>` + (T.jacket ? `<button data-a="wear">${T.wear ? 'TAKE OFF' : 'WEAR'}</button>` : `<button data-a="jacket" ${pts < TOWN_PRICES.jacket ? 'disabled' : ''}>BUY ${TOWN_PRICES.jacket}</button>`) + '</div>'; }
+    if(T.ui==='store')for(const item of T.extraStoreItems||[]){const i=item.state,name=String(i.name).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));h+=`<div class="row"><span class="nm">${name}</span><button data-a="extra" data-id="${i.id}" ${!i.owned&&pts<i.price?'disabled':''}>${i.owned?(i.equipped?'REMOVE':'EQUIP'):'BUY '+i.price}</button></div>`;}
     shopEl.innerHTML = h; }
   function buyJacket() { const g = H.guns; if (T.jacket) return; if (g.pts() < TOWN_PRICES.jacket) { msg('Not enough points', 1.5); return; } g.state.spent += TOWN_PRICES.jacket; T.jacket = true; T.wear = true; save(); c.jacket && c.jacket(true); msg('Black HORSE RIDER windbreaker — looking sharp', 3); }
   T.save = () => save();
@@ -277,6 +278,7 @@ export function createTown(c) {
     const nums = ORDER; x.fillStyle = '#f1dfb0'; x.font = 'bold 13px system-ui'; x.textAlign = 'center'; x.textBaseline = 'middle'; nums.forEach((n, i) => { const a = i * 18 * Math.PI / 180; x.fillText(n, c0 + Math.sin(a) * 185 * k, c0 - Math.cos(a) * 185 * k); });
     const G = T.dart; if (G && G.win < 0 && G.who[G.turn] === me()) { const [sx, sy] = sway(), rx = c0 + (D.ptr[0] + sx) * k, ry = c0 - (D.ptr[1] + sy) * k; x.strokeStyle = '#7dff8a'; x.lineWidth = 2; x.beginPath(); x.arc(rx, ry, 9, 0, TAU); x.moveTo(rx - 14, ry); x.lineTo(rx + 14, ry); x.moveTo(rx, ry - 14); x.lineTo(rx, ry + 14); x.stroke(); }
     if (G) for (const l of G.log.slice(-3)) {} if (G && G.last) { const lx = c0 + G.last.x * k, ly = c0 - G.last.y * k; x.fillStyle = '#ffd34a'; x.beginPath(); x.arc(lx, ly, 4, 0, TAU); x.fill(); x.fillStyle = '#fff'; x.font = 'bold 15px system-ui'; x.fillText(G.last.label, lx, ly - 14); } dartUI(); }
+  T.extraStoreItems=[];T.registerStoreItem=item=>{if(!item?.state||!/^[-a-z0-9_]+$/.test(item.state.id)||typeof item.buy!=='function'||typeof item.toggle!=='function')throw new TypeError('Invalid store item');if(!T.extraStoreItems.some(i=>i.state.id===item.state.id))T.extraStoreItems.push(item);render();return item;};
   T.buyJacket = buyJacket; T.dartScore = dartScore; T.applyDart = applyDart; T.newGame = newGame; T.toW = toW; T.toL = toL;
   T.openDarts = openDarts; T.openShop = openShop; T.closeUI = () => { closeUI(); closeDarts(); ck.close(); }; T.ckNew = ckNew; T.ckMoves = ckMoves; T.ckApply = ckApply; T.ckAI = ckAI; T.D = D;
 
