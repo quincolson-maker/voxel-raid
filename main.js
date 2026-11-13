@@ -101,7 +101,7 @@ renderer.domElement.addEventListener('webglcontextlost', e => { e.preventDefault
 const syncCamera = dt => horse.syncCamera(dt);
 window.__sim = secs => { for (let i = 0; i < secs * 20; i++) update(.05); };
 if (Q.get('dev') === '1') { window.__horse = horse; window.__hnet = hnet; window.__sfx = sfx; window.__coop = { act, syncCamera, keys, input }; }
-window.__cam = camera; window.__G = G; window.__P = P; window.__Q = QNAME;
+window.__cam = camera; window.__G = G; window.__P = P; window.__Q = QNAME; window.__sfx = sfx;
 // ---------------- Loop with adaptive resolution ----------------
 const NORENDER = Q.has('norender'); const TSCALE = +(Q.get('ts') || 1); let last = performance.now(), fAcc = 0, fN = 0, lowT = 0, hiT = 0, pr = renderer.getPixelRatio(); const PR_MAX = Math.min(devicePixelRatio || 1, /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) ? Math.max(pr, 1.5) : Math.max(pr, 2));
 function loop(t) { requestAnimationFrame(loop); window.__frames = (window.__frames || 0) + 1; if (window.__frames === 2) window.__booted = true; const rdt = Math.max(0, Math.min(.1, (t - last) / 1000)); last = t; const dt = Math.min(.05, rdt);
