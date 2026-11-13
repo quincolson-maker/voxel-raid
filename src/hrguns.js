@@ -266,10 +266,12 @@ export function createGuns(c) {
   // v36 Tommy (ChatGPT 'Frontier' pack, adapted): pooled brass, suppressor (store item, 900 pts, saved), original synthesized WAVs
   // decoded once into the game's own AudioContext and played through its bus (positional for other riders; replaces the old
   // Tommy report so nothing doubles). Falls back to the pack's synthesizer until the files are decoded.
+  { const lit = m => { if (m && m.isMeshStandardMaterial && m.metalness > .45) { m.metalness = .45; m.roughness = Math.max(m.roughness, .38); } }; // no env map in this scene: very metallic parts render black
+    models.tommy.group.traverse(o => { if (o.isMesh) [].concat(o.material).forEach(lit); }); }
   state.att = { tsup: { owned: false, equipped: false } };
   const tsup = () => !!(state.att.tsup && state.att.tsup.owned && state.att.tsup.equipped);
   const tfx = createTommyEffects({ scene, audioContext: () => sfx.ctx, dest: () => sfx.dest || sfx.master, quality: mobile ? 'low' : 'high', flashOn: false, shotSound: false,
-    groundHeight: (x, z, y) => H.town2 && H.town2.floorAt ? H.town2.floorAt(x, z, y) : hAt(x, z) });
+    groundHeight: (x, z, y) => H.town2 && H.town2.floorAt ? H.town2.floorAt(x, z, y) : hAt(x, z) }); tfx.group.traverse(o => { if (o.isMesh && o.material.isMeshStandardMaterial) { o.material.metalness = .45; o.material.roughness = .35; } });
   const WAV = { shot: 'assets/audio/tommy-shot.wav', sup: 'assets/audio/tommy-suppressed.wav', reload: 'assets/audio/tommy-reload.wav' }, wavBuf = {}; let wavCtx = null;
   function wavLoad() { const ac = sfx.ctx; if (!ac || wavCtx === ac) return; wavCtx = ac; for (const [k, u] of Object.entries(WAV)) fetch(u).then(r => r.ok ? r.arrayBuffer() : Promise.reject(r.status)).then(b => ac.decodeAudioData(b)).then(d => { if (wavCtx === ac) wavBuf[k] = d; }).catch(() => {}); }
   function tommyWav(kind) { const ac = sfx.ctx; if (!ac) return false; wavLoad(); const k = kind === 'reload' ? 'reload' : kind === true ? 'sup' : 'shot', b = wavBuf[k];

@@ -71,3 +71,21 @@ v32 realism: the branch-card / leaf-card tree textures, rock triplanar/moss, str
 v33 towers: the fire lookouts, town buildings, signs, Tommy gun, Golden Buffalo rifle, HORSE RIDER windbreaker, dartboard, checkers board/AI, drunk post-effect and shop/darts UIs are original procedural code and canvas textures written for this project (no purchased or third-party assets). The bartender/storekeeper reuse the existing CC0 rider model.
 
 v35 saloon / woodcraft / zombies: the saloon interior, slot machines and symbols, NPC dolls (barmaid, dancers, bandits, dealer), batwing doors, fists, axe, log-cabin pieces, wood textures, the zombie rot shader and zombie attachments (eyes, hats, ribs, jaw, rags), and all new sounds (synthesized WebAudio) are original procedural code written for this project. No purchased or third-party assets; zombies still reuse the existing CC0 rider model.
+
+## v36 Frontier upgrade — ChatGPT-generated code supplied by Quin Colson (integrated and adapted by Grok Bot)
+Quin had ChatGPT write a "Frontier upgrade" package (kept as-is for reference in `docs/chatgpt-drop3/`). Everything in it is
+generated procedural code: no downloaded, purchased or third-party art, models or recordings.
+- **Saloon / town upgrade** (`src/hrsaloon.js`, `src/hrtown.js`, `src/hrsaloondecor.js`): ChatGPT-generated code from Quin
+  (procedural decor, themed slot machines with fair return math). Merged into our saloon; our interaction ids, E / USE
+  buttons and the authenticated `sv` / `svr` routes in `src/horsenet.js` kept.
+- **Casino tables** (`src/hrcasino.js`, `src/hrcasinogames.js`): ChatGPT-generated code from Quin. Poker and blackjack use
+  practice chips only, slots use game points; nothing is real money.
+- **Frontier characters** (`src/hrcharacters.js`): ChatGPT-generated code from Quin — procedural skinned adult characters
+  (four player variants, saloon NPCs; dancers clothed). `src/hrskin.js` (Grok Bot) drives them from our existing rider rig
+  for the menu character picker; the classic rider stays the default.
+- **Tommy replica** (`src/hrtommy.js`, `src/hrtommy-store.js`): ChatGPT-generated code from Quin — replica-style procedural
+  model, suppressor, pooled brass, store adapter. Resized to our old Tommy and routed through our sound bus; damage, ammo and
+  cadence unchanged. The suppressor costs 900 game points.
+- **Tommy sounds** (`assets/audio/tommy-shot.wav`, `tommy-suppressed.wav`, `tommy-reload.wav`, `brass-clink.wav`): original
+  synthesized WAVs produced by the package's ChatGPT-generated script (`docs/chatgpt-drop3/tests/generate_audio.py`), from Quin.
+  They are not firearm recordings.
