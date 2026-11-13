@@ -430,7 +430,7 @@ export function createGuns(c) {
   const onUp = e => { if (e.button === 0) fireHeld = false; if (e.button === 2) aimHeld = false; };
   addEventListener('wheel', e => { if (H.on && state.weapon === 'gold' && state.scopeK > .5) zoom(e.deltaY < 0 ? 1 : -1, 1.18); }, { passive: true });
   { let pd = 0; addEventListener('touchmove', e => { if (!(H.on && state.weapon === 'gold' && state.scopeK > .5) || e.touches.length !== 2) { pd = 0; return; } const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); if (pd && Math.abs(d - pd) > 14) { zoom(d > pd ? 1 : -1, 1.12); pd = d; } else if (!pd) pd = d; }, { passive: true }); }
-  addEventListener('keydown', onKey); addEventListener('keyup', onKeyUp); c.renderer.domElement.addEventListener('mousedown', onDown); addEventListener('mouseup', onUp); addEventListener('blur', () => { fireHeld = aimHeld = reloadHeld = false; });
+  addEventListener('keydown', onKey); addEventListener('keyup', onKeyUp); c.renderer.domElement.addEventListener('mousedown', onDown); addEventListener('mouseup', onUp); const resetInput = () => { fireHeld = aimHeld = reloadHeld = false; firePend = false; lastFire = false; }; addEventListener('blur', resetInput); (window.__inputResets = window.__inputResets || []).push(resetInput); // v36: no queued shot fires after an app switch
 
   // ---- HUD + phone buttons ----
   const $ = id => document.getElementById(id); let hudEl = null, crossEl = null, scopeEl = null;

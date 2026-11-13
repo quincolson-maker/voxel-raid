@@ -28,7 +28,8 @@ export function initTouch(input, look, act, unlockAudio) {
   for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) joy.addEventListener(ev, jend);
   // v34 dead-man: a release anywhere ends the stick; no finger on the glass = no input (missed touchend / pointercancel / system gesture)
   for (const ev of ['pointerup', 'pointercancel']) addEventListener(ev, e => { if (e.pointerId === jid) jend(e); else lookEnd(e.pointerId); }, true);
-  const touchReset = () => { jid = null; input.mx = input.mz = 0; lk.clear(); restStick(); dbg(); }; window.__touchReset = touchReset;
+  const btns = []; // v36: every button's finger ownership + pressed look is released by the reset too
+  const touchReset = () => { jid = null; input.mx = input.mz = 0; lk.clear(); restStick(); for (const b of btns) b(); dbg(); }; window.__touchReset = touchReset;
   for (const ev of ['touchend', 'touchcancel']) addEventListener(ev, e => { if (!e.touches || e.touches.length === 0) touchReset(); }, true);
   lookEl.addEventListener('pointerdown', e => { e.preventDefault(); unlockAudio(); cap(lookEl, e); lookStart(e.pointerId, e.clientX, e.clientY); });
   lookEl.addEventListener('pointermove', e => { if (!lk.has(e.pointerId)) return; e.preventDefault(); lookMove(e.pointerId, e.clientX, e.clientY); });
@@ -46,7 +47,8 @@ export function initTouch(input, look, act, unlockAudio) {
     el.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); unlockAudio(); if (pid !== null) return; pid = e.pointerId; cap(el, e); el.classList.add('down'); last = [e.clientX, e.clientY]; if (drag) lookStart(pid, e.clientX, e.clientY); down(); });
     if (drag) el.addEventListener('pointermove', e => { if (e.pointerId !== pid) return; e.preventDefault(); lookMove(pid, e.clientX, e.clientY); });
     const u = e => { if (e.pointerId !== pid) return; if (drag) lookEnd(pid); pid = null; el.classList.remove('down'); up && up(); };
-    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) el.addEventListener(ev, u); };
+    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) el.addEventListener(ev, u);
+    btns.push(() => { if (pid === null) return; pid = null; el.classList.remove('down'); up && up(); }); };
   btn('tFire', () => input.fire = true, () => input.fire = false, true);
   btn('tJump', () => input.jump = true, () => input.jump = false);
   btn('tAct', () => { input.use = true; act.build(); }, () => input.use = false); btn('tReload', act.reload); btn('tPiece', act.piece); btn('tMat', act.mat); btn('tSkip', act.skip); btn('tAds', act.ads); btn('tSwap', act.swap);

@@ -22,7 +22,9 @@ let msgT = 0; function msg(s, t = 2) { $('msg').textContent = s; msgT = t; }
 const keys = {};
 addEventListener('keydown', e => { sfx.init(); keys[e.code] = true; onKey(e.code); }); addEventListener('keyup', e => keys[e.code] = false);
 // v34: never 'stuck running': drop every held key / stick when the page loses focus, is hidden or paged out
-const dropInput = () => { for (const k in keys) keys[k] = false; input.mx = input.mz = 0; input.fire = input.jump = input.use = input.ads = false; window.__touchReset && window.__touchReset(); };
+// v36: the one reset path: keys, stick, look ownership, every touch button, fire/jump/use/ADS, queued shots / reloads / aim, pending scoped look
+window.__inputResets = window.__inputResets || [];
+const dropInput = () => { for (const k in keys) keys[k] = false; input.mx = input.mz = 0; input.fire = input.jump = input.use = input.ads = false; P.lookPend = null; window.__touchReset && window.__touchReset(); for (const f of window.__inputResets) { try { f(); } catch (_) {} } window.__inputDrops = (window.__inputDrops || 0) + 1; };
 addEventListener('blur', dropInput); addEventListener('pagehide', dropInput); document.addEventListener('visibilitychange', () => { if (document.hidden) dropInput(); }); window.__dropInput = dropInput;
 const locked = () => document.pointerLockElement === renderer.domElement;
 document.addEventListener('mousemove', e => { if (!locked()) return; look(e.movementX * .0022, e.movementY * .0022); });
