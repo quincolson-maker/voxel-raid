@@ -143,8 +143,9 @@ float zn(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(mix(z
   function assistPoints() { const out = []; for (const o of Z.list) if (o.alive) { out.push({ c: headPos(o, new THREE.Vector3()), z: o }); out.push({ c: new THREE.Vector3(o.pos.x, o.pos.y + 1.15 * o.K.s, o.pos.z), z: o }); } return out; }
   function damage(o, dmg, head, p, dir, by, from) { if (!o || !o.alive) return false; o.hp -= dmg; o.flinch = Math.min(1, o.flinch + (head ? .8 : .45)); if (dir) o.push = [dir.x * (dmg > 150 ? 2.5 : .8), dir.z * (dmg > 150 ? 2.5 : .8)];
     if (o.hp <= 0) { kill(o, head, by); if (from && c.sendTo) { c.sendTo(from, { t: 'zk', h: head ? 1 : 0, b: Z.byBandit ? 1 : 0, z: o.id }); c.creditRemote && c.creditRemote(from, head); } } return true; }
+  const zAt = (pos, fn, wet) => sfx.zAt ? sfx.zAt(pos, fn, wet) : sfx.at(pos, fn, wet); // zombie voices: their own (fadeable) bus
   function kill(o, head, by) { if (!o.alive) return; o.alive = false; o.hp = 0; o.st = 2; o.deadT = 0; o.fallDir = rnd() < .5 ? 1 : -1; if (by !== 'remote' && by !== 'bandit') { Z.kills++; if (head) Z.heads++; }
-    if (sfx.at && sfx.ctx) sfx.at(o.pos, () => { sfx.tone('sawtooth', 120, 40, .22, .7); sfx.nz('lowpass', 300, 1, .25, .4); }, .3); }
+    if (sfx.at && sfx.ctx) zAt(o.pos, () => { sfx.tone('sawtooth', 120, 40, .22, .7); sfx.nz('lowpass', 300, 1, .25, .4); }, .3); }
   function onHit(o, w, head, p, dir, mul = 1) { // a local player's bullet hit this zombie
     const dmg = Math.round((ZSET.dmg[w] || 50) * (head ? ZSET.head : 1) * mul);
     if (fx) { fx.debris && fx.debris(p.x, p.y, p.z, 0x5a1410, head ? 10 : 6, .6); fx.number && fx.number(p, dmg, head); }
@@ -193,7 +194,8 @@ float zn(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(mix(z
     const dx = b.pos.x - a.pos.x, dz = b.pos.z - a.pos.z, d = Math.hypot(dx, dz), r = .55 * (a.K.s + b.K.s) / 2; if (d < r && d > 1e-4) { const k = (r - d) / 2 / d; a.pos.x -= dx * k; a.pos.z -= dz * k; b.pos.x += dx * k; b.pos.z += dz * k; pushOutOfPen(a.pos); pushOutOfPen(b.pos); } } } }
 
   function tick(dt) {
-    if (!Z.on || !H.on) return; Z.t += dt; dt = Math.min(dt, .1); const host = Z.role() !== 'client';
+    if (!Z.on || !H.on) return; Z.t += dt;
+    { const q = !!(H.saloon && H.saloon.inside && H.saloon.inside()); if (q !== !!Z.quiet) { Z.quiet = q; sfx.zFade && sfx.zFade(q ? 0 : 1, .5); } } dt = Math.min(dt, .1); const host = Z.role() !== 'client'; // hotfix: zombie groans / moans fade out inside the saloon (0.5 s), back on leaving
     // the player: regen, death + respawn at the pen
     if (Z.dead > 0) { Z.dead -= dt; if (Z.dead <= 0) { Z.dead = 0; Z.hp = ZSET.playerHp; const x = PEN.x + 2, z = PEN.z - 2; P.pos.set(x, hAt(x, z), z); c.msg && c.msg('Safe inside the pen — the dead cannot get in', 2.5); } }
     else if (Z.t - Z.hurtT > ZSET.regenDelay && Z.hp < ZSET.playerHp) Z.hp = Math.min(ZSET.playerHp, Z.hp + ZSET.regen * dt);
@@ -213,7 +215,7 @@ float zn(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(mix(z
       const dc = Math.hypot(cam.x - o.pos.x, cam.z - o.pos.z); o.g.visible = dc < (mobile ? 220 : 320);
       if (o.B.zAt && (o.zNear !== dc < 60)) { o.zNear = dc < 60; for (const m of o.B.zAt) if (m.material !== ZM.eye) m.visible = o.zNear; } // eyes glow at any range; the rest only up close
       if (o.g.visible && (dc < 90 || ((Z.t * 10 + o.id) | 0) % 3 === 0)) pose(o, dc < 90 ? dt : dt * 3, o.sp, dc < (mobile ? 30 : 55));
-      if ((o.groanT -= dt) <= 0) { o.groanT = 4 + rnd() * 7; if (dc < 45 && sfx.groan && sfx.ctx) sfx.at ? sfx.at(o.pos, () => sfx.groan(), .3) : sfx.groan(); } }
+      if ((o.groanT -= dt) <= 0) { o.groanT = 4 + rnd() * 7; if (dc < 45 && sfx.groan && sfx.ctx) sfx.at ? zAt(o.pos, () => sfx.groan(), .3) : sfx.groan(); } }
     if (host) separate();
     if (Z.role() === 'host' && (Z.snapT -= dt) <= 0) { Z.snapT = .12; c.send && c.send(snap()); }
     hud(); }

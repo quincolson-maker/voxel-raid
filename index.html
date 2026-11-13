@@ -132,7 +132,7 @@ select,input{border-radius:1px;background:#11161a;border:1px solid #fff2}
 
 /* horse rider */
 #horseBtn{background:rgba(150,110,50,.28)!important;border-left:3px solid #e0b060!important}
-#hrPrompt{position:absolute;left:50%;top:62%;transform:translateX(-50%);padding:.45em 1em;font-weight:700;letter-spacing:.08em;color:#ffe6b0;background:rgba(20,14,6,.6);border-left:3px solid #e0b060;text-shadow:0 2px 0 #000a}#hrPrompt[hidden]{display:none}#hrPrompt.riding{top:auto;bottom:9%;opacity:.8;font-size:.85em}.touch.horse-mode #hrPrompt.riding{display:none}
+#hrPrompt{position:absolute;left:50%;top:62%;transform:translateX(-50%);padding:.45em 1em;font-weight:700;letter-spacing:.08em;color:#ffe6b0;background:rgba(20,14,6,.6);border-left:3px solid #e0b060;text-shadow:0 2px 0 #000a}#hrPrompt[hidden]{display:none}#hrPrompt.use{pointer-events:auto;cursor:pointer;border:1px solid #e0b06099;border-left:3px solid #e0b060;border-radius:6px;z-index:40}#hrPrompt.use:hover{background:rgba(70,48,16,.8)}#hrPrompt.riding{top:auto;bottom:9%;opacity:.8;font-size:.85em}.touch.horse-mode #hrPrompt.riding{display:none}
 .horse-mode #vitals,.horse-mode #hotbar,.horse-mode #right,.horse-mode #cross,.horse-mode #zHud,.horse-mode #feed,.horse-mode #scope,.horse-mode #dbar{display:none!important}.horse-mode .bar{display:none}
 .horse-mode #tFire,.horse-mode #tAds,.horse-mode #tReload,.horse-mode #tSwap{display:none!important}.touch.horse-mode #hrPrompt{top:auto;bottom:40%}
 #tGun{display:none!important}.horse-mode #tGun{display:flex!important}.horse-mode.hr-gun #tFire,.horse-mode.hr-gun #tAds{display:flex!important}
@@ -228,5 +228,5 @@ body.hr-scoped #hrLB,body.hr-scoped #hrTags{display:none}
 })();
 </script>
 <script src="./vendor/peerjs.min.js"></script>
-<script type="module" src="./game.min.js?v=36-fixes" onload="window.__bootCheck && window.__bootCheck()" onerror="window.__bootFail && window.__bootFail('app', 'game.min.js failed to load')"></script>
+<script type="module" src="./game.min.js?v=36-usefix" onload="window.__bootCheck && window.__bootCheck()" onerror="window.__bootFail && window.__bootFail('app', 'game.min.js failed to load')"></script>
 </body></html>

@@ -189,7 +189,10 @@ export function createTown(c) {
   // ---- interaction ----
   T.nearSpot = () => { if (H.mounted) return null; let best = null, bd = 1e9; for (const o of T.spots) { if (Math.abs(P.pos.y - o.y) > 1.3) continue; const d = Math.hypot(P.pos.x - o.x, P.pos.z - o.z); if (d < o.r && d < bd) { bd = d; best = o; } } return best; };
   T.label = o => !o ? '' : o.kind === 'tommy' && H.guns && H.guns.state.owned.tommy ? '' : o.kind === 'gold' && H.guns && H.guns.state.owned.gold ? '' : o.label;
-  T.touchLabel = o => ({ tommy: 'TAKE', gold: 'TAKE', shop: 'SHOP', drink: 'DRINK', darts: 'DARTS', checkers: 'CHECKERS', store: 'STORE' })[o.kind] || '';
+  // hotfix: every interactable gets an on-screen button (phones had none for the v35 saloon spots); unknown kinds fall back to USE
+  T.TL = { tommy: 'TAKE<small>TOMMY GUN</small>', gold: 'TAKE<small>GOLD BUFFALO</small>', shop: 'UPGRADES', drink: 'DRINK', darts: 'PLAY<small>DARTS</small>', checkers: 'PLAY<small>CHECKERS</small>', store: 'STORE' };
+  T.touchLabel = o => !o ? '' : T.TL[o.kind] || (T.label(o) ? 'USE' : '');
+  T.touchText = o => T.touchLabel(o).replace(/<small>/g, ' ').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&');
   T.use = () => { const o = T.nearSpot(); if (!o || !T.label(o)) return false; const g = H.guns; if (T.onUse && T.onUse(o)) { sfx.ui && sfx.ui(); return true; }
     if (o.kind === 'tommy') { g.give('tommy'); g.draw('tommy'); msg('Tommy gun — 100-round drum, full auto (4)', 3); if (o.s.tommyMesh) o.s.tommyMesh.visible = false; }
     else if (o.kind === 'gold') { g.give('gold'); g.draw('gold'); msg('The Golden Buffalo — aim, then scroll / pinch / + − to zoom across the map (5)', 4); if (o.s.goldMesh) o.s.goldMesh.visible = false; }
@@ -274,7 +277,7 @@ export function createTown(c) {
     const nums = ORDER; x.fillStyle = '#f1dfb0'; x.font = 'bold 13px system-ui'; x.textAlign = 'center'; x.textBaseline = 'middle'; nums.forEach((n, i) => { const a = i * 18 * Math.PI / 180; x.fillText(n, c0 + Math.sin(a) * 185 * k, c0 - Math.cos(a) * 185 * k); });
     const G = T.dart; if (G && G.win < 0 && G.who[G.turn] === me()) { const [sx, sy] = sway(), rx = c0 + (D.ptr[0] + sx) * k, ry = c0 - (D.ptr[1] + sy) * k; x.strokeStyle = '#7dff8a'; x.lineWidth = 2; x.beginPath(); x.arc(rx, ry, 9, 0, TAU); x.moveTo(rx - 14, ry); x.lineTo(rx + 14, ry); x.moveTo(rx, ry - 14); x.lineTo(rx, ry + 14); x.stroke(); }
     if (G) for (const l of G.log.slice(-3)) {} if (G && G.last) { const lx = c0 + G.last.x * k, ly = c0 - G.last.y * k; x.fillStyle = '#ffd34a'; x.beginPath(); x.arc(lx, ly, 4, 0, TAU); x.fill(); x.fillStyle = '#fff'; x.font = 'bold 15px system-ui'; x.fillText(G.last.label, lx, ly - 14); } dartUI(); }
-  T.buyJacket = buyJacket; T.dartScore = dartScore; T.applyDart = applyDart; T.newGame = newGame; T.toW = toW;
+  T.buyJacket = buyJacket; T.dartScore = dartScore; T.applyDart = applyDart; T.newGame = newGame; T.toW = toW; T.toL = toL;
   T.openDarts = openDarts; T.openShop = openShop; T.closeUI = () => { closeUI(); closeDarts(); ck.close(); }; T.ckNew = ckNew; T.ckMoves = ckMoves; T.ckApply = ckApply; T.ckAI = ckAI; T.D = D;
 
   // ---- build: towers at the two trail tops furthest apart, the town on flat meadow ground ----

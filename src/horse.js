@@ -804,7 +804,7 @@ export function createHorseRider(ctx) {
     if (guns) guns.update(dt);
     if (zombies) zombies.tick(dt);
     H.near = h ? null : nearestHorse(); H.gait = h ? gaitName(H.speed) : ''; const sp2 = !h && town2 ? town2.nearSpot() : null; H.spot = sp2 && town2.label(sp2) ? sp2 : null;
-    H.prompt = h ? (H.mountT > 0 ? 'Mounting…' : H.wantOff || H.dismT > 0 ? 'Getting off…' : mobile ? 'Tap GET OFF to dismount' : '[E] Get off the horse') : H.spot ? (mobile ? 'Tap ' + town2.touchLabel(H.spot) + ' · ' + town2.label(H.spot) : '[E] ' + town2.label(H.spot)) : H.near ? (mobile ? 'Tap RIDE to mount' : '[E] Ride horse') : '';
+    H.prompt = h ? (H.mountT > 0 ? 'Mounting…' : H.wantOff || H.dismT > 0 ? 'Getting off…' : mobile ? 'Tap GET OFF to dismount' : '[E] Get off the horse') : H.spot ? (mobile ? 'Tap ' + town2.touchText(H.spot) + ' · ' + town2.label(H.spot) : '[E] ' + town2.label(H.spot)) : H.near ? (mobile ? 'Tap RIDE to mount' : '[E] Ride horse') : '';
   }
   // hoof dust: a small pool of soft points kicked up behind the hooves at speed
   const DN = mobile ? 40 : 90, dust = { p: new Float32Array(DN * 3), a: new Float32Array(DN), sz: new Float32Array(DN), v: new Float32Array(DN * 3), life: new Float32Array(DN), i: 0, acc: 0, pts: null };
@@ -860,7 +860,8 @@ export function createHorseRider(ctx) {
   let stamEl = null;
   function hud() {
     if (guns) guns.hud();
-    const pr = $('hrPrompt'); if (pr) { pr.textContent = H.prompt; pr.hidden = !H.prompt; pr.classList.toggle('riding', !!H.mounted); }
+    const pr = $('hrPrompt'); if (pr) { if (pr.textContent !== H.prompt) pr.textContent = H.prompt; pr.hidden = !H.prompt; pr.classList.toggle('riding', !!H.mounted); pr.classList.toggle('use', !mobile && /^\[E\]/.test(H.prompt)); }
+    if (!mobile && pr && !pr.dataset.wired) { pr.dataset.wired = 1; const stop = e => e.stopPropagation(); pr.addEventListener('pointerdown', stop); pr.addEventListener('mousedown', stop); pr.addEventListener('click', e => { e.stopPropagation(); if (pr.classList.contains('use')) { H.cd = 0; use(); } }); } // hotfix: the desktop prompt is a clickable USE button too
     const d = Math.round(Math.hypot(P.pos.x - PEN.x, P.pos.z - PEN.z)), hz = H.mounted;
     $('mode').textContent = '🐎 HORSE RIDER'; $('timer').textContent = hz ? Math.round(Math.abs(H.speed) * 3.6) + ' km/h' : ''; $('stars').textContent = H.online || '';
     const alt = Math.round(P.pos.y - BASE - (hz ? 1.1 : 0)), altS = alt > 25 ? ' · ⛰ ' + alt + ' m' : '';
@@ -933,7 +934,7 @@ export function createHorseRider(ctx) {
     const up0 = av.update, dp0 = av.dispose; av.update = (dt, s) => { up0(dt, s); if (guns) guns.poseRemote(av, s, av.horse ? av.sitter : av.walker, !!av.horse); const jk = !!(s && s.jk); if (av.jk !== jk || av.jkRoot !== av.walker) { if (wearJacket(av.walker, jk) | (av.sitter && wearJacket(av.sitter, jk))) { av.jk = jk; av.jkRoot = av.walker; } } }; av.dispose = () => { if (guns) guns.disposeRemote(av); dp0(); };
     av.rebuild(); avatars.add(av); return av;
   }
-  const touchLabel = () => H.mounted ? 'GET OFF' : H.spot ? town2.touchLabel(H.spot) : H.near ? 'RIDE' : '';
+  const touchLabel = () => H.mounted ? 'GET OFF' : H.saloon && H.seated ? 'STAND UP' : H.saloon && H.saloon.dance ? 'STOP<small>SHOW</small>' : H.saloon && H.saloon.isOpen() ? 'CLOSE' : H.spot ? town2.touchLabel(H.spot) : H.near ? 'RIDE' : '';
   const stats = () => { const i = GX.renderer.info; i.autoReset = false; i.reset(); GX.renderer.render(scene, camera); i.autoReset = true; return { calls: i.render.calls, triangles: i.render.triangles, geometries: i.memory.geometries, textures: i.memory.textures }; };
   const syncAll = dt => { syncCamera(dt); envTick(dt); };
   const gunNet = () => Object.assign(guns ? guns.netState() : { g: 0 }, { jk: town2 && town2.jacket && town2.wear ? 1 : 0 }), remoteShot = (id, m) => guns && guns.remoteShot(id, m);

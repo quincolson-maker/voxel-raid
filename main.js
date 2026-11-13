@@ -93,7 +93,7 @@ renderer.domElement.addEventListener('webglcontextlost', e => { e.preventDefault
 // test hooks
 const syncCamera = dt => horse.syncCamera(dt);
 window.__sim = secs => { for (let i = 0; i < secs * 20; i++) update(.05); };
-if (Q.get('dev') === '1') { window.__horse = horse; window.__hnet = hnet; window.__coop = { act, syncCamera, keys, input }; }
+if (Q.get('dev') === '1') { window.__horse = horse; window.__hnet = hnet; window.__sfx = sfx; window.__coop = { act, syncCamera, keys, input }; }
 window.__cam = camera; window.__G = G; window.__P = P; window.__Q = QNAME;
 // ---------------- Loop with adaptive resolution ----------------
 const NORENDER = Q.has('norender'); const TSCALE = +(Q.get('ts') || 1); let last = performance.now(), fAcc = 0, fN = 0, lowT = 0, hiT = 0, pr = renderer.getPixelRatio(); const PR_MAX = Math.min(devicePixelRatio || 1, /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) ? Math.max(pr, 1.5) : Math.max(pr, 2));
