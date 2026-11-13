@@ -222,7 +222,7 @@ export function createSaloon(c) {
     B.cd -= dt; B.anim = v > .5 ? 'walk' : 'idle';
     if (tgt) { B.anim = v > 2.5 ? 'walk' : 'aim'; if (v <= 2.5) g.rotation.y = lerpA(g.rotation.y, Math.atan2(tgt.pos.x - g.position.x, tgt.pos.z - g.position.z), Math.min(1, dt * 10));
       if (B.cd <= 0) { B.cd = (B.look % 2 ? .8 : 1.3) * (.8 + Math.random() * .4); const hit = Math.random() < (best < 15 ? .85 : .6), dmg = B.look % 2 ? 45 : 85; shotFx(g.position, tgt);
-        if (hit) { const role = H.netRole ? H.netRole() : 'solo'; if (role === 'client') { H.zSend && H.zSend({ t: 'zh', id: tgt.id, d: dmg, h: 0, b: 1 }); } else { const was = tgt.alive; Zs.damage(tgt, dmg, false, null, tmpV.set(tgt.pos.x - g.position.x, 0, tgt.pos.z - g.position.z).normalize(), 'bandit'); if (was && !tgt.alive) { B.kills++; S.banditKill(); } } } } }
+        if (hit) { const role = H.netRole ? H.netRole() : 'solo'; if (role === 'client') { H.zSend && H.zSend({ t: 'zh', id: tgt.id, d: dmg, h: 0, b: 1, w: 'bandit', s: Zs.state ? ++Zs.state.shotSeq : 0 }); } else { const was = tgt.alive; Zs.damage(tgt, dmg, false, null, tmpV.set(tgt.pos.x - g.position.x, 0, tgt.pos.z - g.position.z).normalize(), 'bandit'); if (was && !tgt.alive) { B.kills++; S.banditKill(); } } } } }
     if (B.hp <= 0) { B.dead = true; B.deadT = 0; dropMsg(); }
     if (B.hz) { B.hz.position.copy(g.position); B.hz.rotation.y = g.rotation.y + Math.PI; if (c.procAnim) c.procAnim(B.hz, dt, v, false); poseDoll(D, dt, 'sit'); } else poseDoll(D, dt, B.anim, v);
     if (B.hz) g.position.y = c.groundAt(g.position.x, g.position.z, g.position.y) + 1.05;

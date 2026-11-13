@@ -19,7 +19,7 @@ const KIND_LIST = ['walker', 'runner', 'brute'];
 export function createHrZombies(c) {
   const { scene, H, P, hAt, PEN, EDGE, sfx, fx, mobile } = c, WALK = c.WALK || EDGE;
   const Q = new URLSearchParams(location.search);
-  const Z = { on: Q.get('zombies') !== '0', list: [], wave: 1, waveT: 0, spawnT: ZSET.startDelay, nextId: 1, kills: 0, heads: 0, cap: mobile ? ZSET.capPhone : ZSET.capDesktop,
+  const Z = { on: Q.get('zombies') !== '0', list: [], byId: new Map(), val: new Map(), gotK: new Set(), gotQ: [], shotSeq: 0, wave: 1, waveT: 0, spawnT: ZSET.startDelay, nextId: 1, kills: 0, heads: 0, cap: mobile ? ZSET.capPhone : ZSET.capDesktop,
     hp: ZSET.playerHp, hurtT: -99, dead: 0, deaths: 0, flash: 0, t: 0, snapT: 0, role: c.role || (() => 'solo') };
   const pool = { walker: [], runner: [], brute: [] }, tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3();
   const rnd = Math.random;
@@ -107,8 +107,8 @@ float zn(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(mix(z
     else if ((at = nearSpot())) [x, z] = at; // v34: they come from 40-90 m around you, never stuck off at the world edge
     else { const ps = players(); let best = null, bd = 1e9; for (let i = 0; i < 4; i++) { const p = edgePoint(rnd() * Math.PI * 2), q = ps[(rnd() * ps.length) | 0] || { x: 0, z: 0 }, d = Math.hypot(p[0] - q.x, p[1] - q.z); if (d < bd) { bd = d; best = p; } } [x, z] = best; }
     const o = { id: id || Z.nextId++, kind, K, B, g, pos: g.position, yaw: Math.atan2(x - PEN.x, z - PEN.z), hp: K.hp, alive: true, deadT: 0, cd: 1, st: 0, groanT: 2 + rnd() * 6, flinch: 0, sp: 0, born: Z.t, tgt: null, net: null, anim: rnd() * 6 };
-    o.pos.set(x, hAt(x, z), z); o.from = [+x.toFixed(1), +z.toFixed(1)]; Z.list.push(o); return o; }
-  function despawn(o) { scene.remove(o.g); o.g.remove(o.B.m); if (!o.B.stand) { o.B.m.rotation.set(0, Math.PI, 0); o.B.m.position.set(0, 0, 0); pool[o.kind].push(o.B); } Z.list.splice(Z.list.indexOf(o), 1); }
+    o.pos.set(x, hAt(x, z), z); o.from = [+x.toFixed(1), +z.toFixed(1)]; Z.list.push(o); Z.byId.set(o.id, o); return o; }
+  function despawn(o) { scene.remove(o.g); o.g.remove(o.B.m); if (!o.B.stand) { o.B.m.rotation.set(0, Math.PI, 0); o.B.m.position.set(0, 0, 0); pool[o.kind].push(o.B); } Z.list.splice(Z.list.indexOf(o), 1); if (Z.byId.get(o.id) === o) Z.byId.delete(o.id); }
   const pickKind = () => { const w = Z.wave, r = rnd(); if (w >= 3 && r < Math.min(.15, .04 * w)) return 'brute'; if (w >= 2 && r < Math.min(.5, .12 * w)) return 'runner'; return 'walker'; };
 
   // ---- who they go for: players on foot or riding (their horse), loose horses outside the pen ----
@@ -142,13 +142,13 @@ float zn(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(mix(z
     return best; }
   function assistPoints() { const out = []; for (const o of Z.list) if (o.alive) { out.push({ c: headPos(o, new THREE.Vector3()), z: o }); out.push({ c: new THREE.Vector3(o.pos.x, o.pos.y + 1.15 * o.K.s, o.pos.z), z: o }); } return out; }
   function damage(o, dmg, head, p, dir, by, from) { if (!o || !o.alive) return false; o.hp -= dmg; o.flinch = Math.min(1, o.flinch + (head ? .8 : .45)); if (dir) o.push = [dir.x * (dmg > 150 ? 2.5 : .8), dir.z * (dmg > 150 ? 2.5 : .8)];
-    if (o.hp <= 0) { kill(o, head, by); if (from && c.sendTo) { c.sendTo(from, { t: 'zk', h: head ? 1 : 0, b: Z.byBandit ? 1 : 0 }); c.creditRemote && c.creditRemote(from, head); } } return true; }
+    if (o.hp <= 0) { kill(o, head, by); if (from && c.sendTo) { c.sendTo(from, { t: 'zk', h: head ? 1 : 0, b: Z.byBandit ? 1 : 0, z: o.id }); c.creditRemote && c.creditRemote(from, head); } } return true; }
   function kill(o, head, by) { if (!o.alive) return; o.alive = false; o.hp = 0; o.st = 2; o.deadT = 0; o.fallDir = rnd() < .5 ? 1 : -1; if (by !== 'remote' && by !== 'bandit') { Z.kills++; if (head) Z.heads++; }
     if (sfx.at && sfx.ctx) sfx.at(o.pos, () => { sfx.tone('sawtooth', 120, 40, .22, .7); sfx.nz('lowpass', 300, 1, .25, .4); }, .3); }
   function onHit(o, w, head, p, dir, mul = 1) { // a local player's bullet hit this zombie
     const dmg = Math.round((ZSET.dmg[w] || 50) * (head ? ZSET.head : 1) * mul);
     if (fx) { fx.debris && fx.debris(p.x, p.y, p.z, 0x5a1410, head ? 10 : 6, .6); fx.number && fx.number(p, dmg, head); }
-    if (Z.role() === 'client') { c.send && c.send({ t: 'zh', id: o.id, d: dmg, h: head ? 1 : 0 }); o.hp -= dmg; o.flinch = 1; if (o.hp <= 0) kill(o, head, 'remote'); return { dmg, head, killed: !o.alive }; }
+    if (Z.role() === 'client') { c.send && c.send({ t: 'zh', id: o.id, d: dmg, h: head ? 1 : 0, w, s: ++Z.shotSeq }); o.hp -= dmg; o.flinch = 1; if (o.hp <= 0) { kill(o, head, 'remote'); o.predT = performance.now(); } return { dmg, head, killed: !o.alive }; } // predicted: the host's snapshot can still bring it back
     damage(o, dmg, head, p, dir, 'me'); return { dmg, head, killed: !o.alive }; }
 
   // ---- per-frame ----
@@ -220,13 +220,29 @@ float zn(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(mix(z
 
   // ---- multiplayer: host snapshots, client mirror ----
   function snap() { return { t: 'zs', w: Z.wave, z: Z.list.map(o => [o.id, KIND_LIST.indexOf(o.kind), +o.pos.x.toFixed(1), +o.pos.z.toFixed(1), +o.yaw.toFixed(2), o.alive ? o.st : 2, Math.max(0, Math.round(o.hp)), +o.sp.toFixed(1)]) }; }
-  function apply(m) { if (!m || !Array.isArray(m.z)) return; Z.wave = m.w | 0 || Z.wave; const seen = new Set();
-    for (const r of m.z.slice(0, 64)) { if (!Array.isArray(r) || r.length < 8 || !r.slice(2, 5).every(Number.isFinite)) continue; const [id, ki, x, z, yaw, st, hp, sp] = r; seen.add(id);
-      let o = Z.list.find(q => q.id === id); if (!o) { if (st === 2) continue; o = spawn(KIND_LIST[ki] || 'walker', [x, z], id); o.yaw = yaw; }
+  function apply(m) { if (!m || !Array.isArray(m.z)) return; Z.wave = m.w | 0 || Z.wave; const seen = new Set(), now = performance.now();
+    for (const r of m.z.slice(0, 64)) { if (!Array.isArray(r) || r.length < 8) continue; const [id, ki, x, z, yaw, st, hp, sp] = r; // v36: malformed / non-finite / out-of-world rows are skipped cheaply
+      if (!Number.isFinite(id) || !Number.isFinite(x) || !Number.isFinite(z) || !Number.isFinite(yaw) || !Number.isFinite(hp) || !Number.isFinite(sp) || Math.abs(x) > WALK + 5 || Math.abs(z) > WALK + 5 || !(st === 0 || st === 1 || st === 2)) { Z.badRows = (Z.badRows || 0) + 1; continue; } seen.add(id);
+      let o = Z.byId.get(id); if (!o) { if (st === 2) continue; o = spawn(KIND_LIST[ki] || 'walker', [x, z], id); o.yaw = yaw; }
+      if (!o.alive && st !== 2 && o.predT && now - o.predT > 900) revive(o, hp); // v36: my shot looked like a kill but the host says it is still up
       o.net = { x, z, yaw, st, sp }; if (st === 2 && o.alive) kill(o, false, 'remote'); else if (o.alive) o.hp = hp; }
     for (const o of [...Z.list]) if (!seen.has(o.id) && o.alive) despawn(o); }
-  function remoteHit(m, from) { if (!m || !Number.isFinite(m.id) || !Number.isFinite(m.d)) return; const o = Z.list.find(q => q.id === m.id); if (!o) return; Z.byBandit = !!m.b; damage(o, Math.max(0, Math.min(2000, m.d)), !!m.h, null, null, 'remote', from); Z.byBandit = false; }
-  function confirmKill(m) { Z.kills++; if (m && m.h) Z.heads++; } // the host says my shot killed one
+  // v36: the host checks a client's hit: known weapon (or a hired gun), no more than that weapon's best (gold-tier, headshot)
+  // damage, no faster than it can fire (token bucket), in range of where that rider is, and each shot counts once
+  const W_GAP = { revolver: .14, rifle: .16, sniper: .7, tommy: .075, gold: .7, bandit: .12 }, W_RANGE = { revolver: 135, rifle: 260, sniper: 420, tommy: 170, gold: 3200, bandit: 140 };
+  function reject(why) { Z.rejected = Z.rejected || {}; Z.rejected[why] = (Z.rejected[why] || 0) + 1; return false; }
+  function remoteHit(m, from) { if (!m || !from || !Number.isFinite(m.id) || !Number.isFinite(m.d) || m.d < 0) return reject('malformed');
+    const w = m.b ? 'bandit' : (ZSET.dmg[m.w] ? m.w : null); if (!w) return reject('weapon');
+    let V = Z.val.get(from); if (!V) Z.val.set(from, V = { ids: new Set(), q: [], b: {} });
+    if (Number.isFinite(m.s)) { const key = m.s + ':' + m.id; if (V.ids.has(key)) return reject('dupe'); V.ids.add(key); V.q.push(key); if (V.q.length > 256) V.ids.delete(V.q.shift()); }
+    const now = performance.now() / 1000, gap = W_GAP[w] * .7 * .75, cap = w === 'bandit' || w === 'tommy' ? 8 : 4, B = V.b[w] || (V.b[w] = { tok: cap, t: now }); B.tok = Math.min(cap, B.tok + (now - B.t) / gap); B.t = now; if (B.tok < 1) return reject('rate'); B.tok -= 1;
+    const o = Z.byId.get(m.id); if (!o) return reject('unknown');
+    const R = (c.remotes ? c.remotes() : []).find(q => q.id === from); if (R && R.s && Number.isFinite(R.s.x) && Math.hypot(R.s.x - o.pos.x, R.s.z - o.pos.z) > W_RANGE[w] + 30) return reject('range');
+    const max = w === 'bandit' ? 85 : ZSET.dmg[w] * (m.h ? ZSET.head : 1) * 2 + 1; if (m.d > max) reject('clamped');
+    Z.byBandit = w === 'bandit'; const ok = damage(o, Math.min(max, m.d), !!m.h, null, null, 'remote', from); Z.byBandit = false; return ok; }
+  function revive(o, hp) { o.alive = true; o.hp = Math.max(1, hp); o.deadT = 0; o.st = 0; o.predT = 0; o.g.rotation.set(0, o.yaw, 0); o.pos.y = hAt(o.pos.x, o.pos.z); Z.revived = (Z.revived || 0) + 1; }
+  function confirmKill(m) { if (m && Number.isFinite(m.z)) { if (Z.gotK.has(m.z)) return false; Z.gotK.add(m.z); Z.gotQ.push(m.z); if (Z.gotQ.length > 512) Z.gotK.delete(Z.gotQ.shift()); } // v36: each kill pays once
+    if (!(m && m.b)) { Z.kills++; if (m && m.h) Z.heads++; } return true; } // the host says my shot (or my hired gun) killed one
   function remoteHurt(m) { if (!m || !Number.isFinite(m.d)) return; hurtMe(Math.max(0, Math.min(60, m.d)), Math.max(0, Math.min(80, m.hz || 0))); }
 
   // ---- HUD: health, wave, kills; red hurt flash ----
