@@ -21,7 +21,7 @@ const base = process.argv[2] || 'http://localhost:8767';
         r.dbg = g.state.dbg; r.last = g.state.lastHit; r.ammo = g.state.ammo[w]; r.rel = g.state.reloading; inp.ads = false; step(.6); Z.clear(); return r; };
       o.revolver = killWith('revolver', 12); o.sniper = killWith('sniper', 70); o.tommy = killWith('tommy', 25); o.gold = killWith('gold', 160);
       // golden buffalo zoom range
-      g.draw('gold'); step(.4); inp.ads = true; step(1.2); for (let i = 0; i < 30; i++) g.zoom(1); step(1); o.goldFov = +__cam.fov.toFixed(2); for (let i = 0; i < 30; i++) g.zoom(-1); step(1); o.goldFovOut = +__cam.fov.toFixed(2); inp.ads = false; step(.5);
+      g.draw('gold'); step(.4); inp.ads = true; step(1.2); for (let i = 0; i < 30; i++) g.zoom(1); step(1); o.goldFov = +__cam.fov.toFixed(2); for (let i = 0; i < 30; i++) g.zoom(-1); step(1); o.goldFovOut = +__cam.fov.toFixed(2); o.fovK = __horse.state.fovK ? __horse.state.fovK() : 1; inp.ads = false; step(.5);
       // tommy: full auto (hold fire) from a 100-round drum
       g.draw('tommy'); step(.5); g.state.ammo.tommy = g.maxAmmo('tommy'); o.drum = g.state.ammo.tommy; const s0 = g.state.shots; inp.fire = true; step(1.5); inp.fire = false; o.autoShots = g.state.shots - s0; step(.3);
       o.cap = Z.state.cap; o.leaderboard = !!document.getElementById('hrLB'); o.loopErr = window.__loopErr ? String(window.__loopErr) : null; return o; });
@@ -31,7 +31,7 @@ const base = process.argv[2] || 'http://localhost:8767';
   for (const [tag, R] of Object.entries(out)) {
     for (const w of ['revolver', 'sniper', 'tommy', 'gold']) { assert.ok(R[w].killed, tag + ' ' + w + ' kills'); assert.ok(R[w].pts >= 10 && R[w].kills === 1, tag + ' ' + w + ' kill awards points'); }
     for (const w of ['sniper', 'gold']) { assert.ok(R[w].scopeOn && R[w].scopePops >= 2, tag + ' ' + w + ' hit markers / points inside the scope'); assert.ok(R[w].popsInScope.some(t => /\+1[05]/.test(t)), tag + ' ' + w + ' points pop-up in the scope'); assert.match(R[w].ptsLabel, /pts/); assert.ok(R[w].hudHidden, 'rest of the HUD hidden in the scope'); }
-    assert.ok(R.goldFov < .5 && R.goldFovOut > 7, tag + ' golden buffalo variable zoom');
+    assert.ok(R.goldFov < .5 * R.fovK && R.goldFovOut > 7 * R.fovK, tag + ' golden buffalo variable zoom (relative to the FOV setting)');
     assert.equal(R.drum, 100); assert.ok(R.autoShots >= 12, tag + ' tommy full auto');
     assert.equal(R.cap, tag === 'mobile' ? 18 : 42, '3x the dead'); assert.ok(!R.loopErr && !R.errors.length, tag + ' no errors'); assert.ok(R.leaderboard, tag + ' leaderboard panel');
   }

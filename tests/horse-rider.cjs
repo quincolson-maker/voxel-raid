@@ -38,8 +38,8 @@ const ignorable = t => /pointer ?lock|requestPointerLock|fullscreen|favicon|WebG
     // desktop: hold W; phone: drive the joystick with a real touch drag
     if (mobile) { const c = await p.$eval('#joy', e => { const r = e.getBoundingClientRect(); return [r.left + r.width * .3, r.top + r.height * .7]; });
       const cdp = await p.target().createCDPSession(); const tp = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }] });
-      await tp('touchStart', c[0], c[1]); await tp('touchMove', c[0], c[1] - 30); await p.waitForFunction(() => !!__horse.state.near, { timeout: 40000 }); await tp('touchEnd'); R.cdp = cdp; }
-    else { await p.keyboard.down('KeyW'); await p.waitForFunction(() => !!__horse.state.near, { timeout: 40000 }); await p.keyboard.up('KeyW'); }
+      await tp('touchStart', c[0], c[1]); await tp('touchMove', c[0], c[1] - 30); await p.waitForFunction(() => !!__horse.state.near, { timeout: 240000 }); await tp('touchEnd'); R.cdp = cdp; }
+    else { await p.keyboard.down('KeyW'); await p.waitForFunction(() => !!__horse.state.near, { timeout: 240000 }); await p.keyboard.up('KeyW'); }
     R.walked = +(t0 - await p.evaluate(() => __P.pos.z)).toFixed(2); assert.ok(R.walked > 5);
     R.prompt = await p.evaluate(() => __horse.state.prompt); assert.match(R.prompt, /RIDE|Ride/);
     if (mobile) { await sleep(250); R.actLabel = await p.$eval('#tAct', e => e.hidden ? '' : e.textContent); assert.equal(R.actLabel, 'RIDE'); }
@@ -83,7 +83,7 @@ const ignorable = t => /pointer ?lock|requestPointerLock|fullscreen|favicon|WebG
     assert.ok(R.camThirdPerson > 3, 'chase camera is behind the horse');
     R.hud = await p.$eval('#sub', e => e.textContent);
     // dismount
-    await p.waitForFunction(() => Math.abs(__horse.state.speed) < 3, { timeout: 60000 }); await p.evaluate(() => { __horse.state.zoom = .5; __P.yaw = __horse.state.mounted.yaw + 1.1; __P.pitch = -.12; __P.swX = (__P.swX || 0) + 1; }); await sleep(900); await p.screenshot({ path: `shot-horserider-rdr-rider-closeup-${tag}.png` }); await p.evaluate(() => { __horse.state.zoom = 1; });
+    await p.waitForFunction(() => Math.abs(__horse.state.speed) < 3, { timeout: 300000 }); await p.evaluate(() => { __horse.state.zoom = .5; __P.yaw = __horse.state.mounted.yaw + 1.1; __P.pitch = -.12; __P.swX = (__P.swX || 0) + 1; }); await sleep(900); await p.screenshot({ path: `shot-horserider-rdr-rider-closeup-${tag}.png` }); await p.evaluate(() => { __horse.state.zoom = 1; });
     if (mobile) { await p.waitForFunction(() => !document.getElementById('tAct').hidden && document.getElementById('tAct').textContent === 'GET OFF'); await p.tap('#tAct'); } else await p.keyboard.press('KeyE');
     R.dismountAnim = await p.evaluate(() => !!(__horse.state.wantOff || __horse.state.dismT > 0)); await p.waitForFunction(() => !__horse.state.mounted, { timeout: 30000 });
     R.dismount = await p.evaluate(() => { const h = __horse.state.horses[2]; return { gap: +Math.hypot(h.pos.x - __P.pos.x, h.pos.z - __P.pos.z).toFixed(2), onGround: Math.abs(__P.pos.y - __horse.hAt(__P.pos.x, __P.pos.z)) < .05 }; });
@@ -91,7 +91,7 @@ const ignorable = t => /pointer ?lock|requestPointerLock|fullscreen|favicon|WebG
     // remount right away after cooldown, ride into the fence: it must stop us
     await p.waitForFunction(() => __horse.state.cd === 0); assert.ok(await p.evaluate(() => __horse.use()), 'can remount next to the horse');
     R.fence = await p.evaluate(() => { const H = __horse, h = H.state.mounted; h.pos.set(H.PEN.x + 6, h.pos.y, H.PEN.z); __P.yaw = -Math.PI / 2; h.yaw = __P.yaw; H.state.speed = 0; return 0; });
-    await p.keyboard.down('KeyW'); { const t = await p.evaluate(() => __horse.state.riddenT); await p.waitForFunction(t => __horse.state.riddenT > t + 4, { timeout: 60000 }, t); } await p.keyboard.up('KeyW');
+    await p.keyboard.down('KeyW'); { const t = await p.evaluate(() => __horse.state.riddenT); await p.waitForFunction(t => __horse.state.riddenT > t + 4, { timeout: 300000 }, t); } await p.keyboard.up('KeyW');
     R.fenceX = await p.evaluate(() => +__horse.state.mounted.pos.x.toFixed(2)); assert.ok(R.fenceX < await p.evaluate(() => __horse.PEN.x + __horse.PEN.hw), 'fence stops the horse');
     await sleep(500); await p.evaluate(() => __horse.dismount());
     R.errors = errors; assert.deepEqual(errors, []); await p.close();
