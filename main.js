@@ -79,13 +79,15 @@ const KEYS = IS_TOUCH ? 'CONTROLS\nLeft side: move / steer · right side: look\n
 $('keys').textContent = KEYS; $('keys').onclick = () => { $('keys').hidden = true; };
 if (!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen)) $('mFs').style.display = 'none';
 // ---------------- v36 settings: field of view (desktop ⚙ / O, phones ⋯ > Settings) ----------------
-function openSettings(on) { const el = $('hrSettings'); el.hidden = !on; const H = horse.state; H.uiOpen = on ? true : !!(H.town2 && H.town2.ui) || !!(H.saloon && H.saloon.isOpen() && !H.seated); if (on) { if (document.pointerLockElement) document.exitPointerLock(); syncFov(); } }
+function syncChaos() { const Zs = horse.state.zombies, b = $('chaosBtn'); if (!Zs || !b) return; const cl = !!(horse.state.netRole && horse.state.netRole() === 'client'), on = cl ? Zs.chaos : Zs.wantChaos;
+  b.textContent = '☠ Chaos mode: ' + (on ? 'ON' : 'OFF') + (cl ? ' (host decides)' : ''); b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.disabled = cl; }
+function openSettings(on) { const el = $('hrSettings'); el.hidden = !on; const H = horse.state; H.uiOpen = on ? true : !!(H.town2 && H.town2.ui) || !!(H.saloon && H.saloon.isOpen() && !H.seated); if (on) { if (document.pointerLockElement) document.exitPointerLock(); syncFov(); syncChaos(); } }
 function syncFov() { const v = horse.state.fovH; $('fovRange').value = v; $('fovVal').textContent = v + '°'; syncChar(); }
 function syncChar() { const H = horse.state, row = $('charRow'); if (!row || !H.characters) return; if (row.children.length !== H.characters.length) { row.innerHTML = ''; H.characters.forEach((n, i) => { const b = document.createElement('button'); b.textContent = i ? n.split(' ')[0] : 'Classic'; b.title = n; b.dataset.cv = i; b.onclick = () => { H.setCharacter(i); syncChar(); }; row.appendChild(b); }); } for (const b of row.children) b.classList.toggle('on', +b.dataset.cv === (H.cv | 0)); } // v36 character picker (saved; sent to the lobby)
 { const el = $('hrSettings'), r = $('fovRange'), stop = e => e.stopPropagation(); document.body.appendChild(el); document.body.appendChild($('setBtn')); // own stacking context: above the touch look layer
   for (const ev of ['pointerdown', 'mousedown', 'touchstart', 'click', 'wheel']) { el.addEventListener(ev, stop); $('setBtn').addEventListener(ev, stop); }
   r.addEventListener('input', () => { horse.state.setFov(r.value); syncFov(); });
-  $('fovReset').onclick = () => { horse.state.setFov(70); syncFov(); }; $('setClose').onclick = () => openSettings(false); $('setBtn').onclick = () => openSettings($('hrSettings').hidden); syncFov(); }
+  $('fovReset').onclick = () => { horse.state.setFov(70); syncFov(); }; $('chaosBtn').onclick = () => { const Zs = horse.state.zombies; if (!Zs || !Zs.setChaos || (horse.state.netRole && horse.state.netRole() === 'client')) return; Zs.setChaos(!Zs.wantChaos); syncChaos(); }; $('setClose').onclick = () => openSettings(false); $('setBtn').onclick = () => openSettings($('hrSettings').hidden); syncFov(); }
 // ---------------- Start: the link opens straight into Horse Rider (joins an open room with a free slot, else hosts one) ----------------
 function start() { G.phase = 'ride'; document.body.classList.add('ingame', 'horse-mode'); $('hud').style.display = ''; horse.init(); }
 hnet.prime(); start(); hnet.auto(Q.get('room') || undefined);

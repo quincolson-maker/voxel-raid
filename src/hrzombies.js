@@ -13,7 +13,7 @@ export const ZKINDS = {
   runner: { hp: 70, spd: 4.3, dmg: 9, cd: .9, s: .97, reach: 1.2 },
   brute: { hp: 320, spd: 1.15, dmg: 28, cd: 1.6, s: 1.28, reach: 1.5 },
 };
-export const ZSET = { travel: 6, near: 90, capDesktop: 42, capPhone: 18, startDelay: 10, waveSecs: 75, playerHp: 100, horseHp: 160, regenDelay: 5, regen: 7, respawn: 4,
+export const ZSET = { travel: 6, near: 90, capDesktop: 42, capPhone: 18, chaosDesktop: 420, chaosPhone: 180, chaosRows: 120, chaosRowR: 260, startDelay: 10, waveSecs: 75, playerHp: 100, horseHp: 160, regenDelay: 5, regen: 7, respawn: 4,
   dmg: { revolver: 50, rifle: 70, sniper: 260, tommy: 34, gold: 650 }, head: 2.4, penMargin: 1.1 };
 const KIND_LIST = ['walker', 'runner', 'brute'];
 
@@ -21,7 +21,19 @@ export function createHrZombies(c) {
   const { scene, H, P, hAt, PEN, EDGE, sfx, fx, mobile } = c, WALK = c.WALK || EDGE;
   const Q = new URLSearchParams(location.search);
   const Z = { on: Q.get('zombies') !== '0', list: [], byId: new Map(), val: new Map(), gotK: new Set(), gotQ: [], shotSeq: 0, wave: 1, waveT: 0, spawnT: ZSET.startDelay, nextId: 1, kills: 0, heads: 0, cap: mobile ? ZSET.capPhone : ZSET.capDesktop,
-    hp: ZSET.playerHp, hurtT: -99, dead: 0, deaths: 0, flash: 0, t: 0, snapT: 0, role: c.role || (() => 'solo') };
+    hp: ZSET.playerHp, hurtT: -99, dead: 0, deaths: 0, flash: 0, t: 0, snapT: 0, role: c.role || (() => 'solo'), chaos: false, groanTok: 4 };
+  // v37 CHAOS MODE: ten times the dead (420 on a desktop host, 180 on a phone host). The host's switch decides for everyone in
+  // co-op (it rides in the snapshot); a client's own switch only matters once it hosts or plays solo.
+  const capOf = on => on ? (mobile ? ZSET.chaosPhone : ZSET.chaosDesktop) : (mobile ? ZSET.capPhone : ZSET.capDesktop);
+  Z.wantChaos = Q.get('chaos') === '1' || (Q.get('chaos') !== '0' && (() => { try { return localStorage.getItem('hr_chaos') === '1'; } catch (_) { return false; } })());
+  function setChaos(on, save = true) { Z.wantChaos = !!on; if (save) try { localStorage.setItem('hr_chaos', on ? '1' : '0'); } catch (_) {} if (Z.role() !== 'client') applyChaos(Z.wantChaos); return Z.wantChaos; }
+  function applyChaos(on) { on = !!on; if (on === Z.chaos && Z.cap === capOf(on)) return; const was = Z.chaos; Z.chaos = on; Z.cap = capOf(on);
+    if (Z.role() !== 'client') { if (on && !was) { Z.spawnT = Math.min(Z.spawnT, .5); c.msg && c.msg('☠ CHAOS MODE — ' + Z.cap + ' of the dead are coming', 3); }
+      if (!on && was) { // back to normal: the far extras crumble away (nearby ones keep coming, so nothing pops in front of you)
+        const ps = players(), far = o => { let d = 1e9; for (const p of ps) d = Math.min(d, Math.hypot(p.x - o.pos.x, p.z - o.pos.z)); return d; };
+        const alive = Z.list.filter(o => o.alive).map(o => [far(o), o]).sort((a, b) => b[0] - a[0]); let extra = alive.length - Z.cap;
+        for (const [d, o] of alive) { if (extra <= 0) break; if (d > 60) { despawn(o); extra--; } } c.msg && c.msg('Chaos mode off', 2); } } }
+  Z.cap = capOf(false);
   const pool = { walker: [], runner: [], brute: [] }, tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3();
   const rnd = Math.random;
   // pen rectangle the dead may never enter (fence + gate gap + a little margin)
@@ -159,7 +171,7 @@ float zn(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(mix(z
     damage(o, dmg, head, p, dir, 'me'); return { dmg, head, killed: !o.alive }; }
 
   // ---- per-frame ----
-  const raised = [[.14, .08, 1], [.1, .06, 1]];
+  const raised = [[.14, .08, 1], [.1, .06, 1]], FR = new THREE.Frustum(), PSM = new THREE.Matrix4(), SPH = new THREE.Sphere();
   function pose(o, dt, v, close = true) { const B = o.B; if (B.stand) { o.g.rotation.x = o.alive ? .12 : 0; return; }
     if (!o.alive) { B.update(dt, 0); return; } const run = o.kind === 'runner';
     B.update(dt * (run ? 1 : .75), run ? Math.max(v, 2.5) : Math.min(v, 1.4)); const root = B.m, Bn = root.userData.B; if (!Bn || !c.aimBone || !close) return; // bone posing (hunch, reach) only up close: cheap on phones
@@ -216,26 +228,41 @@ float zn(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(mix(z
     if (host) { // waves: a steady trickle that thickens; capped (phones lower)
       if ((Z.waveT += dt) > ZSET.waveSecs) { Z.waveT = 0; Z.wave++; c.msg && c.msg(`Wave ${Z.wave} — more of the dead are coming down from the mountains`, 3); }
       let live = 0; for (const o of Z.list) if (o.alive) live++; Z.live = live; if (Z.wasRole === 'client') Z.spawnT = Math.min(Z.spawnT, 1); // just became the host: keep the horde coming
-      Z.spawnT -= dt; if (Z.spawnT <= 0 && live < Z.cap) { Z.spawnT = live < Z.cap * .5 ? .4 : Math.min(1.2, Math.max(.75, (7 - Z.wave * .7) / 3) * (rnd() * .5 + .75)); spawn(pickKind()); } }
+      Z.spawnT -= dt; if (Z.spawnT <= 0 && live < Z.cap) { Z.spawnT = Z.chaos ? (live < Z.cap * .5 ? .05 : .18) : live < Z.cap * .5 ? .4 : Math.min(1.2, Math.max(.75, (7 - Z.wave * .7) / 3) * (rnd() * .5 + .75)); spawn(pickKind()); } }
     Z.wasRole = Z.role();
-    const cam = c.camera.position;
+    const cam = c.camera.position; c.camera.updateMatrixWorld(); PSM.multiplyMatrices(c.camera.projectionMatrix, c.camera.matrixWorldInverse); FR.setFromProjectionMatrix(PSM);
+    const range = Z.chaos ? (mobile ? 140 : 220) : (mobile ? 220 : 320), shadowD = Z.chaos ? 28 : 50, poseNear = Z.chaos ? 50 : 90, eyeD = Z.chaos ? 110 : 1e9; Z.groanTok = Math.min(4, Z.groanTok + dt * 2.5); let drawn = 0;
     Z.frame = (Z.frame || 0) + 1; for (let li = Z.list.length - 1; li >= 0; li--) { const o = Z.list[li]; if (!o) continue; o.anim += dt; o.flinch = Math.max(0, o.flinch - dt * 2.5);
       if (!o.alive) { o.deadT += dt; const k = Math.min(1, o.deadT / .7); o.g.rotation.x = -k * 1.45 * (o.kind === 'brute' ? .95 : 1) ; o.g.rotation.z = k * .2 * o.fallDir; if (o.deadT > 4) o.pos.y -= dt * .6; if (o.deadT > 6.5) { despawn(o); continue; } pose(o, dt, 0); continue; }
       if (host) stepHost(o, dt); else if (o.net) { const n = o.net, k = Math.min(1, dt * 8); o.pos.x += (n.x - o.pos.x) * k; o.pos.z += (n.z - o.pos.z) * k; o.yaw += Math.atan2(Math.sin(n.yaw - o.yaw), Math.cos(n.yaw - o.yaw)) * k; o.st = n.st; o.sp = n.sp; }
       if (host && (!Number.isFinite(o.pos.x) || !Number.isFinite(o.pos.z) || !Number.isFinite(o.pos.y) || Math.abs(o.pos.x) > WALK + 1 || Math.abs(o.pos.z) > WALK + 1 || o.pos.y < hAt(o.pos.x, o.pos.z) - 1)) { if (!relocate(o, 'bad')) { o.pos.set(PEN.x + 30, hAt(PEN.x + 30, PEN.z + 30), PEN.z + 30); } } // NaN / under the map / outside the world
       o.pos.y = hAt(o.pos.x, o.pos.z); o.g.rotation.set(-o.flinch * .25, o.yaw, 0);
-      const dc = Math.hypot(cam.x - o.pos.x, cam.z - o.pos.z); o.g.visible = dc < (mobile ? 220 : 320);
+      const dc = Math.hypot(cam.x - o.pos.x, cam.z - o.pos.z); SPH.center.set(o.pos.x, o.pos.y + .9 * o.K.s, o.pos.z); SPH.radius = 1.3 * o.K.s;
+      o.g.visible = dc < range && (dc < 6 || FR.intersectsSphere(SPH)); if (o.g.visible) drawn++; // v37: off-screen bodies are skipped (they were all drawn: skinned clones never cull)
+      const cast = dc < shadowD; if (o.cast !== cast) { o.cast = cast; o.g.traverse(m => { if (m.isMesh) m.castShadow = cast; }); } // v37: only nearby dead cast shadows (all of them did, every frame)
+      if (o.B.zAt && o.eyeOn !== dc < eyeD) { o.eyeOn = dc < eyeD; for (const m of o.B.zAt) if (m.material === ZM.eye) m.visible = o.eyeOn; }
       if (o.B.zAt && (o.zNear !== dc < 60)) { o.zNear = dc < 60; for (const m of o.B.zAt) if (m.material !== ZM.eye) m.visible = o.zNear; } // eyes glow at any range; the rest only up close
-      if (o.g.visible && (dc < 90 || (Z.frame + o.id) % 3 === 0)) { Z.posedN = (Z.posedN || 0) + 1; PF.s('z.pose'); pose(o, dc < 90 ? dt : dt * 3, o.sp, dc < (mobile ? 30 : 55)); PF.e('z.pose'); }
-      if ((o.groanT -= dt) <= 0) { o.groanT = 4 + rnd() * 7; if (dc < 45 && sfx.groan && sfx.ctx) sfx.at ? zAt(o.pos, () => sfx.groan(), .3) : sfx.groan(); } }
-    PF.s('z.sep'); if (host) separate(); PF.e('z.sep');
-    if (Z.role() === 'host' && (Z.snapT -= dt) <= 0) { Z.snapT = .12; c.send && c.send(snap()); }
+      const pk = dc < poseNear ? 1 : Z.chaos && dc > 120 ? 6 : 3; if (o.g.visible && (pk === 1 || (Z.frame + o.id) % pk === 0)) { Z.posedN = (Z.posedN || 0) + 1; PF.s('z.pose'); pose(o, dt * pk, o.sp, dc < (mobile ? 30 : Z.chaos ? 35 : 55)); PF.e('z.pose'); }
+      if ((o.groanT -= dt) <= 0) { o.groanT = 4 + rnd() * 7; if (dc < 45 && Z.groanTok >= 1 && (Z.groanTok -= 1) >= 0 && sfx.groan && sfx.ctx) sfx.at ? zAt(o.pos, () => sfx.groan(), .3) : sfx.groan(); } }
+    Z.drawn = drawn; PF.s('z.sep'); if (host) separate(); PF.e('z.sep');
+    if (host && Z.chaos !== Z.wantChaos) applyChaos(Z.wantChaos); // e.g. just became the host
+    if (Z.role() === 'host' && (Z.snapT -= dt) <= 0) { Z.snapT = .12; PF.s('z.snap'); sendSnaps(); PF.e('z.snap'); }
     hud(); }
 
   // ---- multiplayer: host snapshots, client mirror ----
-  function snap() { return { t: 'zs', w: Z.wave, z: Z.list.map(o => [o.id, KIND_LIST.indexOf(o.kind), +o.pos.x.toFixed(1), +o.pos.z.toFixed(1), +o.yaw.toFixed(2), o.alive ? o.st : 2, Math.max(0, Math.round(o.hp)), +o.sp.toFixed(1)]) }; }
-  function apply(m) { if (!m || !Array.isArray(m.z)) return; Z.wave = m.w | 0 || Z.wave; const seen = new Set(), now = performance.now(); Z.snapAt = now;
-    for (const r of m.z.slice(0, 64)) { if (!Array.isArray(r) || r.length < 8) continue; const [id, ki, x, z, yaw, st, hp, sp] = r; // v36: malformed / non-finite / out-of-world rows are skipped cheaply
+  const row = o => [o.id, KIND_LIST.indexOf(o.kind), +o.pos.x.toFixed(1), +o.pos.z.toFixed(1), +o.yaw.toFixed(2), o.alive ? o.st : 2, Math.max(0, Math.round(o.hp)), +o.sp.toFixed(1)];
+  // v37: small hordes go to everyone in one message (as before); a chaos horde goes per client: the nearest rows to that rider
+  // (within chaosRowR m, at most chaosRows), so a client gets ~4 KB per snapshot instead of everything
+  function sendSnaps() { const R = c.remotes ? c.remotes() : []; if (Z.list.length <= ZSET.chaosRows || !c.sendTo || !R.length) { c.send && c.send(snap()); return; }
+    const L = Z.list, n = L.length, d2 = SD.length < n ? (SD = new Float64Array(n * 2)) : SD;
+    for (const r of R) { if (!r || !r.id) continue; const s0 = r.s, ok = s0 && Number.isFinite(s0.x) && Number.isFinite(s0.z), x = ok ? s0.x : P.pos.x, z = ok ? s0.z : P.pos.z; IX.length = 0;
+      for (let i = 0; i < n; i++) { const o = L[i], d = (o.pos.x - x) ** 2 + (o.pos.z - z) ** 2; if (d < ZSET.chaosRowR ** 2) { d2[i] = d; IX.push(i); } }
+      IX.sort((a, b) => d2[a] - d2[b]); if (IX.length > ZSET.chaosRows) IX.length = ZSET.chaosRows;
+      c.sendTo(r.id, { t: 'zs', w: Z.wave, c: Z.chaos ? 1 : 0, n: Z.live || 0, z: IX.map(i => row(L[i])) }); } }
+  let SD = new Float64Array(0); const IX = [];
+  function snap() { return { t: 'zs', w: Z.wave, c: Z.chaos ? 1 : 0, n: Z.live || 0, z: Z.list.map(o => [o.id, KIND_LIST.indexOf(o.kind), +o.pos.x.toFixed(1), +o.pos.z.toFixed(1), +o.yaw.toFixed(2), o.alive ? o.st : 2, Math.max(0, Math.round(o.hp)), +o.sp.toFixed(1)]) }; }
+  function apply(m) { if (!m || !Array.isArray(m.z)) return; Z.wave = m.w | 0 || Z.wave; if (Z.role() === 'client') { Z.chaos = m.c === 1; Z.hostLive = Number.isFinite(m.n) ? m.n : null; } const seen = new Set(), now = performance.now(); Z.snapAt = now;
+    for (const r of m.z.slice(0, 160)) { // v37: up to 160 rows (the host sends at most 120 per client) if (!Array.isArray(r) || r.length < 8) continue; const [id, ki, x, z, yaw, st, hp, sp] = r; // v36: malformed / non-finite / out-of-world rows are skipped cheaply
       if (!Number.isFinite(id) || !Number.isFinite(x) || !Number.isFinite(z) || !Number.isFinite(yaw) || !Number.isFinite(hp) || !Number.isFinite(sp) || Math.abs(x) > WALK + 5 || Math.abs(z) > WALK + 5 || !(st === 0 || st === 1 || st === 2)) { Z.badRows = (Z.badRows || 0) + 1; continue; } seen.add(id);
       let o = Z.byId.get(id); if (!o) { if (st === 2) continue; o = spawn(KIND_LIST[ki] || 'walker', [x, z], id); o.yaw = yaw; }
       if (!o.alive && st !== 2 && o.predT && now - o.predT > 900) revive(o, hp); // v36: my shot looked like a kill but the host says it is still up
@@ -267,8 +294,8 @@ float zn(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(mix(z
     if (el.style.display !== dsp) el.style.display = dsp; if (fl.style.display !== fds) fl.style.display = fds; if (fl.__op !== op) { fl.__op = op; fl.style.opacity = op; }
     if (dsp) return;
     const hh = h ? Math.round(100 * (h.hp ?? ZSET.horseHp) / ZSET.horseHp) : null;
-    const html = `<b class="hp"><i style="width:${Math.round(Z.hp)}%"></i></b>${hh != null ? `<b class="hp horse"><i style="width:${hh}%"></i></b>` : ''}<span>☠ WAVE ${Z.wave} · ${live} near · ${Z.kills} down${Z.heads ? ` (${Z.heads} ◉)` : ''}</span>${Z.dead > 0 ? '<em>OVERRUN</em>' : inTown(P.pos.x, P.pos.z) ? '<em class="safe">🛡 SAFE ZONE · TOWN</em>' : inPenSafe(P.pos.x, P.pos.z) && !h ? '<em class="safe">SAFE IN THE PEN</em>' : ''}`; if (html !== el.__h) { el.__h = html; el.innerHTML = html; } }
+    const html = `<b class="hp"><i style="width:${Math.round(Z.hp)}%"></i></b>${hh != null ? `<b class="hp horse"><i style="width:${hh}%"></i></b>` : ''}<span>${Z.chaos ? '<b class="chaos">CHAOS</b> ' : ''}☠ WAVE ${Z.wave} · ${live} near · ${Z.kills} down${Z.heads ? ` (${Z.heads} ◉)` : ''}</span>${Z.dead > 0 ? '<em>OVERRUN</em>' : inTown(P.pos.x, P.pos.z) ? '<em class="safe">🛡 SAFE ZONE · TOWN</em>' : inPenSafe(P.pos.x, P.pos.z) && !h ? '<em class="safe">SAFE IN THE PEN</em>' : ''}`; if (html !== el.__h) { el.__h = html; el.innerHTML = html; } }
   const netState = () => ({ dd: Z.dead > 0 ? 1 : 0 });
-  return { state: Z, list: Z.list, settings: ZSET, kinds: ZKINDS, tick, spawn, damage, onHit, rayHit, assistPoints, headPos, snap, apply, remoteHit, remoteHurt, confirmKill, hurtMe, netState, inPenRect, inPenSafe, inSafeZone, inTown, despawn,
+  return { setChaos, get chaos() { return Z.chaos; }, get wantChaos() { return Z.wantChaos; }, state: Z, list: Z.list, settings: ZSET, kinds: ZKINDS, tick, spawn, damage, onHit, rayHit, assistPoints, headPos, snap, apply, remoteHit, remoteHurt, confirmKill, hurtMe, netState, inPenRect, inPenSafe, inSafeZone, inTown, despawn,
     clear() { for (const o of [...Z.list]) despawn(o); } };
 }
