@@ -9,6 +9,7 @@ const base = process.argv[2] || 'http://localhost:8767';
   await p.waitForFunction(() => window.__horse && __horse.state.horses.length >= 4 && __horse.state.town2, { timeout: 600000 });
   const R = await p.evaluate(() => { const H = __horse.state, T = H.town2, k = __coop.keys, inp = __coop.input, o = {}; H.zombies.clear(); H.zombies.state.spawnT = 1e9;
     const put = () => { const x = 30, z = 60; __P.pos.set(x, __horse.hAt(x, z), z); H.fv.set(0, 0); __P.yaw = 0; };
+    H.noTrip = true; // trips are tested in horse-drunk
     const stopTime = (drunk, press, release) => { put(); T.drunk = drunk; for (let i = 0; i < 40; i++) { press(); __sim(.05); } const v0 = H.fv.length(); release(); let t = 0; while (H.fv.length() > .15 && t < 6) { __sim(.05); t += .05; } let moved = 0; const p0 = __P.pos.clone(); for (let i = 0; i < 20; i++) __sim(.05); moved = __P.pos.distanceTo(p0); return { v0: +v0.toFixed(2), t: +t.toFixed(2), drift1s: +moved.toFixed(2) }; };
     o.soberKeys = stopTime(0, () => { k.KeyW = true; }, () => { k.KeyW = false; });
     o.drunkKeys = stopTime(6, () => { k.KeyW = true; k.ShiftLeft = true; }, () => { k.KeyW = false; k.ShiftLeft = false; }); H.fallT = 0;

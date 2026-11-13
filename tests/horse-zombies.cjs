@@ -1,5 +1,5 @@
 // Run: node tests/horse-zombies.cjs [base URL]. HORSE RIDER zombies (desktop + phone): the dead spawn at the foot of the
-// mountains (map edge) and walk in towards the player, capped (6 on phones); all three guns kill them with real input
+// mountains (map edge; v34: 40-90 m from the players on valid ground) and walk in towards the player, capped (6 on phones); all three guns kill them with real input
 // (six-shooter headshot, lever-rifle body shots, Buffalo rifle through the scope), they hurt a player caught outside,
 // and the horse pen is a safe zone: a crowd around it (gate included) never gets inside, the fence is never changed and
 // the player / horse inside take no damage. Saves shot-horserider-zombies-*.png.
@@ -29,12 +29,12 @@ const ignorable = t => /pointer ?lock|requestPointerLock|fullscreen|favicon|WebG
       const at = Z.list.map(o => o.from), edge = Math.min(...at.map(([x, z]) => Math.max(Math.abs(x), Math.abs(z))));
       const d0 = Z.list.map(o => Math.hypot(o.pos.x - __P.pos.x, o.pos.z - __P.pos.z)); __sim(12); const d1 = Z.list.map(o => Math.hypot(o.pos.x - __P.pos.x, o.pos.z - __P.pos.z));
       S.spawnT = 0; for (let i = 0; i < 200; i++) { S.spawnT = 0; __sim(.25); }
-      return { n: at.length, at, minEdge: +edge.toFixed(1), closer: d1.slice(0, d0.length).every((d, i) => d < d0[i] - 20), d0: d0.map(Math.round), d1: d1.map(Math.round), cap: S.cap, alive: Z.list.filter(o => o.alive).length, kinds: [...new Set(Z.list.map(o => o.kind))] }; });
-    assert.ok(R.spawn.n >= 4 && R.spawn.minEdge > 330, 'zombies spawn at the map edge (foot of the mountains)');
+      return { n: at.length, at, minEdge: +edge.toFixed(1), closer: d1.slice(0, d0.length).every((d, i) => d < d0[i] - 10), d0: d0.map(Math.round), d1: d1.map(Math.round), cap: S.cap, alive: Z.list.filter(o => o.alive).length, kinds: [...new Set(Z.list.map(o => o.kind))] }; });
+    assert.ok(R.spawn.n >= 4 && Math.min(...R.spawn.d0) >= 34 && Math.max(...R.spawn.d0) <= 400, 'zombies spawn out of sight around the players (v34: 40-90 m on valid ground, or the map edge)');
     assert.ok(R.spawn.closer, 'they come in towards the player');
     assert.equal(R.spawn.cap, mobile ? 18 : 42); /* v33: 3x zombies */ assert.ok(R.spawn.alive <= R.spawn.cap, 'capped');
     // --- the pen: indestructible safe zone ---
-    R.pen = await G(() => { const Z = __horse.state.zombies, S = Z.state, H = __horse.state, PEN = __horse.PEN; Z.clear(); S.spawnT = 1e9; S.hp = 100; S.dead = 0; S.hurtT = -99;
+    R.pen = await G(() => { const Z = __horse.state.zombies, S = Z.state, H = __horse.state, PEN = __horse.PEN; Z.clear(); S.spawnT = 1e9; S.hp = 100; S.dead = 0; S.deaths = 0; S.hurtT = -99;
       const fence = JSON.stringify(H.fence), inside = H.horses.find(o => Math.abs(o.pos.x - PEN.x) < PEN.hw - 1 && Math.abs(o.pos.z - PEN.z) < PEN.hd - 1);
       if (inside) inside.hp = 160; __P.pos.set(PEN.x + 2, __horse.hAt(PEN.x + 2, PEN.z + 1), PEN.z + 1);
       const starts = [[0, PEN.hd + 8], [-2, PEN.hd + 12], [2, PEN.hd + 16], [PEN.hw + 8, 0], [-PEN.hw - 8, 3], [0, -PEN.hd - 10], [PEN.hw + 6, PEN.hd + 6], [-PEN.hw - 6, -PEN.hd - 6], [1, PEN.hd + 22], [-PEN.hw - 15, PEN.hd + 2]];

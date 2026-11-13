@@ -12,7 +12,11 @@ const puppeteer = require('puppeteer-core'); const base = process.argv[2] || 'ht
     await ev(() => { const H = __horse.state; sessionStorage.clear(); localStorage.removeItem('hr_v33'); localStorage.removeItem('hr_v33_town'); H.zombies.clear(); H.zombies.state.spawnT = 1e9; H.guns.state.score = 12000; H.guns.state.kills = 37; H.env && (H.env.t = .45); });
     const look = (lx, lz, ly, tx, ty, tz) => ev((lx, lz, ly, tx, ty, tz) => { const H = __horse.state, T = H.town2, t = T.towers.find(t => t.kind === 'armory'); const [x, z] = T.toW(t, lx, lz), [wx, wz] = T.toW(t, tx, tz);
       H.fv.set(0, 0); const y = ly == null ? __horse.hAt(x, z) : T.floorAt(x, z, t.y0 + ly + .3); __P.pos.set(x, y, z); __P.yaw = Math.atan2(-(wx - x), -(wz - z)); __P.pitch = Math.atan2(t.y0 + ty - y - 1.6, Math.hypot(wx - x, wz - z)); for (let i = 0; i < 4; i++) __sim(.05); }, lx, lz, ly, tx, ty, tz);
-    const A = 4.6; await look(-24, 16, null, 0, 8, 0); await shot('tower-outside');
+    const A = 4.6; const vp = await ev(() => { const T = __horse.state.town2, t = T.towers.find(t => t.kind === 'armory'), [tx, tz] = T.toW(t, 0, 0), ty = t.y0 + 9; let best = null;
+      for (const R of [24, 30, 20]) for (let i = 0; i < 24; i++) { const a = i / 24 * Math.PI * 2, lx = Math.cos(a) * R, lz = Math.sin(a) * R, [x, z] = T.toW(t, lx, lz), y = __horse.hAt(x, z) + 3; let clear = 0;
+        for (let k = 1; k < 30; k++) { const f = k / 30, px = x + (tx - x) * f, pz = z + (tz - z) * f, py = y + (ty - y) * f; clear = Math.min(clear, py - __horse.hAt(px, pz)); }
+        const sc = clear - Math.abs(y - 3 - t.y0) * .02; if (!best || sc > best.sc) best = { lx, lz, sc }; } return best; });
+    console.log('vantage', JSON.stringify(vp)); await look(vp.lx, vp.lz, null, 0, 9, 0); await shot('tower-outside');
     await look(-5.6, A, null, 3, 3.2, A); await shot('tower-stairs');
     await look(-.2, 1.7, 16, .2, 16.9, -2.4); await shot('tower-cab');
     await p.close();
