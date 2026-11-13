@@ -294,7 +294,7 @@ function jacketMats() { if (JK) return JK; const back = (() => { const c = docum
     x.fillStyle = '#ffffff'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.font = '900 104px Impact,"Arial Black",sans-serif'; x.fillText('HORSE', 256, 196); x.fillText('RIDER', 256, 318); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; })();
   const nylon = new THREE.MeshPhysicalMaterial({ color: 0x0f1012, roughness: .42, clearcoat: .35, clearcoatRoughness: .5, sheen: .3, sheenColor: new THREE.Color(0x30343a) });
   JK = { nylon, back: new THREE.MeshPhysicalMaterial({ map: back, roughness: .42, clearcoat: .35, clearcoatRoughness: .5 }), zip: new THREE.MeshStandardMaterial({ color: 0x8a8d90, metalness: .9, roughness: .3 }) }; return JK; }
-export function wearJacket(root, on) { const B = root && root.userData && root.userData.B; if (!B) return false;
+export function wearJacket(root, on) { const B = root && root.userData && root.userData.B; if (!B) return false; if (root.userData.skin) on = false; // v36: Frontier characters wear their own coats
   if (root.userData.jacket) { for (const m of root.userData.jacket) m.visible = !!on; return true; } if (!on) return true;
   const J = jacketMats(), parts = []; root.updateMatrixWorld(true); const P = n => B[n] && B[n].getWorldPosition(new THREE.Vector3());
   const hips = P('Hips'), neck = P('neck') || P('Neck'), la = P('LeftArm'), ra = P('RightArm'), lf = P('LeftForeArm'), rf = P('RightForeArm'), lh = P('LeftHand'), rh = P('RightHand'); if (!hips || !neck || !la || !ra) return false;

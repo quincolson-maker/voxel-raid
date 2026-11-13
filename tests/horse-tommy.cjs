@@ -34,7 +34,7 @@ const base = process.argv[2] || 'http://localhost:8767';
   assert.equal(R.weapon, 'tommy'); assert.ok(R.shots >= 3, 'fires'); assert.equal(R.ammoUsed, R.shots, 'one round per shot');
   assert.ok(R.brassLive >= Math.min(R.shots, 3), 'brass ejected'); assert.equal(R.brassAfter, 0, 'brass expires');
   if (R.sfxHooked) assert.equal(R.synthCalls, 0, 'old Tommy synth report silenced');
-  assert.equal(R.buy, true); assert.equal(R.spent, 900); assert.ok(R.suppressed && R.supVisible && R.muzzleZ < -.8);
+  assert.equal(R.buy, true); assert.equal(R.spent, 900); assert.ok(R.suppressed && R.supVisible && R.muzzleZ < -.7);
   assert.deepEqual(R.saved.tsup, { owned: true, equipped: true }); assert.equal(R.net, 1); assert.ok(R.spSent, 'shot carries sp'); assert.equal(R.spSent0, false);
   assert.equal(R.buyAgain, false); assert.equal(R.spentAgain, 900); assert.ok(R.toggle && !R.afterToggle.s && !R.afterToggle.net && R.afterToggle.saved.equipped === false);
   assert.ok(R2.owned.owned && R2.owned.equipped && R2.suppressed && R2.item.owned, 'saved across reload');

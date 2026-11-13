@@ -6,6 +6,7 @@
 // weighty acceleration, stamina, camera-relative steering, free look, lean into turns, obstacle avoidance, hoof dust.
 // On foot the same rigged person is shown in third person (idle / walk / run blend; C toggles first person). If the models fail to load (or ?prochorse=1) the older procedural horse/rider are used.
 import * as THREE from 'three';
+import { skinRider, validCv, CHARACTERS } from './hrskin.js';
 import { createTommySuppressorItem } from './hrtommy-store.js';
 import { GLTFLoader } from '../addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from '../addons/utils/BufferGeometryUtils.js';
@@ -561,9 +562,18 @@ export function createHorseRider(ctx) {
     me.seat.set(0, .45, .04).sub(hp); me.W = W; m.userData.kind = 'real'; rider = m;
     if (was) attachRider(was); else toFoot();
     const sp = saddleParts(PBRS); for (let i = 0; i < 2; i++) { const r = new THREE.Mesh(sp.rein, sp.dark); r.visible = false; r.castShadow = false; scene.add(r); reins.push(r); }
-    H.models = 'real'; H.assets = A; for (const av of avatars) av.rebuild(); if (town2 && town2.jacket && town2.wear) wearJacket(rider, true); if (town2 && guns) town2.dressGuns(guns.models); if (town2) town2.dressNPC && town2.dressNPC(() => makeWalker(A.riderSrc, A.clips));
+    H.models = 'real'; H.assets = A; applySkin(); for (const av of avatars) av.rebuild(); if (town2 && town2.jacket && town2.wear) wearJacket(rider, true); if (town2 && guns) town2.dressGuns(guns.models); if (town2) town2.dressNPC && town2.dressNPC(() => makeWalker(A.riderSrc, A.clips));
   }
   const real = () => rider.userData.kind === 'real';
+  // v36 character picker: 0 = classic rider (fallback), 1..4 = Frontier variants skinned onto the same rig (src/hrskin.js)
+  let meSkin = null; const skins = new Set(), shown = o => { for (; o; o = o.parent) if (!o.visible) return false; return true; };
+  H.characters = CHARACTERS; try { H.cv = validCv(localStorage.getItem('hr_char')); } catch (_) { H.cv = 0; } if (new URLSearchParams(location.search).has('char')) H.cv = validCv(new URLSearchParams(location.search).get('char'));
+  function applySkin() { if (meSkin) { skins.delete(meSkin); meSkin.dispose(); meSkin = null; } if (!real()) return;
+    try { meSkin = skinRider(rider, H.cv, { quality: mobile ? 'low' : 'high', hideHead: () => H.fp }); } catch (e) { console.warn('character', e); meSkin = null; }
+    if (meSkin) skins.add(meSkin); if (town2 && town2.jacket) wearJacket(rider, !!town2.wear); }
+  H.setCharacter = cv => { cv = validCv(cv); H.cv = cv; try { localStorage.setItem('hr_char', String(cv)); } catch (_) {} applySkin(); H.netMeta && H.netMeta(); return cv; };
+  H.remoteCvs = new Map(); H.remoteCv = (id, cv) => { if (cv) H.remoteCvs.set(id, cv); else H.remoteCvs.delete(id); };
+  H.skinSync = () => { for (const k of skins) if (shown(k.D.g)) k.sync(); }; // after every pose write (walker clips, riderPose, gun IK), before render
   function toFoot() { if (!real()) return; me.body.add(rider); rider.position.set(0, 0, 0); rider.rotation.set(0, Math.PI, 0); rider.visible = true; me.body.visible = !H.fp; }
   function attachRider(h) { rider.visible = true;
     if (h.g.userData.kind === 'real' && real()) { me.W.stop(); h.g.userData.bones[1].add(rider); rider.position.copy(me.seat); rider.rotation.set(0, 0, 0); me.body.visible = false; }
@@ -944,12 +954,13 @@ export function createHorseRider(ctx) {
       let dy = s.yw - av.g.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); av.g.rotation.y += dy * k;
       av.v += ((s.sp || 0) - av.v) * Math.min(1, dt * 6); if (av.W) av.W.update(dt, av.v); };
     av.dispose = () => { if (av.horse) release(av.horse); if (av.sitter && av.sitter.parent) av.sitter.parent.remove(av.sitter); scene.remove(av.g); avatars.delete(av); };
-    const up0 = av.update, dp0 = av.dispose; av.update = (dt, s) => { up0(dt, s); if (guns) guns.poseRemote(av, s, av.horse ? av.sitter : av.walker, !!av.horse); const jk = !!(s && s.jk); if (av.jk !== jk || av.jkRoot !== av.walker) { if (wearJacket(av.walker, jk) | (av.sitter && wearJacket(av.sitter, jk))) { av.jk = jk; av.jkRoot = av.walker; } } }; av.dispose = () => { if (guns) guns.disposeRemote(av); dp0(); };
+    const up0 = av.update, dp0 = av.dispose; av.skins = []; const reskin = () => { for (const k of av.skins) { skins.delete(k); k.dispose(); } av.skins = []; av.cv = H.remoteCvs.get(av.id) || 0; av.skRoot = av.walker; if (!av.cv) return; for (const r of [av.walker, av.sitter]) { try { const k = r && skinRider(r, av.cv, { quality: 'low' }); if (k) { av.skins.push(k); skins.add(k); } } catch (e) { console.warn('character', e); } } if (av.jk) { wearJacket(av.walker, false); av.sitter && wearJacket(av.sitter, false); } };
+    av.update = (dt, s) => { if ((H.remoteCvs.get(av.id) || 0) !== (av.cv || 0) || av.skRoot !== av.walker) reskin(); up0(dt, s); if (guns) guns.poseRemote(av, s, av.horse ? av.sitter : av.walker, !!av.horse); const jk = !!(s && s.jk); if (av.jk !== jk || av.jkRoot !== av.walker) { if (wearJacket(av.walker, jk) | (av.sitter && wearJacket(av.sitter, jk))) { av.jk = jk; av.jkRoot = av.walker; } } }; av.dispose = () => { if (guns) guns.disposeRemote(av); for (const k of av.skins) { skins.delete(k); k.dispose(); } av.skins = []; dp0(); };
     av.rebuild(); avatars.add(av); return av;
   }
   const touchLabel = () => H.mounted ? 'GET OFF' : H.saloon && H.seated ? 'STAND UP' : H.saloon && H.saloon.dance ? 'STOP<small>SHOW</small>' : H.saloon && H.saloon.isOpen() ? 'CLOSE' : H.spot ? town2.touchLabel(H.spot) : H.near ? 'RIDE' : '';
   const stats = () => { const i = GX.renderer.info; i.autoReset = false; i.reset(); GX.renderer.render(scene, camera); i.autoReset = true; return { calls: i.render.calls, triangles: i.render.triangles, geometries: i.memory.geometries, textures: i.memory.textures }; };
   const syncAll = dt => { syncCamera(dt); envTick(dt); };
   const gunNet = () => Object.assign(guns ? guns.netState() : { g: 0 }, { jk: town2 && town2.jacket && town2.wear ? 1 : 0 }), remoteShot = (id, m) => guns && guns.remoteShot(id, m);
-  return { state: H, init, tick, syncCamera: syncAll, hud, gunNet, remoteShot, get guns() { return guns; }, use, dismount, touchLabel, hAt, PEN, nearestHorse, stats, herd, applyHerd, avatar };
+  return { preRender: () => H.skinSync && H.skinSync(), state: H, init, tick, syncCamera: syncAll, hud, gunNet, remoteShot, get guns() { return guns; }, use, dismount, touchLabel, hAt, PEN, nearestHorse, stats, herd, applyHerd, avatar };
 }

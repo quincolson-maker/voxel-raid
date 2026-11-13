@@ -78,7 +78,8 @@ $('keys').textContent = KEYS; $('keys').onclick = () => { $('keys').hidden = tru
 if (!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen)) $('mFs').style.display = 'none';
 // ---------------- v36 settings: field of view (desktop ⚙ / O, phones ⋯ > Settings) ----------------
 function openSettings(on) { const el = $('hrSettings'); el.hidden = !on; const H = horse.state; H.uiOpen = on ? true : !!(H.town2 && H.town2.ui) || !!(H.saloon && H.saloon.isOpen() && !H.seated); if (on) { if (document.pointerLockElement) document.exitPointerLock(); syncFov(); } }
-function syncFov() { const v = horse.state.fovH; $('fovRange').value = v; $('fovVal').textContent = v + '°'; }
+function syncFov() { const v = horse.state.fovH; $('fovRange').value = v; $('fovVal').textContent = v + '°'; syncChar(); }
+function syncChar() { const H = horse.state, row = $('charRow'); if (!row || !H.characters) return; if (row.children.length !== H.characters.length) { row.innerHTML = ''; H.characters.forEach((n, i) => { const b = document.createElement('button'); b.textContent = i ? n.split(' ')[0] : 'Classic'; b.title = n; b.dataset.cv = i; b.onclick = () => { H.setCharacter(i); syncChar(); }; row.appendChild(b); }); } for (const b of row.children) b.classList.toggle('on', +b.dataset.cv === (H.cv | 0)); } // v36 character picker (saved; sent to the lobby)
 { const el = $('hrSettings'), r = $('fovRange'), stop = e => e.stopPropagation(); document.body.appendChild(el); document.body.appendChild($('setBtn')); // own stacking context: above the touch look layer
   for (const ev of ['pointerdown', 'mousedown', 'touchstart', 'click', 'wheel']) { el.addEventListener(ev, stop); $('setBtn').addEventListener(ev, stop); }
   r.addEventListener('input', () => { horse.state.setFov(r.value); syncFov(); });
@@ -110,6 +111,7 @@ function loop(t) { requestAnimationFrame(loop); window.__frames = (window.__fram
   if (G.phase != 'menu') { syncCamera(dt); sfx.listen(camera); hud(dt); }
   const lp = GX.lens(); if (lp) lp.uniforms.uT.value = (t % 1000);
   const gmat = scene.userData.grassMat; if (gmat && gmat.userData.sh) gmat.userData.sh.uniforms.uT.value = performance.now() / 1000;
+  if (horse.preRender) horse.preRender(); // v36: character skins follow the final rider pose
   if (!NORENDER) { fx.update(dt); GX.followSun(P.pos); GX.render(); }
   } catch (e) { if (!window.__loopErr) { window.__loopErr = e; console.error('frame error', e); } if (/render|WebGL|shader/i.test(String(e && e.stack)) && GX.composer) { GX.composer = null; } }
   fAcc += rdt; fN++; if (fAcc > 2) { const fps = fN / fAcc; $('fps').textContent = Math.round(fps) + ' fps · ' + QNAME;

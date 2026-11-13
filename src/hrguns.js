@@ -260,7 +260,8 @@ export function createGuns(c) {
   const { scene, camera, P, H, hAt, sfx, fx, mobile, input, keys } = c;
   const state = { weapon: null, last: 'revolver', aiming: false, ammo: { revolver: S.revolverRounds, rifle: S.rifleRounds, sniper: S.sniperRounds, tommy: S.tommyRounds, gold: S.goldRounds }, owned: { revolver: true, rifle: true, sniper: true, tommy: false, gold: false }, up: { revolver: 0, rifle: 0, sniper: 0, tommy: 0, gold: 0 }, gz: S.goldFovMax, spent: 0, kills: 0, cocked: true, chambered: true, reloading: false, cycling: false, shots: 0, hits: 0, score: 0, lastHit: null, blocked: false, draw: 0, aimK: 0, scopeK: 0, breath: 1, winded: false, steady: false, scoped: false, scopeT: 0 };
   const clock = { cooldown: 0, reload: 0, lever: 0, cock: 0, flash: 0, recoil: 0, rec: 0, sway: 0, idle: 0, draw: 0 };
-  const models = { revolver: buildRevolver(), rifle: buildRifle(), sniper: buildSharps(), tommy: buildTommyReplica({ quality: mobile ? 'low' : 'high' }), gold: buildGold() }; for (const m of Object.values(models)) { m.group.visible = false; scene.add(m.group); } // v33 regression fix: the held guns must be in the scene
+  // v36: the Tommy replica is sized to our old Tommy (0.91 m; muzzle / stock / grip where the hands, FPV and holster expect them)
+  const models = { revolver: buildRevolver(), rifle: buildRifle(), sniper: buildSharps(), tommy: buildTommyReplica({ quality: mobile ? 'low' : 'high', fit: { s: .785, dz: -.1 } }), gold: buildGold() }; for (const m of Object.values(models)) { m.group.visible = false; scene.add(m.group); } // v33 regression fix: the held guns must be in the scene
 
   // v36 Tommy (ChatGPT 'Frontier' pack, adapted): pooled brass, suppressor (store item, 900 pts, saved), original synthesized WAVs
   // decoded once into the game's own AudioContext and played through its bus (positional for other riders; replaces the old

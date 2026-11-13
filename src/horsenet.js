@@ -6,6 +6,7 @@
 // Synced: each rider's position / facing / walking speed, which horse they ride and its pose; the host is the authority
 // for the free herd (clients mirror it). Guns: other riders see your drawn gun, aim and shots (tracer, flash, smoke, sound) — visual only, no combat.
 import { createNet, MAX_PLAYERS } from './coop.js';
+import { validCv } from './hrskin.js';
 import { createVoice } from './voice.js';
 import { createAdvert, LOBBY_URL } from './lobby.js';
 const $ = id => document.getElementById(id);
@@ -18,7 +19,7 @@ const ICONS = { live: SPK + '<path fill="none" stroke="currentColor" stroke-widt
   off: SPK + '<path stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M15 9l6 6M21 9l-6 6"/></svg>' };
 export function createHorseNet({ horse, P, msg }) {
   const H = horse.state;
-  const S = { role: 'solo', me: 'P1', code: null, peers: new Map(), remotes: new Map(), busy: false, netT: 0, herdT: 0, fwd: new Map(), pbT: 0, vT: 0, mergeT: 8, last: null, footSp: 0, status: '' };
+  const S = { role: 'solo', me: 'P1', code: null, peers: new Map(), remotes: new Map(), busy: false, netT: 0, herdT: 0, fwd: new Map(), cv: new Map(), pbT: 0, vT: 0, mergeT: 8, last: null, footSp: 0, status: '' };
   // multiplayer needs the lobby directory (or the test loopback); plain localhost dev stays solo unless ?lobby= is given
   const enabled = () => !QS.has('solo') && (!!LOBBY_URL || LOOP || !LOCAL);
   const isHost = () => S.role === 'host', isClient = () => S.role === 'client';
@@ -29,11 +30,12 @@ export function createHorseNet({ horse, P, msg }) {
   H.netRole = () => S.role; H.callsign = () => callsign(); H.colors = COLORS; H.netRemotes = () => [...S.remotes.values()];
   H.zSend = m => { if (!net.open || S.role === 'solo') return; net.send(m); }; // host: zombie snapshot to everyone; client: its hits to the host
   H.zSendTo = (id, m) => { if (!isHost() || !net.open) return; const p = peerOf(id); if (p) net.send(m, p); };
+  H.netMeta = () => { if (!net.open || S.role === 'solo') return; net.send(isHost() ? { t: 'meta', id: S.me, cv: validCv(H.cv) } : { t: 'meta', cv: validCv(H.cv) }); }; // v36 join metadata: chosen character (0 classic, 1..4 Frontier)
   H.netShot = m => { if (!net.open || S.role === 'solo') return; net.send(isHost() ? { ...m, id: 'P1' } : m); };
   const netRx = (m, from) => {
     if (m.t === 'full') { if (hiWait) hiWait(null); return; }
     if (m.t === 'vs') { routeVoice(m, from); return; }
-    if (m.t === 'hi') { if (!hiWait) return; /* v36: only while joining */ S.role = 'client'; S.me = H.me = m.me; if (m.herd) horse.applyHerd(m.herd); for (const id of m.ids || []) addRemote(id); hiWait(true); return; }
+    if (m.t === 'hi') { if (!hiWait) return; /* v36: only while joining */ S.role = 'client'; S.me = H.me = m.me; if (m.herd) horse.applyHerd(m.herd); for (const id of m.ids || []) addRemote(id); hiWait(true); net.send({ t: 'meta', cv: validCv(H.cv) }); return; }
     onMsg(m, from);
   };
   const net = createNet(netRx, onStatus);
@@ -56,7 +58,7 @@ export function createHorseNet({ horse, P, msg }) {
   function onStatus(s, peer) {
     if (s === 'open' && isHost()) {
       const used = new Set(S.peers.values()); const id = IDS.find(x => !used.has(x)); if (!id) return; S.peers.set(peer, id);
-      net.send({ t: 'hi', me: id, herd: horse.herd(), ids: ['P1', ...S.remotes.keys()] }, peer); net.send({ t: 'join', id }, null, peer); addRemote(id); advertise(); msg(id + ' rode into the lobby', 2.5);
+      net.send({ t: 'hi', me: id, herd: horse.herd(), ids: ['P1', ...S.remotes.keys()] }, peer); net.send({ t: 'join', id }, null, peer); net.send({ t: 'meta', id: S.me, cv: validCv(H.cv) }, peer); for (const [i, cv] of S.cv) net.send({ t: 'meta', id: i, cv }, peer); addRemote(id); advertise(); msg(id + ' rode into the lobby', 2.5);
     }
     if (s === 'closed') {
       if (isHost()) { const id = S.peers.get(peer); if (!id) return; S.peers.delete(peer); removeRemote(id); net.send({ t: 'left', id }); advertise(); msg(id + ' left', 2); }
@@ -65,11 +67,11 @@ export function createHorseNet({ horse, P, msg }) {
   }
   function addRemote(id) { if (!id || id === S.me) return null; if (S.remotes.has(id)) return S.remotes.get(id);
     const R = { id, av: horse.avatar(id, COLORS[id] || '#fff'), s: null }; S.remotes.set(id, R); if (S.remotes.size + 1 <= VOICE_MESH) voice.peer(id); return R; }
-  function removeRemote(id) { voice.drop(id); const R = S.remotes.get(id); if (!R) return; R.av.dispose(); S.remotes.delete(id); }
+  function removeRemote(id) { voice.drop(id); S.cv.delete(id); H.remoteCv && H.remoteCv(id, 0); const R = S.remotes.get(id); if (!R) return; R.av.dispose(); S.remotes.delete(id); }
   function reset() { S.gen++; for (const t of S.timers) clearTimeout(t); S.timers.clear(); if (hiWait) hiWait(null); // settle a pending join
     for (const id of [...S.remotes.keys()]) removeRemote(id); S.peers.clear(); voice.stop(); advert.stop(); net.reset();
     S.role = 'solo'; S.code = null; S.me = H.me = 'P1'; H.follow = false; for (const o of H.horses) o.net = null;
-    S.fwd.clear(); S.last = null; S.footSp = 0; S.netT = 0; S.herdT = 0; S.pbT = 0; S.vT = 0; S.mergeT = 8; S.hbT = 0; } // v36: nothing of the old session survives
+    S.fwd.clear(); S.cv.clear(); S.last = null; S.footSp = 0; S.netT = 0; S.herdT = 0; S.pbT = 0; S.vT = 0; S.mergeT = 8; S.hbT = 0; } // v36: nothing of the old session survives
   function hostLeft() { reset(); msg('Host left — finding another Horse Rider lobby…', 3); later(() => auto(), 1200); }
   function onMsg(m, from) {
     switch (m.t) {
@@ -88,6 +90,7 @@ export function createHorseNet({ horse, P, msg }) {
       case 'cks': if (isClient() && H.town2) H.town2.ck.netState(m); break;
       case 'zd': if (isClient() && H.zombies) H.zombies.remoteHurt(m); break; // a zombie hit me (host decides)
       case 'join': if (isClient()) addRemote(m.id); break;
+      case 'meta': { const id = isHost() ? S.peers.get(from) : m.id; if (!id || id === S.me) break; const cv = validCv(m.cv); S.cv.set(id, cv); H.remoteCv && H.remoteCv(id, cv); if (isHost()) net.send({ t: 'meta', id, cv }, null, from); break; } // host: id from the authenticated peer
       case 'left': if (isClient()) removeRemote(m.id); break;
     }
   }
