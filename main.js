@@ -35,9 +35,9 @@ function look(dx, dy, src) { const ls = P.lookScale || 1; dx *= ls; dy *= ls; P.
 renderer.domElement.addEventListener('mousedown', () => { gesture(); if (!IS_TOUCH && !locked()) renderer.domElement.requestPointerLock(); });
 addEventListener('contextmenu', e => e.preventDefault());
 const input = { mx: 0, mz: 0, fire: false, jump: false, ads: false };
-const act = { build: () => horse.use(), ads() { input.ads = !input.ads; }, help() { const k = $('keys'); k.hidden = !k.hidden; },
+const act = { settings: () => openSettings(true), build: () => horse.use(), ads() { input.ads = !input.ads; }, help() { const k = $('keys'); k.hidden = !k.hidden; },
   fs() { if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document); else goFullscreen(); } };
-function onKey(c) { if (G.phase == 'menu') return; if (c == 'KeyE') horse.use(); if (c == 'KeyH') act.help(); if (c == 'KeyV') hnet.voice.toggle(); }
+function onKey(c) { if (G.phase == 'menu') return; if (c == 'KeyO') openSettings($('hrSettings').hidden); if (c == 'KeyE') horse.use(); if (c == 'KeyH') act.help(); if (c == 'KeyV') hnet.voice.toggle(); }
 // first tap / click / key: unlock audio, re-ask for the mic if it was refused without a gesture, phones go fullscreen
 let gestured = false; function gesture() { sfx.init(); if (gestured) return; gestured = true; hnet.prime(); if (IS_TOUCH) goFullscreen(); }
 addEventListener('pointerdown', gesture, true); addEventListener('keydown', gesture, true);
@@ -76,6 +76,13 @@ const KEYS = IS_TOUCH ? 'CONTROLS\nLeft side: move / steer · right side: look\n
   : 'CONTROLS\nWASD walk / ride · mouse look · E mount / dismount · Shift faster (hold: gallop) · C slower\nF draw / cycle guns · LMB fire · RMB aim · wheel zoom · V mute voice · H this help · Esc release mouse';
 $('keys').textContent = KEYS; $('keys').onclick = () => { $('keys').hidden = true; };
 if (!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen)) $('mFs').style.display = 'none';
+// ---------------- v36 settings: field of view (desktop ⚙ / O, phones ⋯ > Settings) ----------------
+function openSettings(on) { const el = $('hrSettings'); el.hidden = !on; const H = horse.state; H.uiOpen = on ? true : !!(H.town2 && H.town2.ui) || !!(H.saloon && H.saloon.isOpen() && !H.seated); if (on) { if (document.pointerLockElement) document.exitPointerLock(); syncFov(); } }
+function syncFov() { const v = horse.state.fovH; $('fovRange').value = v; $('fovVal').textContent = v + '°'; }
+{ const el = $('hrSettings'), r = $('fovRange'), stop = e => e.stopPropagation(); document.body.appendChild(el); document.body.appendChild($('setBtn')); // own stacking context: above the touch look layer
+  for (const ev of ['pointerdown', 'mousedown', 'touchstart', 'click', 'wheel']) { el.addEventListener(ev, stop); $('setBtn').addEventListener(ev, stop); }
+  r.addEventListener('input', () => { horse.state.setFov(r.value); syncFov(); });
+  $('fovReset').onclick = () => { horse.state.setFov(70); syncFov(); }; $('setClose').onclick = () => openSettings(false); $('setBtn').onclick = () => openSettings($('hrSettings').hidden); syncFov(); }
 // ---------------- Start: the link opens straight into Horse Rider (joins an open room with a free slot, else hosts one) ----------------
 function start() { G.phase = 'ride'; document.body.classList.add('ingame', 'horse-mode'); $('hud').style.display = ''; horse.init(); }
 hnet.prime(); start(); hnet.auto(Q.get('room') || undefined);

@@ -833,19 +833,25 @@ export function createHorseRider(ctx) {
       { const k = Math.min(1.9, Math.pow(dk / 6, 1.3)); if (H.drunkPass) { H.drunkPass.enabled = k > .03; H.drunkPass.uniforms.uK.value = k; H.drunkPass.uniforms.uT.value = H.t; } else { const f = k > .03 ? `blur(${(Math.min(1, k) * 2.2).toFixed(1)}px)` : ''; if (GX.renderer.domElement.style.filter !== f) GX.renderer.domElement.style.filter = f; } }
       if (town2 && town2.hic > 0) camera.position.y += Math.sin(town2.hic * 25) * .04; if (H.fallT > 0 && !h) { const D = H.fallD || 2.2, e = Math.min(1, (D - H.fallT) * 4) * Math.min(1, H.fallT * 1.6); camera.position.y -= 1.25 * e; camera.rotateZ((H.fallYaw || 1) * .75 * e); camera.rotateX(-.25 * e); } }
   }
+  // v36 field of view setting (Settings menu): horizontal degrees 55-100 (default 70), saved; turned into the vertical FOV for the
+  // current screen shape. Every view (on foot 68, riding 70, first person 75 at the old setting), the sprint / gallop kick, the aim
+  // pull-in and the scopes scale by the same factor, so their feel relative to the chosen FOV is unchanged.
+  H.fovH = Math.max(55, Math.min(100, +localStorage.getItem('hr_fov_h') || 70));
+  H.setFov = v => { H.fovH = Math.max(55, Math.min(100, Math.round(+v) || 70)); try { localStorage.setItem('hr_fov_h', H.fovH); } catch (_) {} };
+  H.fovK = () => { const a = camera.aspect || 16 / 9, v = 2 * Math.atan(Math.tan(H.fovH * Math.PI / 360) / a) * 180 / Math.PI; return Math.max(30, Math.min(80, v)) / 68; };
   function camRig(dt) {
-    const h = H.mounted;
-    if (!h && (H.fp || !real())) { if (camera.fov !== 75) { camera.fov = 75; camera.updateProjectionMatrix(); } camera.position.set(P.pos.x, P.pos.y + (H.seated ? 1.12 : 1.62) + (H.ground && !H.seated ? Math.abs(Math.cos(P.bob)) * .04 : 0), P.pos.z); camera.rotation.set(P.pitch, P.yaw, 0, 'YXZ'); H.camInit = false; drunkCam(h); return; }
+    const h = H.mounted, FK = H.fovK();
+    if (!h && (H.fp || !real())) { const ff = 75 * FK; if (Math.abs(camera.fov - ff) > .01) { camera.fov = ff; camera.updateProjectionMatrix(); } camera.position.set(P.pos.x, P.pos.y + (H.seated ? 1.12 : 1.62) + (H.ground && !H.seated ? Math.abs(Math.cos(P.bob)) * .04 : 0), P.pos.z); camera.rotation.set(P.pitch, P.yaw, 0, 'YXZ'); H.camInit = false; drunkCam(h); return; }
     let fov, k;
     const ak = H.aimK || 0;
     if (!h) { const pitch = Math.max(-.85, Math.min(.6, P.pitch)), dist = 2.75 * Math.min(1.3, H.zoom) * (1 - .45 * ak), rx = Math.cos(P.yaw), rz = -Math.sin(P.yaw), v = H.fv.length();
       look.set(P.pos.x + rx * (.5 + .1 * ak), P.pos.y + 1.58 + .04 * ak, P.pos.z + rz * (.5 + .1 * ak));
       want.set(look.x + Math.sin(P.yaw) * Math.cos(pitch) * dist, look.y - Math.sin(pitch) * dist + .12, look.z + Math.cos(P.yaw) * Math.cos(pitch) * dist);
-      fov = 68 + sstep(4.8, 7.2, v) * 5 - 16 * ak; k = 14; }
+      fov = (68 + sstep(4.8, 7.2, v) * 5 - 16 * ak) * FK; k = 14; }
     else { const sp = Math.abs(H.speed), pitch = Math.max(-.7, Math.min(.35, P.pitch)), dist = (4.2 + sstep(3, 18, sp) * .6) * H.zoom * (1 - .4 * ak), ph = h.g.userData.phase || 0;
       look.set(h.pos.x + Math.cos(P.yaw) * .6 * ak, h.pos.y + 2.05 + .25 * ak + Math.sin(ph * TAU) * .03 * sstep(10, 16, sp), h.pos.z - Math.sin(P.yaw) * .6 * ak);
       want.set(look.x + Math.sin(P.yaw) * Math.cos(pitch) * dist, look.y - Math.sin(pitch) * dist + .3, look.z + Math.cos(P.yaw) * Math.cos(pitch) * dist);
-      fov = 70 + sstep(8, 18, sp) * 5 - 14 * ak; k = 9; }
+      fov = (70 + sstep(8, 18, sp) * 5 - 14 * ak) * FK; k = 9; }
     const mode = h ? 'ride' : 'foot'; if (H.camInit && lastMode && mode !== lastMode) lookOff.add(lastLook).sub(look); lastMode = mode; lookOff.multiplyScalar(1 - Math.min(1, (dt || 1) * 3.5));
     look.add(lookOff); want.add(lookOff); lastLook.copy(look).sub(lookOff);
     camClear(look, want); want.y = Math.max(want.y, hAt(want.x, want.z) + .5);

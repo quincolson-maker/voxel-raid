@@ -517,7 +517,7 @@ export function createGuns(c) {
     if (!sm.eyeOn) { sm.eye.copy(eyeO); sm.eyeOn = true; } else sm.eye.lerp(eyeO, ease(dt, S.scopeEyeTau)); eye.copy(eyeB).add(sm.eye);
     eye.addScaledVector(fwdS, .32).add(v3.set(Math.cos(P.yaw), 0, -Math.sin(P.yaw)).multiplyScalar(.03)); // the right eye at the eyepiece, a little in front of the face
     const [sx, sy] = scopeSway(dt); eS.set(Math.max(-1.553, Math.min(1.553, P.pitch + sy)), P.yaw + sx, 0); qS.setFromEuler(eS);
-    camera.position.lerp(eye, k); camera.quaternion.slerp(qS, k); H.fovSave = camera.fov; const sf = state.weapon === 'gold' ? state.gz : mobile ? S.scopeFovMobile : S.scopeFov; camera.fov += (sf - camera.fov) * k; camera.updateProjectionMatrix(); camera.updateMatrixWorld();
+    camera.position.lerp(eye, k); camera.quaternion.slerp(qS, k); H.fovSave = camera.fov; const sf = (state.weapon === 'gold' ? state.gz : mobile ? S.scopeFovMobile : S.scopeFov) * (H.fovK ? H.fovK() : 1); camera.fov += (sf - camera.fov) * k; camera.updateProjectionMatrix(); camera.updateMatrixWorld(); // v36: scopes scale with the FOV setting
     P.lookScale = 1 - (1 - (state.weapon === 'gold' ? Math.max(.004, state.gz / 60) * (mobile ? S.scopeLookMobile : 1) : mobile ? S.scopeFovMobile / 60 * S.scopeLookMobile : S.scopeFov / 60)) * k; }
   // Golden Buffalo zoom: wheel / pinch / +- buttons, 8 deg down to ~0.2 deg (about 36x more than the buffalo scope): a rider across the map fills the reticle
   function zoom(dir, f = 1.35) { if (state.weapon !== 'gold') return false; state.gz = Math.max(S.goldFovMin, Math.min(S.goldFovMax, state.gz * (dir > 0 ? 1 / f : f))); return true; } // slower look in the scope (in step with the zoom)
