@@ -58,6 +58,10 @@ const at = (p, u, v) => p.evaluate((u, v) => { const H = __horse.state, S = H.ca
       r.tipNear = await go('cave-dance'); p0 = G.pts(); H.town2.use(); r.tip = p0 - G.pts(); r.drinkNear = await go('drink');
       r.ladNear = await go('cave-climb'); H.town2.use(); await new Promise(r => setTimeout(r, 1500)); r.ledge = +(__P.pos.y - H.cave.site.y0).toFixed(2); r.downNear = H.town2.nearSpot() && H.town2.nearSpot().kind; return r; });
     assert.equal(R.fun.slotNear, 'cave-slot'); assert.equal(R.fun.slotPulls, 1); assert.equal(R.fun.tipNear, 'cave-dance'); assert.equal(R.fun.tip, 50); assert.equal(R.fun.drinkNear, 'drink'); assert.equal(R.fun.ladNear, 'cave-climb'); assert.ok(Math.abs(R.fun.ledge - 3.6) < .1, 'ledge ' + R.fun.ledge); assert.equal(R.fun.downNear, 'cave-down');
+    // v38.1: the falls are heard up close and go quiet far away (only if the page has an audio context)
+    R.water = await d.evaluate(async () => { const H = __horse.state, C = H.cave, sx = window.__sfx, sl = ms => new Promise(r => setTimeout(r, ms)); if (sx && !sx.ctx && sx.init) try { sx.init(); } catch (_) {} if (!sx || !sx.ctx) return { ctx: false };
+      const e = C.site; __P.pos.set(e.x, H.hAt(e.x, e.z) + .1, e.z); if (H.mounted) H.mounted = null; await sl(1500); const nearG = C.water(); __P.pos.set(e.x + 200, H.hAt(e.x + 200, e.z), e.z); await sl(1500); return { ctx: true, near: nearG, far: C.water() }; });
+    if (R.water.ctx) { assert.ok(R.water.near > .02, 'falls audible ' + JSON.stringify(R.water)); assert.equal(R.water.far, 0); }
     await d.close();
     // ---- B: co-op ----
     const Q = '/?dev=1&loopnet=1&q=low&norender=1&prochorse=1&lobby=' + encodeURIComponent(base);
