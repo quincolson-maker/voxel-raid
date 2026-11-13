@@ -1,0 +1,15 @@
+{
+ "label": "after",
+ "calls": 892,
+ "tris": 2124058,
+ "cpuMed": 11,
+ "frameMed": 1533.3,
+ "zombies": {
+  "total": 420,
+  "alive": 420,
+  "visible": 80,
+  "dressed": 0,
+  "posedPerFrame": 25,
+  "snapAgeMs": null
+ }
+}
