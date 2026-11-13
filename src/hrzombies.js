@@ -5,6 +5,7 @@
 // they travel fast across open country and slow to their kind's pace near players, steer around trees / rocks, and
 // the HORSE PEN is a safe zone: it is indestructible (nothing here ever damages the fence or gate) and no zombie may
 // stand inside it, the gate gap included; they walk around it and crowd at the rails. Guns kill them (headshots x2.4).
+import { PF } from './perf.js';
 import * as THREE from 'three';
 
 export const ZKINDS = {
@@ -214,15 +215,15 @@ float zn(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(mix(z
       o.pos.y = hAt(o.pos.x, o.pos.z); o.g.rotation.set(-o.flinch * .25, o.yaw, 0);
       const dc = Math.hypot(cam.x - o.pos.x, cam.z - o.pos.z); o.g.visible = dc < (mobile ? 220 : 320);
       if (o.B.zAt && (o.zNear !== dc < 60)) { o.zNear = dc < 60; for (const m of o.B.zAt) if (m.material !== ZM.eye) m.visible = o.zNear; } // eyes glow at any range; the rest only up close
-      if (o.g.visible && (dc < 90 || ((Z.t * 10 + o.id) | 0) % 3 === 0)) pose(o, dc < 90 ? dt : dt * 3, o.sp, dc < (mobile ? 30 : 55));
+      if (o.g.visible && (dc < 90 || ((Z.t * 10 + o.id) | 0) % 3 === 0)) { Z.posedN = (Z.posedN || 0) + 1; PF.s('z.pose'); pose(o, dc < 90 ? dt : dt * 3, o.sp, dc < (mobile ? 30 : 55)); PF.e('z.pose'); }
       if ((o.groanT -= dt) <= 0) { o.groanT = 4 + rnd() * 7; if (dc < 45 && sfx.groan && sfx.ctx) sfx.at ? zAt(o.pos, () => sfx.groan(), .3) : sfx.groan(); } }
-    if (host) separate();
+    PF.s('z.sep'); if (host) separate(); PF.e('z.sep');
     if (Z.role() === 'host' && (Z.snapT -= dt) <= 0) { Z.snapT = .12; c.send && c.send(snap()); }
     hud(); }
 
   // ---- multiplayer: host snapshots, client mirror ----
   function snap() { return { t: 'zs', w: Z.wave, z: Z.list.map(o => [o.id, KIND_LIST.indexOf(o.kind), +o.pos.x.toFixed(1), +o.pos.z.toFixed(1), +o.yaw.toFixed(2), o.alive ? o.st : 2, Math.max(0, Math.round(o.hp)), +o.sp.toFixed(1)]) }; }
-  function apply(m) { if (!m || !Array.isArray(m.z)) return; Z.wave = m.w | 0 || Z.wave; const seen = new Set(), now = performance.now();
+  function apply(m) { if (!m || !Array.isArray(m.z)) return; Z.wave = m.w | 0 || Z.wave; const seen = new Set(), now = performance.now(); Z.snapAt = now;
     for (const r of m.z.slice(0, 64)) { if (!Array.isArray(r) || r.length < 8) continue; const [id, ki, x, z, yaw, st, hp, sp] = r; // v36: malformed / non-finite / out-of-world rows are skipped cheaply
       if (!Number.isFinite(id) || !Number.isFinite(x) || !Number.isFinite(z) || !Number.isFinite(yaw) || !Number.isFinite(hp) || !Number.isFinite(sp) || Math.abs(x) > WALK + 5 || Math.abs(z) > WALK + 5 || !(st === 0 || st === 1 || st === 2)) { Z.badRows = (Z.badRows || 0) + 1; continue; } seen.add(id);
       let o = Z.byId.get(id); if (!o) { if (st === 2) continue; o = spawn(KIND_LIST[ki] || 'walker', [x, z], id); o.yaw = yaw; }

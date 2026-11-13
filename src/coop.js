@@ -1,3 +1,4 @@
+import { PF } from './perf.js';
 // Co-op transport (up to 25 players): PeerJS (vendored, MIT) WebRTC data channels in a host-authoritative star.
 // The free public PeerJS broker is used for signaling only; gameplay traffic is peer-to-peer. No game server.
 const ALPH = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -28,7 +29,7 @@ export function createNet(onMsg, onStatus) {
   function wire(c) {
     const id = c.peer; c.ok = false; c.lastRx = now(); N.conns.set(id, c);
     c.on('open', () => { if (N.conns.get(id) !== c) return; c.ok = true; c.lastRx = now(); refresh(); onStatus('open', id); }); // v36: an old session's connection never talks into a newer one
-    c.on('data', d => { if (N.conns.get(id) !== c) return; c.lastRx = now(); if (d && d.t !== 'hb') onMsg(d, id); });
+    c.on('data', d => { if (N.conns.get(id) !== c) return; c.lastRx = now(); if (PF.on) PF.inc(d, id); if (d && d.t !== 'hb') onMsg(d, id); });
     const closed = () => { if (N.conns.get(id) === c) { N.conns.delete(id); refresh(); onStatus('closed', id); } };
     c.on('close', closed); c.on('error', closed);
   }
@@ -61,7 +62,7 @@ export function createNet(onMsg, onStatus) {
   // v36: drop every connection and the peer, forget the role / code (a new session starts clean)
   N.reset = () => { const p = N.peer; N.peer = null; try { if (p && !p.destroyed) p.destroy(); } catch (_) {} const old = [...N.conns.values()]; N.conns.clear(); for (const c of old) { try { c.close(); } catch (_) {} } N.open = false; N.role = 'solo'; N.code = null; };
   // send(msg) broadcasts (host) / goes to host (client); send(msg, peerId) targets one; except skips one peer.
-  N.send = (m, to, except) => { for (const [id, c] of N.conns) { if (!c.ok || (to && id !== to) || id === except) continue; try { c.send(m); } catch (_) {} } };
-  setInterval(() => { for (const [id, c] of N.conns) { if (!c.ok) continue; try { c.send({ t: 'hb' }); } catch (_) {} if (now() - c.lastRx > 9000) { try { c.close(); } catch (_) {} if (N.conns.get(id) === c) { N.conns.delete(id); refresh(); onStatus('closed', id); } } } }, 1500);
+  N.send = (m, to, except) => { for (const [id, c] of N.conns) { if (!c.ok || (to && id !== to) || id === except) continue; if (PF.on) PF.out(m, id); try { c.send(m); } catch (_) {} } };
+  setInterval(() => { for (const [id, c] of N.conns) { if (!c.ok) continue; if (PF.on) PF.out({ t: 'hb' }, id); try { c.send({ t: 'hb' }); } catch (_) {} if (now() - c.lastRx > 9000) { try { c.close(); } catch (_) {} if (N.conns.get(id) === c) { N.conns.delete(id); refresh(); onStatus('closed', id); } } } }, 1500);
   return N;
 }

@@ -6,6 +6,7 @@ import { initTouch } from './src/touch.js';
 import { createHorseRider } from './src/horse.js';
 import { createHorseNet } from './src/horsenet.js';
 import * as THREE from 'three';
+import { PF, initPerf } from './src/perf.js';
 const $ = id => document.getElementById(id);
 const Q = new URLSearchParams(location.search);
 if (IS_TOUCH) document.body.classList.add('touch');
@@ -45,7 +46,8 @@ if (IS_TOUCH) initTouch(input, look, act, gesture);
 // ---------------- Horse Rider ----------------
 const horse = createHorseRider({ scene, GX, P, keys, input, camera, sfx, fx, msg, PBRS, mobile: IS_TOUCH });
 const hnet = createHorseNet({ horse, P, msg });
-function update(dt) { if (G.phase == 'menu') return; G.t += dt; horse.tick(dt); hnet.tick(dt); if (msgT > 0) { msgT -= dt; if (msgT <= 0) $('msg').textContent = ''; } }
+initPerf({ renderer, GX, H: horse.state, Q, qname: QNAME }); // v36 ?perf=1 measured overlay
+function update(dt) { if (G.phase == 'menu') return; G.t += dt; horse.tick(dt); PF.s('net'); hnet.tick(dt); PF.e('net'); if (msgT > 0) { msgT -= dt; if (msgT <= 0) $('msg').textContent = ''; } }
 // ---------------- HUD ----------------
 let hudT = 0, hurtFlash = 0;
 const CMP = (() => { let h = ''; for (let d = -360; d <= 720; d += 15) { const n = ((d % 360) + 360) % 360; const lab = { 0: 'N', 45: 'NE', 90: 'E', 135: 'SE', 180: 'S', 225: 'SW', 270: 'W', 315: 'NW' }[n]; h += `<span class="${lab ? 'c' : ''}">${lab || n}</span>`; } return h; })();
@@ -93,7 +95,7 @@ window.__t0 = performance.now(); // v34 reopen: the world is playable at once; t
 addEventListener('pageshow', e => { if (e.persisted) location.reload(); });
 let hiddenAt = 0; document.addEventListener('visibilitychange', () => { if (document.hidden) { hiddenAt = performance.now(); return; } last = performance.now(); // no giant dt after a pause
   if (hiddenAt && performance.now() - hiddenAt > 20000 && hnet.state.role !== 'solo' && !(hnet.net && hnet.net.open)) hnet.auto(); });
-// v36: a lost 3D view reloads at most twice a minute (no reload loop); a third time shows the failure screen with retry
+// v36: a lost 3D view reloads once; lost again within a minute shows the failure screen with retry (no reload loop)
 renderer.domElement.addEventListener('webglcontextlost', e => { e.preventDefault(); let L = []; try { L = JSON.parse(sessionStorage.getItem('hr_ctxlost') || '[]').filter(t => Date.now() - t < 60000); } catch (_) {}
   L.push(Date.now()); try { sessionStorage.setItem('hr_ctxlost', JSON.stringify(L)); } catch (_) {} window.__ctxLost = L.length;
   if (L.length >= 2) { window.__bootFail && window.__bootFail('ctx'); return; }
@@ -105,15 +107,16 @@ if (Q.get('dev') === '1') { window.__horse = horse; window.__hnet = hnet; window
 window.__cam = camera; window.__G = G; window.__P = P; window.__Q = QNAME; window.__sfx = sfx;
 // ---------------- Loop with adaptive resolution ----------------
 const NORENDER = Q.has('norender'); const TSCALE = +(Q.get('ts') || 1); let last = performance.now(), fAcc = 0, fN = 0, lowT = 0, hiT = 0, pr = renderer.getPixelRatio(); const PR_MAX = Math.min(devicePixelRatio || 1, /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) ? Math.max(pr, 1.5) : Math.max(pr, 2));
-function loop(t) { requestAnimationFrame(loop); window.__frames = (window.__frames || 0) + 1; if (window.__frames === 2) window.__booted = true; const rdt = Math.max(0, Math.min(.1, (t - last) / 1000)); last = t; const dt = Math.min(.05, rdt);
+function loop(t) { requestAnimationFrame(loop); window.__frames = (window.__frames || 0) + 1; if (window.__frames === 2) window.__booted = true; const rawMs = t - last, rdt = Math.max(0, Math.min(.1, rawMs / 1000)); last = t; const c0 = PF.on ? performance.now() : 0; if (PF.on) PF.frameStart(); const dt = Math.min(.05, rdt);
   try {
   for (let k = 0; k < TSCALE; k++) update(dt);
-  if (G.phase != 'menu') { syncCamera(dt); sfx.listen(camera); hud(dt); }
+  if (G.phase != 'menu') { PF.s('cam'); syncCamera(dt); PF.e('cam'); sfx.listen(camera); PF.s('hud'); hud(dt); PF.e('hud'); }
   const lp = GX.lens(); if (lp) lp.uniforms.uT.value = (t % 1000);
   const gmat = scene.userData.grassMat; if (gmat && gmat.userData.sh) gmat.userData.sh.uniforms.uT.value = performance.now() / 1000;
   if (horse.preRender) horse.preRender(); // v36: character skins follow the final rider pose
-  if (!NORENDER) { fx.update(dt); GX.followSun(P.pos); GX.render(); }
+  if (!NORENDER) { PF.s('fx'); fx.update(dt); PF.e('fx'); GX.followSun(P.pos); PF.s('render'); if (PF.on) PF.gpuBegin(); GX.render(); if (PF.on) PF.gpuEnd(); PF.e('render'); }
   } catch (e) { if (!window.__loopErr) { window.__loopErr = e; console.error('frame error', e); } if (/render|WebGL|shader/i.test(String(e && e.stack)) && GX.composer) { GX.composer = null; } }
+  if (PF.on) PF.frameEnd(rawMs, performance.now() - c0);
   fAcc += rdt; fN++; if (fAcc > 2) { const fps = fN / fAcc; $('fps').textContent = Math.round(fps) + ' fps · ' + QNAME;
     if (fps > 55 && pr < PR_MAX - .01) { if (++hiT >= 3) { hiT = 0; pr = Math.min(PR_MAX, pr + .1); GX.setPR(pr); fx.setScale(); } } else hiT = 0; // v33: adaptive both ways (sharper when there is headroom)
     if (fps < 28) { lowT++; if (lowT >= 2) { lowT = 0; if (GX.aoPass && GX.aoPass.enabled) GX.disableAO(); else if (pr > .55) { pr = Math.max(.5, pr - .15); GX.setPR(pr); fx.setScale(); } } } else lowT = 0;

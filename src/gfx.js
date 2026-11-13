@@ -85,11 +85,11 @@ export function createGraphics(qname) {
   let composer = null, aoPass = null, fxaa = null, lens = null;
   if (Qp.bloom || Qp.ao || Qp.fxaa) {
     const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: Qp.msaa });
-    composer = new EffectComposer(renderer, rt); composer.addPass(new RenderPass(scene, camera));
-    if (Qp.ao) { aoPass = new GTAOPass(scene, camera, innerWidth, innerHeight); aoPass.updateGtaoMaterial({ radius: .6, distanceExponent: 1.5, thickness: 1, scale: 1.1, samples: qname === 'ultra' ? 16 : 10 }); aoPass.blendIntensity = .9; composer.addPass(aoPass); }
-    if (Qp.bloom) composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), .12, .35, .97));
-    composer.addPass(new OutputPass()); lens = new ShaderPass(LensShader); composer.addPass(lens);
-    if (Qp.fxaa) { fxaa = new ShaderPass(FXAAShader); composer.addPass(fxaa); }
+    composer = new EffectComposer(renderer, rt); composer.addPass(Object.assign(new RenderPass(scene, camera), { pfName: 'scene' }));
+    if (Qp.ao) { aoPass = new GTAOPass(scene, camera, innerWidth, innerHeight); aoPass.updateGtaoMaterial({ radius: .6, distanceExponent: 1.5, thickness: 1, scale: 1.1, samples: qname === 'ultra' ? 16 : 10 }); aoPass.blendIntensity = .9; aoPass.pfName = 'gtao'; composer.addPass(aoPass); }
+    if (Qp.bloom) composer.addPass(Object.assign(new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), .12, .35, .97), { pfName: 'bloom' }));
+    composer.addPass(Object.assign(new OutputPass(), { pfName: 'output' })); lens = new ShaderPass(LensShader); lens.pfName = 'lens'; composer.addPass(lens);
+    if (Qp.fxaa) { fxaa = new ShaderPass(FXAAShader); fxaa.pfName = 'fxaa'; composer.addPass(fxaa); }
   }
   const resize = () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight);
     if (composer) { composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(innerWidth, innerHeight); }

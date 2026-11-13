@@ -5,6 +5,7 @@
 // Walk up to a horse, E / RIDE to mount (animated), same action reins in and steps down. RDR-style riding: four gaits with
 // weighty acceleration, stamina, camera-relative steering, free look, lean into turns, obstacle avoidance, hoof dust.
 // On foot the same rigged person is shown in third person (idle / walk / run blend; C toggles first person). If the models fail to load (or ?prochorse=1) the older procedural horse/rider are used.
+import { PF } from './perf.js';
 import * as THREE from 'three';
 import { skinRider, validCv, CHARACTERS } from './hrskin.js';
 import { createTommySuppressorItem } from './hrtommy-store.js';
@@ -803,8 +804,9 @@ export function createHorseRider(ctx) {
       if (held && dk > 1.5) sideIn += Math.sin(H.t * .9) * Math.min(.55, (dk - 1.5) * .09) + Math.sin(H.t * 2.3 + 1) * Math.min(.25, (dk - 1.5) * .04); } else { H.lagF = fwdIn; H.lagS = sideIn; }
     const run = !!keys.ShiftLeft || !!keys.ShiftRight || (stick > .92 && fwdIn > .6);
     const jump = keys.Space || input.jump;
-    if (H.fallT > 0) H.fallT -= dt; if (town2) town2.tick(dt); if (H.saloon) H.saloon.tick(dt); if (H.build) H.build.tick(dt);
+    if (H.fallT > 0) H.fallT -= dt; PF.s('town'); if (town2) town2.tick(dt); PF.e('town'); PF.s('saloon'); if (H.saloon) H.saloon.tick(dt); PF.e('saloon'); PF.s('build'); if (H.build) H.build.tick(dt); PF.e('build'); PF.s('player');
     if (H.dead) { H.fv.x = H.fv.y = 0; } else if (h) ride(h, dt, stick > .05 ? 0 : fwdIn, stick > .05 ? 0 : sideIn, stick, jump); else walk(dt, fwdIn, sideIn, stick, run, jump);
+    PF.e('player'); PF.s('herd');
     for (const o of H.horses) { if (o === h) continue;
       if (H.ridden.has(o) || (H.follow && o.net)) { netHorse(o, dt); if (H.ridden.has(o)) dustEmit(o, dt); continue; } // ridden by another player / herd mirrored from the host
       if (o.tgt) { const dx = o.tgt[0] - o.pos.x, dz = o.tgt[1] - o.pos.z, d = Math.hypot(dx, dz);
@@ -814,12 +816,12 @@ export function createHorseRider(ctx) {
       else { o.speed *= Math.max(0, 1 - dt * 4); o.wait -= dt; if (o.wait <= 0) { if (o.inPen) o.tgt = [PEN.x + (rnd() - .5) * (PEN.hw * 2 - 4), PEN.z + (rnd() - .5) * (PEN.hd * 2 - 4)]; else { const a = rnd() * 6.28; o.tgt = [o.pos.x + Math.cos(a) * 3, o.pos.z + Math.sin(a) * 3]; } o.graze = false; } }
       o.pos.y = hAt(o.pos.x, o.pos.z); o.g.rotation.set(0, o.yaw, 0); anim(o, dt, o.speed, o.graze); }
     for (const o of H.horses) lod(o);
-    dustTick(dt);
-    updateTreeLOD(false);
-    if (H.chunks) H.chunks.update(P.pos.x, P.pos.z); if (H.water) H.water.update(dt);
+    dustTick(dt); PF.e('herd');
+    PF.s('trees'); updateTreeLOD(false); PF.e('trees');
+    PF.s('chunks'); if (H.chunks) H.chunks.update(P.pos.x, P.pos.z); if (H.water) H.water.update(dt); PF.e('chunks');
     if (H.marks && ((H.markT = (H.markT || 0) + dt) > .5)) { H.markT = 0; for (const g of H.marks) g.visible = Math.hypot(g.userData.at[0] - P.pos.x, g.userData.at[1] - P.pos.z) < 220; } // signposts / cairns only drawn nearby
-    if (guns) guns.update(dt);
-    if (zombies) zombies.tick(dt);
+    PF.s('guns'); if (guns) guns.update(dt); PF.e('guns');
+    PF.s('zombies'); if (zombies) zombies.tick(dt); PF.e('zombies');
     H.near = h ? null : nearestHorse(); H.gait = h ? gaitName(H.speed) : ''; const sp2 = !h && town2 ? town2.nearSpot() : null; H.spot = sp2 && town2.label(sp2) ? sp2 : null;
     H.prompt = h ? (H.mountT > 0 ? 'Mounting…' : H.wantOff || H.dismT > 0 ? 'Getting off…' : mobile ? 'Tap GET OFF to dismount' : '[E] Get off the horse') : H.spot ? (mobile ? 'Tap ' + town2.touchText(H.spot) + ' · ' + town2.label(H.spot) : '[E] ' + town2.label(H.spot)) : H.near ? (mobile ? 'Tap RIDE to mount' : '[E] Ride horse') : '';
   }
