@@ -1,0 +1,3 @@
+// Test only. Set THREE_TEST_ROOT to your existing game root (with three.module.js).
+import {pathToFileURL} from 'node:url';import path from 'node:path';
+export async function resolve(specifier,context,next){const root=process.env.THREE_TEST_ROOT;if(root&&specifier==='three')return {url:pathToFileURL(path.join(root,'three.module.js')).href,shortCircuit:true};if(root&&specifier.includes('addons/utils/BufferGeometryUtils.js'))return {url:pathToFileURL(path.join(root,'addons/utils/BufferGeometryUtils.js')).href,shortCircuit:true};if(root&&specifier==='./hrcheckers.js')return {url:pathToFileURL(path.join(root,'src/hrcheckers.js')).href,shortCircuit:true};return next(specifier,context);}

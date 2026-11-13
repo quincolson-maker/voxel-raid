@@ -1,0 +1,1 @@
+{"name":"frontier-saloon-upgrade","private":true,"type":"module","scripts":{"test":"node tests/casino.test.mjs"}}
