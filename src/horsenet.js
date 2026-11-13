@@ -37,7 +37,9 @@ export function createHorseNet({ horse, P, msg }) {
     onMsg(m, from);
   };
   const net = createNet(netRx, onStatus);
-  const voice = createVoice({ me: () => S.me, onChange: voiceUI,
+  // v36: the same link policy for offers we make and offers we get: everyone up to 8 riders, beyond that only riders within reach (and at most 8 links)
+  const admit = id => { const N = 1 + S.remotes.size; if (N <= VOICE_MESH) return true; const R = S.remotes.get(id), me = H.mounted ? H.mounted.pos : P.pos; return !!(R && R.s && Math.hypot(R.s.x - me.x, R.s.z - me.z) < VOICE_FAR); };
+  const voice = createVoice({ me: () => S.me, onChange: voiceUI, admit, max: VOICE_MESH,
     send: m => { if (isHost()) { const p = peerOf(m.to); if (p) net.send({ ...m, f: 'P1' }, p); } else if (isClient()) net.send({ ...m, f: S.me }); } });
   function routeVoice(m, from) {
     if (isHost()) { const fid = S.peers.get(from); if (!fid) return; m.f = fid; if (m.to === 'P1') voice.signal(m); else { const p = peerOf(m.to); if (p) net.send(m, p); } }
@@ -45,7 +47,7 @@ export function createHorseNet({ horse, P, msg }) {
   }
   // same speaker button (placement, states, labels) as zombies co-op
   function voiceUI(V) { const b = $('vMute'); if (!b) return; b.hidden = !V.on; if (!V.on) return;
-    const st = V.state, n = V.connected(); b.className = 'v-' + st; b.innerHTML = (st === 'live' ? ICONS.live : ICONS.off) + '<span>' + (st === 'live' ? 'MIC ON' : st === 'muted' ? 'MUTED' : st === 'starting' ? 'MIC…' : 'NO MIC') + (n ? ' · ' + n : '') + '</span>';
+    const st = V.state, n = V.connected(); b.className = 'v-' + st; b.innerHTML = (st === 'live' ? ICONS.live : ICONS.off) + '<span>' + (V.needTap ? 'TAP FOR VOICE' : st === 'live' ? 'MIC ON' : st === 'muted' ? 'MUTED' : st === 'paused' ? 'MIC PAUSED' : st === 'starting' ? 'MIC…' : 'NO MIC') + (n ? ' · ' + n : '') + '</span>';
     b.title = st === 'live' ? 'Voice on — tap to mute (V)' : st === 'muted' ? 'Muted — tap to talk (V)' : st === 'starting' ? 'Waiting for microphone permission' : (V.err || 'Mic unavailable') + ' — tap to retry. You can still hear the other riders.';
     b.setAttribute('aria-label', b.title); b.setAttribute('aria-pressed', st === 'live' ? 'false' : 'true'); }
   const advert = createAdvert();
@@ -124,8 +126,9 @@ export function createHorseNet({ horse, P, msg }) {
     const N = 1 + S.remotes.size, rate = N <= 4 ? .1 : N <= 8 ? .15 : N <= 16 ? .25 : .33; // v33: send less often as the lobby fills
     if (isHost() && net.open && S.fwd.size && (S.pbT -= dt) <= 0) { S.pbT = rate; net.send({ t: 'pb', a: [...S.fwd.values()] }); S.fwd.clear(); }
     if (S.role !== 'solo' && (S.vT -= dt) <= 0) { S.vT = 2; // voice: full mesh up to 8 riders, beyond that only riders near you (and at most 8 links)
-      for (const R of S.remotes.values()) { if (N <= VOICE_MESH) { voice.peer(R.id); continue; } const d = R.s ? Math.hypot(R.s.x - x, R.s.z - z) : 1e9, has = voice.links && voice.links.has(R.id);
-        if (!has && d < VOICE_NEAR && voice.links.size < VOICE_MESH) voice.peer(R.id); else if (has && d > VOICE_FAR) voice.drop(R.id); } }
+      if (N <= VOICE_MESH) for (const R of S.remotes.values()) voice.peer(R.id);
+      else { const L = [...S.remotes.values()].map(R => [R.id, R.s && Number.isFinite(R.s.x) ? Math.hypot(R.s.x - x, R.s.z - z) : 1e9]).sort((a, b) => a[1] - b[1] || (a[0] < b[0] ? -1 : 1)); // v36: nearest first, deterministic
+        for (const [id, d] of L) if (voice.links.has(id) && d > VOICE_FAR) voice.drop(id); for (const [id, d] of L) if (!voice.links.has(id) && d < VOICE_NEAR && voice.links.size < VOICE_MESH) voice.peer(id); } }
     if (net.open && S.netT <= 0) { S.netT = rate;
       const st = { t: 'p', x: +x.toFixed(2), y: +(h ? h.pos.y : P.pos.y).toFixed(2), z: +z.toFixed(2), yw: +(h ? P.yaw : (H.bodyYaw ?? P.yaw)).toFixed(3), m: h ? h.id : -1, hy: h ? +h.yaw.toFixed(3) : 0, sp: +(h ? H.speed : S.footSp).toFixed(2) };
       if (horse.gunNet) Object.assign(st, horse.gunNet()); if (H.saloon) Object.assign(st, H.saloon.netState()); st.n = callsign().slice(0, 14); if (H.dead) st.dd = 1; if (isHost()) st.id = 'P1'; net.send(st); }
