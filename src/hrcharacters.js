@@ -135,3 +135,17 @@ export function poseFrontierCharacter(D,dt,{speed=0,seated=false,riding=false,ai
  D.t+=Math.max(0,Math.min(.1,dt||0));const p=D.t*(speed>3?9:6),k=Math.min(1,speed/4);D.hips.position.set(0,seated||riding?.55:.93,0);D.spine.rotation.set(Math.sin(D.t*1.7)*.012,0,0);D.head.rotation.y=Math.sin(D.t*.43)*.07;
  for(let i=0;i<2;i++){const sign=i?1:-1,a=D.arms[i],l=D.legs[i];l[0].rotation.set(seated||riding?-1.5:Math.sin(p)*k*.7*sign,0,riding?sign*.35:0);l[1].rotation.set(seated||riding?1.5:Math.max(0,-Math.sin(p)*sign)*k,0,0);a[0].rotation.set(aiming?-1.4:seated||riding?-.7:-Math.sin(p)*k*.5*sign,0,sign*.08);a[1].rotation.x=aiming?-.2:seated||riding?-.6:-.15;}
 }
+
+// v37 perf: a low-detail body (about a third of the triangles) skinned to the SAME skeleton, for NPCs seen from a distance.
+// Built on demand (one per frame from the caller) so it adds nothing to load time. Bones are created identically at every
+// quality, which is checked by name; on any mismatch the NPC simply keeps its detailed body.
+export function addLowLOD(D) {
+ if (!D || D.lod !== undefined || !D.body || !D.o) return D && D.lod; D.lod = null;
+ const L = makeFrontierCharacter({ ...D.o, quality: 'low' }), lb = L.skeleton.bones, hb = D.skeleton.bones;
+ const same = lb.length === hb.length && lb.every((b, i) => b.name === hb[i].name);
+ if (same) { const m = new THREE.SkinnedMesh(L.body.geometry, D.body.material); m.name = 'lod-low'; D.body.parent.add(m); m.bind(D.skeleton, D.body.bindMatrix);
+  m.castShadow = D.body.castShadow; m.receiveShadow = true; m.frustumCulled = D.body.frustumCulled; if (D.body.boundingSphere) m.boundingSphere = D.body.boundingSphere.clone(); m.visible = false; D.lod = m;
+  const dp = D.dispose; D.dispose = () => { m.removeFromParent(); m.geometry.dispose(); dp(); }; }
+ L.skeleton.dispose(); L.body.material.dispose(); if (!same) L.body.geometry.dispose(); if (L.gun) L.gun.traverse(x => { if (x.geometry) x.geometry.dispose(); if (x.material) x.material.dispose(); });
+ return D.lod; }
+

@@ -4,7 +4,7 @@
 // first-person view, 10/50/100 bets, jackpot 6000), swinging batwing doors, warm lamps, light shafts and dust.
 import * as THREE from 'three';
 import {mergeGeometries} from '../addons/utils/BufferGeometryUtils.js';
-import {makeFrontierCharacter} from './hrcharacters.js';
+import {makeFrontierCharacter, addLowLOD} from './hrcharacters.js';
 import {createCasino} from './hrcasino.js';
 import {createSaloonDecor} from './hrsaloondecor.js';
 import {themeOf,themedSpin,themedMultiplier,themedRTP} from './hrcasinogames.js';
@@ -99,6 +99,17 @@ export function createSaloon(c) {
   const greta = makeDoll({ kind: 'barmaid', top: 0xe6d8bd, bust: 0xe6d8bd, sleeve: 0xe9dcc3, bodice: 0x2f5e2c, skirt: 0x8a1e22, hair: 0xd6a94e, skin: 0xeebf9d, legs: 0x3b2c26, shoe: 0x2c1a10, name: 'Greta' }); greta.route = [[-4.2,3.1],[-3,4.8],[-6,4.2],[-8.6,4.5],[-9.2,3.8],[-6,3.4]]; greta.ri = 0; greta.wait = 2; place(greta, -6, F, 4.2, 0); S.greta = greta;
   const dealer = makeDoll({ kind: 'dealer', top: 0x1c1a1c, hair: 0x111111, skin: 0xb88a6a, legs: 0x1c1a1c }); place(dealer, -16.45, F, 8.2, Math.PI / 2); dealer.mode = 'lean'; S.dealer = dealer;
   const staticNPCs=[...S.seated,...S.drifters,...S.dancers,greta,dealer];
+  // v37 perf: saloon NPCs are culled when off screen (fixed bounding sphere around the body: they move as whole groups),
+  // switch to a low-detail body (same skeleton, a third of the triangles) beyond 13 m, and cast sun shadows only while you
+  // are inside (out in the street they stand under the roof's shadow anyway). Phones already build the low body.
+  for (const D of staticNPCs) if (D.body) { D.body.frustumCulled = true; D.body.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, .85, 0), 1.45); }
+  let lodQ = mobile ? staticNPCs.length : 0, wasIn = null; const LOD_D2 = 13 * 13;
+  let lodT = -3; function lodBuild(dt) { if (lodQ >= staticNPCs.length || (lodT += dt) < .25) return; lodT = 0; const D = staticNPCs[lodQ++]; if (D.body) addLowLOD(D); } // spread out from boot, never in a burst
+  function npcLOD() {
+    const inn = S.inside(); if (inn !== wasIn) { wasIn = inn; for (const D of staticNPCs) { if (D.body) D.body.castShadow = inn; if (D.lod) D.lod.castShadow = inn; } }
+    const cx = camera.position.x, cz = camera.position.z, cy = camera.position.y;
+    for (const D of staticNPCs) { if (!D.lod) continue; const e = D.g.matrixWorld.elements, d2 = (e[12] - cx) ** 2 + (e[13] + 1 - cy) ** 2 + (e[14] - cz) ** 2, far = d2 > LOD_D2; if (D.lod.visible !== far) { D.lod.visible = far; D.body.visible = !far; } } }
+  S.npcLOD = () => staticNPCs.map(D => D.lod ? (D.lod.visible ? 'low' : 'high') : 'high-only');
   const npcAll=()=>staticNPCs;
   // spots (the town's E / tap prompt)
   const sp = (x, y, z, kind, label, r) => { const o = { x: 0, z: 0, y: s.y0 + y, kind, label, r, s }; [o.x, o.z] = W(x, z); T.spots.push(o);ownSpots.add(o);return o; };
@@ -281,7 +292,7 @@ export function createSaloon(c) {
       tmpV.set(sd * (.2 - bl * .1), -.2 + bl * .12 + Math.sin(H.t * 5 + sd) * .01, -.42 - pk * .35); f.position.copy(tmpV.applyMatrix4(camera.matrixWorld)); f.quaternion.copy(camera.quaternion); } };
   // ---- frame ----
   let near = false;
-  S.tick = dt => { if(disposed)return;const dTown = Math.min(Math.hypot(camera.position.x - s.cx, camera.position.z - s.cz), Math.hypot(P.pos.x - s.cx, P.pos.z - s.cz)); near = dTown < (mobile ? 60 : 90); for (const D of npcAll()) D.g.visible = near; dust.visible = near && dTown < 30; for (const L of lampLights) L.visible = dTown < 45; for (const M of S.slots) M.g.visible = near;
+  S.tick = dt => { if(disposed)return;const dTown = Math.min(Math.hypot(camera.position.x - s.cx, camera.position.z - s.cz), Math.hypot(P.pos.x - s.cx, P.pos.z - s.cz)); near = dTown < (mobile ? 60 : 90); for (const D of npcAll()) D.g.visible = near; lodBuild(dt); if (near) npcLOD(); dust.visible = near && dTown < 30; for (const L of lampLights) L.visible = dTown < 45; for (const M of S.slots) M.g.visible = near;
     casino.tick(dt);decor.update(H.t||0,near);slotTick(dt);buzzTick(dt);fightTick(dt);
     if(panel?.kind==='slot'&&panel.data.spin){S.slotUIT=(S.slotUIT||0)+dt;if(S.slotUIT>.1){S.slotUIT=0;render();}}
     for (let i = S.bandits.length - 1; i >= 0; i--) if (!banditTick(S.bandits[i], dt, i)) { dropBandit(S.bandits[i], true); S.bandits.splice(i, 1); }

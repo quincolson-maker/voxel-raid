@@ -107,17 +107,17 @@ export function createChunks(scene, mat, hAt, o) {
   let shown = null, tris = 0, built = 0, lastP = null;
   function build(i, j) {
     const x0 = i * CH, z0 = j * CH, W = n + 3, hh = new Float32Array(W * W); for (let b = 0; b < W; b++) for (let a = 0; a < W; a++) hh[b * W + a] = hAt(x0 + (a - 1) * step, z0 + (b - 1) * step);
-    const V = (n + 1) * (n + 1), sk = 4 * n + 4, pos = new Float32Array((V + sk * 2) * 3), nor = new Float32Array((V + sk * 2) * 3), uv = new Float32Array((V + sk * 2) * 2), idx = [];
+    const V = (n + 1) * (n + 1), sk = 4 * n + 4, pos = new Float32Array((V + sk * 2) * 3), nor = new Float32Array((V + sk * 2) * 3), uv = new Float32Array((V + sk * 2) * 2), IX = new Uint32Array(n * n * 6 + (4 * n + 4) * 12); let ni = 0; const idx = { push(...a) { for (const v of a) IX[ni++] = v; } }; // v37: typed index (was ~40k array pushes per chunk)
     for (let b = 0; b <= n; b++) for (let a = 0; a <= n; a++) { const v = b * (n + 1) + a, hc = hh[(b + 1) * W + a + 1], x = x0 + a * step, z = z0 + b * step;
       pos[v * 3] = x; pos[v * 3 + 1] = hc; pos[v * 3 + 2] = z; const nx = hh[(b + 1) * W + a] - hh[(b + 1) * W + a + 2], nz = hh[b * W + a + 1] - hh[(b + 2) * W + a + 1], l = Math.hypot(nx, 2 * step, nz);
       nor[v * 3] = nx / l; nor[v * 3 + 1] = 2 * step / l; nor[v * 3 + 2] = nz / l; uv[v * 2] = x / 2.5; uv[v * 2 + 1] = z / 2.5; }
-    for (let b = 0; b < n; b++) for (let a = 0; a < n; a++) { const v = b * (n + 1) + a; idx.push(v, v + n + 1, v + 1, v + 1, v + n + 1, v + n + 2); }
+    for (let b = 0; b < n; b++) for (let a = 0; a < n; a++) { const v = b * (n + 1) + a; IX[ni++] = v; IX[ni++] = v + n + 1; IX[ni++] = v + 1; IX[ni++] = v + 1; IX[ni++] = v + n + 1; IX[ni++] = v + n + 2; }
     // skirts hanging 8 m under every edge (hide cracks against the coarse terrain around the chunk square)
     const rim = []; for (let a = 0; a <= n; a++) rim.push(a); for (let b = 1; b <= n; b++) rim.push(b * (n + 1) + n); for (let a = n - 1; a >= 0; a--) rim.push(n * (n + 1) + a); for (let b = n - 1; b >= 0; b--) rim.push(b * (n + 1));
     let w = V; for (const v of rim) { for (const dy of [0, -8]) { pos[w * 3] = pos[v * 3]; pos[w * 3 + 1] = pos[v * 3 + 1] + dy; pos[w * 3 + 2] = pos[v * 3 + 2]; nor[w * 3] = nor[v * 3]; nor[w * 3 + 1] = nor[v * 3 + 1]; nor[w * 3 + 2] = nor[v * 3 + 2]; uv[w * 2] = uv[v * 2]; uv[w * 2 + 1] = uv[v * 2 + 1]; w++; } }
     for (let s = 0; s < rim.length - 1; s++) { const a = V + s * 2; idx.push(a, a + 1, a + 2, a + 2, a + 1, a + 3, a, a + 2, a + 1, a + 2, a + 3, a + 1); }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos.subarray(0, w * 3), 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor.subarray(0, w * 3), 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv.subarray(0, w * 2), 2));
-    g.setIndex(idx); g.computeBoundingSphere(); const m = new THREE.Mesh(g, mat); m.receiveShadow = true; m.visible = false; scene.add(m); built++; return { m, tris: idx.length / 3 }; }
+    g.setIndex(new THREE.BufferAttribute(IX.slice(0, ni), 1)); g.computeBoundingSphere(); const m = new THREE.Mesh(g, mat); m.receiveShadow = true; m.visible = false; scene.add(m); built++; return { m, tris: ni / 3 }; }
   const inLim = (i, j) => i >= -LIM && i < LIM && j >= -LIM && j < LIM;
   function update(px, pz, all) {
     if (lastP && Math.hypot(px - lastP[0], pz - lastP[1]) > CH * .8) all = true; lastP = [px, pz]; // teleport / respawn: build the square now
