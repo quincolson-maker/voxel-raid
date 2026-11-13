@@ -40,14 +40,54 @@ export function createHrZombies(c) {
 
   // ---- looks: the rigged person, re-dressed as the walking dead (shared tinted materials), or a simple stand-in ----
   const tints = new Map();
-  function deadMat(m) { if (tints.has(m.uuid)) return tints.get(m.uuid); const d = m.clone(); if (d.color) d.color.multiply(new THREE.Color(.42, .56, .38)); if (d.emissive) d.emissive.setRGB(.025, .04, .02); d.roughness = Math.min(1, (d.roughness ?? .8) + .15); if ('metalness' in d) d.metalness = 0; tints.set(m.uuid, d); return d; }
+  // v35: rotting skin in the shader (object-space noise: gray-green / bluish / olive mottling, bruises, wounds) on shared materials, 3 variants
+  const ZV = [[.46, .56, .44], [.4, .48, .58], [.42, .54, .3]], ZGL = `float zh(vec3 p){return fract(sin(dot(p,vec3(127.1,311.7,74.7)))*43758.5453);}
+float zn(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(mix(zh(i),zh(i+vec3(1,0,0)),f.x),mix(zh(i+vec3(0,1,0)),zh(i+vec3(1,1,0)),f.x),f.y),mix(mix(zh(i+vec3(0,0,1)),zh(i+vec3(1,0,1)),f.x),mix(zh(i+vec3(0,1,1)),zh(i+vec3(1,1,1)),f.x),f.y),f.z);}`;
+  const f2 = x => (+x).toFixed(3);
+  function rotPatch(d, v, S) { d.onBeforeCompile = sh => { sh.vertexShader = 'varying vec3 vZp;\n' + sh.vertexShader.replace('#include <skinning_vertex>', '#include <skinning_vertex>\n vZp = transformed;');
+      sh.fragmentShader = 'varying vec3 vZp;\n' + ZGL + '\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+ { vec3 q = vZp * ${f2(S)}; vec3 c0 = diffuseColor.rgb; float l = dot(c0, vec3(.3,.59,.11)); vec3 tn = vec3(${ZV[v].map(f2).join(',')});
+   vec3 c = mix(c0 * .62, tn * (.06 + l * .62), .5); float sk = smoothstep(.015, .07, c0.g - c0.b) * smoothstep(.04, .14, c0.r - c0.g); c = mix(c, tn * (.05 + l * .8), sk * .9); c *= .7 + .45 * zn(q * 22.);
+   float br = smoothstep(.6, .82, zn(q * 5. + ${f2(v * 7.3 + 1)})); c = mix(c, vec3(.2,.11,.19) * (.7 + l), br * .75);
+   float wd = smoothstep(.73, .86, zn(q * 11. + ${f2(v * 3.1 + 5)})); c = mix(c, vec3(.32,.02,.02), wd * .85);
+   diffuseColor.rgb = c; }`); }; d.customProgramCacheKey = () => 'zrot' + v; }
+  let ZS = 0; // object-space units -> metres for the noise
+  function deadMat(m, v = 0) { const key = m.uuid + ':' + v; if (tints.has(key)) return tints.get(key); const d = m.clone(); if (d.color) d.color.multiply(new THREE.Color(.82, .88, .8)); if (d.emissive) d.emissive.setRGB(.02, .03, .02); d.roughness = Math.min(1, (d.roughness ?? .8) + .15); if ('metalness' in d) d.metalness = 0; rotPatch(d, v, ZS || 1); tints.set(key, d); return d; }
+  // eyes, rags, a torn hat, ribs or a bare jaw on the bones (merged per bone: 2-4 extra draws, hidden far away)
+  const ZM = { eye: new THREE.MeshBasicMaterial({ color: 0xeaff70, toneMapped: false }), sock: new THREE.MeshStandardMaterial({ color: 0x120a0a, roughness: 1 }), bone: new THREE.MeshStandardMaterial({ color: 0xd8cdb0, roughness: .7 }), gore: new THREE.MeshStandardMaterial({ color: 0x4a0a0a, roughness: .6 }),
+    rag: [0x3a2c20, 0x2a3442, 0x4a3a24, 0x5a2a22].map(c2 => new THREE.MeshStandardMaterial({ color: c2, roughness: 1, side: THREE.DoubleSide })), hat: new THREE.MeshStandardMaterial({ color: 0x2a2018, roughness: 1, side: THREE.DoubleSide }) };
+  let zvar = 0; const _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _w = new THREE.Vector3();
+  function stick(root, bone, mesh, x, y, z, rx = 0, ry = 0, rz = 0, sc = 1) { // place a mesh given in model space (metres, +z forward) on a bone
+    const u = root.userData.zU || 1; bone.getWorldPosition(_w); bone.getWorldQuaternion(_q); bone.getWorldScale(_s); _v.set(x * u, y * u, z * u); bone.worldToLocal(_v); mesh.position.copy(_v);
+    mesh.quaternion.copy(_q.invert()).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz))); mesh.scale.setScalar(u * sc / _s.x); mesh.frustumCulled = false; bone.add(mesh); return mesh; }
+  const mg = list => { const parts = list.map(([g, m4]) => { const n = g.index ? g.toNonIndexed() : g; n.applyMatrix4(m4); return n; }); let N = 0; for (const q of parts) N += q.attributes.position.count; const P2 = new Float32Array(N * 3), Nn = new Float32Array(N * 3); let o = 0;
+    for (const q of parts) { P2.set(q.attributes.position.array, o * 3); Nn.set(q.attributes.normal.array, o * 3); o += q.attributes.position.count; } const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(P2, 3)); g.setAttribute('normal', new THREE.BufferAttribute(Nn, 3)); return g; };
+  const T4 = (x, y, z, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)), new THREE.Vector3(sx, sy, sz));
+  const ZG = {}; const zg = (k, f) => ZG[k] || (ZG[k] = f());
+  function dress(W, v, seed) { const Bn = W.m.userData.B; if (!Bn || !Bn.Head) return; W.m.updateMatrixWorld(true); const box = new THREE.Box3().setFromObject(W.m), hgt = box.max.y - box.min.y || 1.75; W.m.userData.zU = hgt / 1.75; const u = W.m.userData.zU;
+    const hp = new THREE.Vector3(); Bn.Head.getWorldPosition(hp); hp.divideScalar(u); const top = box.max.y / u, ey = top - .205 - hp.y, at = [];
+    // eyes: dark sunken sockets with a faint glow deep inside
+    at.push(stick(W.m, Bn.Head, new THREE.Mesh(zg('sock', () => mg([[new THREE.SphereGeometry(.024, 8, 6), T4(-.034, 0, 0, 0, 0, 0, 1, .8, .6)], [new THREE.SphereGeometry(.024, 8, 6), T4(.034, 0, 0, 0, 0, 0, 1, .8, .6)]])), ZM.sock), hp.x, hp.y + ey, hp.z + .108));
+    at.push(stick(W.m, Bn.Head, new THREE.Mesh(zg('eye', () => mg([[new THREE.SphereGeometry(.017, 6, 5), T4(-.034, 0, 0)], [new THREE.SphereGeometry(.017, 6, 5), T4(.034, 0, 0)]])), ZM.eye), hp.x, hp.y + ey, hp.z + .115));
+    const kind = seed % 4;
+    if (kind === 0) at.push(stick(W.m, Bn.Head, new THREE.Mesh(zg('hat', () => mg([[new THREE.CylinderGeometry(.2, .21, .015, 14, 1, true), T4(0, 0, 0)], [new THREE.RingGeometry(.11, .2, 14, 1, 0, Math.PI * 1.6), T4(0, .005, 0, -Math.PI / 2)], [new THREE.CylinderGeometry(.095, .11, .12, 10, 1, true), T4(0, .065, 0)], [new THREE.CircleGeometry(.095, 10), T4(0, .125, 0, -Math.PI / 2)]])), ZM.hat), hp.x, top - .05, hp.z - .005, .18, 0, (seed & 1 ? 1 : -1) * .2));
+    if (kind === 1 && Bn.Spine02) { const sp = new THREE.Vector3(); Bn.Spine02.getWorldPosition(sp); sp.divideScalar(u); // exposed ribs in a torn shirt
+      at.push(stick(W.m, Bn.Spine02, new THREE.Mesh(zg('gore', () => new THREE.CircleGeometry(.085, 12)), ZM.gore), sp.x + .05, sp.y + .02, sp.z + .125, 0, 0, 0));
+      at.push(stick(W.m, Bn.Spine02, new THREE.Mesh(zg('ribs', () => mg([0, 1, 2, 3].map(i => [new THREE.TorusGeometry(.065 - i * .004, .0065, 4, 10, Math.PI * .75), T4(0, .05 - i * .03, 0, 0, 0, Math.PI * 1.125)]).concat([[new THREE.BoxGeometry(.012, .13, .01), T4(0, .005, .004)]]))), ZM.bone), sp.x + .05, sp.y + .02, sp.z + .13)); }
+    if (kind === 2) { at.push(stick(W.m, Bn.Head, new THREE.Mesh(zg('jaw', () => mg([[new THREE.BoxGeometry(.06, .016, .03), T4(0, 0, 0)], ...[-2, -1, 0, 1, 2].map(i => [new THREE.BoxGeometry(.008, .012, .006), T4(i * .011, .012, .012)])])), ZM.bone), hp.x + .018, hp.y + ey - .08, hp.z + .085));
+      at.push(stick(W.m, Bn.Head, new THREE.Mesh(zg('cheek', () => new THREE.CircleGeometry(.028, 8)), ZM.gore), hp.x + .045, hp.y + ey - .055, hp.z + .088, 0, .5, 0)); }
+    if (Bn.Hips) { const hq = new THREE.Vector3(); Bn.Hips.getWorldPosition(hq); hq.divideScalar(u); const rag = ZM.rag[seed % ZM.rag.length]; // tattered strips hanging off the belt
+      at.push(stick(W.m, Bn.Hips, new THREE.Mesh(zg('rags', () => { const L = []; for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2, l = .16 + (i * 37 % 11) / 40; const g = new THREE.PlaneGeometry(.07, l); L.push([g, T4(Math.sin(a) * .16, -l / 2 - .02, Math.cos(a) * .12, .12, a, 0)]); } return mg(L); }), rag), hq.x, hq.y, hq.z)); }
+    W.zAt = at; }
+
   function standIn() { const g = new THREE.Group(), sk = new THREE.MeshStandardMaterial({ color: 0x7d8c6a, roughness: .9 }), cl = new THREE.MeshStandardMaterial({ color: 0x3f4640, roughness: .95 });
     const add = (geo, m, x, y, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; g.add(o); return o; };
     add(new THREE.CylinderGeometry(.2, .17, .62, 8), cl, 0, 1.2, 0); add(new THREE.SphereGeometry(.13, 10, 8), sk, 0, 1.65, .03); for (const s of [-1, 1]) { add(new THREE.CylinderGeometry(.07, .06, .85, 6), cl, s * .1, .45, 0); const a = add(new THREE.CylinderGeometry(.05, .045, .6, 6), sk, s * .26, 1.38, .26); a.rotation.x = Math.PI / 2; }
     return { m: g, update() {}, stand: true }; }
   function makeBody(kind) { const P0 = pool[kind].pop(); if (P0) return P0;
-    const W = c.walker && c.walker(); if (!W) return standIn();
-    W.m.traverse(o => { if (o.isMesh) { o.material = Array.isArray(o.material) ? o.material.map(deadMat) : deadMat(o.material); o.frustumCulled = false; } }); return W; }
+    const W = c.walker && c.walker(); if (!W) return standIn(); const v = kind === 'brute' ? 2 : zvar++ % 3;
+    if (!ZS) W.m.traverse(o => { if (o.isMesh && !ZS) { o.geometry.computeBoundingBox(); const b = o.geometry.boundingBox; ZS = 1.75 / Math.max(1e-3, b.max.y - b.min.y, b.max.z - b.min.z); } });
+    W.m.traverse(o => { if (o.isMesh) { o.material = Array.isArray(o.material) ? o.material.map(m => deadMat(m, v)) : deadMat(o.material, v); o.frustumCulled = false; } }); try { dress(W, v, (Z.nextId * 7 + zvar * 3) | 0); } catch (e) { W.zAt = []; } W.zv = v; return W; }
 
   // ---- spawning at the foot of the mountains ----
   function edgePoint(ang) { const dx = Math.cos(ang), dz = Math.sin(ang), k = (EDGE - 9) / Math.max(Math.abs(dx), Math.abs(dz)); return [dx * k, dz * k]; }
@@ -117,7 +157,7 @@ export function createHrZombies(c) {
     if (!o.alive) { B.update(dt, 0); return; } const run = o.kind === 'runner';
     B.update(dt * (run ? 1 : .75), run ? Math.max(v, 2.5) : Math.min(v, 1.4)); const root = B.m, Bn = root.userData.B; if (!Bn || !c.aimBone || !close) return; // bone posing (hunch, reach) only up close: cheap on phones
     const sw = Math.sin(o.anim * (run ? 7 : 3)) * .06; // hunched, head lolling, arms reaching forward (root space: +z forward, -x right)
-    c.aimBone(root, Bn.Spine02, Bn.Spine01, [sw * .5, 1, .32]); c.aimBone(root, Bn.neck, Bn.Head, [.18 + sw, 1, .45]);
+    c.aimBone(root, Bn.Spine02, Bn.Spine01, [sw * .5, 1, .32]); c.aimBone(root, Bn.neck, Bn.Head, [.18 + sw, 1, .45]); o.twT = (o.twT ?? 1 + rnd() * 3) - dt; if (o.twT < .12) { Bn.Head.rotateZ(Math.sin(o.twT * 60) * .35); Bn.Head.rotateX(.15); if (o.twT <= 0) o.twT = 1.5 + rnd() * 4; } // head twitch
     if (!run || o.st === 1) for (const [s, L] of [[1, 'Left'], [-1, 'Right']]) { const r = raised[s > 0 ? 0 : 1]; c.aimBone(root, Bn[L + 'Arm'], Bn[L + 'ForeArm'], [s * r[0], r[1] + sw * s + (o.st === 1 ? Math.sin(o.anim * 9) * .3 : 0), r[2]]); c.aimBone(root, Bn[L + 'ForeArm'], Bn[L + 'Hand'], [s * .05, .02, 1]); } }
   function stepHost(o, dt) {
     if (o.hold) { o.sp = 0; o.st = 0; return; } // dev / tests: stand still
@@ -171,6 +211,7 @@ export function createHrZombies(c) {
       if (host && (!Number.isFinite(o.pos.x) || !Number.isFinite(o.pos.z) || !Number.isFinite(o.pos.y) || Math.abs(o.pos.x) > WALK + 1 || Math.abs(o.pos.z) > WALK + 1 || o.pos.y < hAt(o.pos.x, o.pos.z) - 1)) { if (!relocate(o, 'bad')) { o.pos.set(PEN.x + 30, hAt(PEN.x + 30, PEN.z + 30), PEN.z + 30); } } // NaN / under the map / outside the world
       o.pos.y = hAt(o.pos.x, o.pos.z); o.g.rotation.set(-o.flinch * .25, o.yaw, 0);
       const dc = Math.hypot(cam.x - o.pos.x, cam.z - o.pos.z); o.g.visible = dc < (mobile ? 220 : 320);
+      if (o.B.zAt && (o.zNear !== dc < 60)) { o.zNear = dc < 60; for (const m of o.B.zAt) if (m.material !== ZM.eye) m.visible = o.zNear; } // eyes glow at any range; the rest only up close
       if (o.g.visible && (dc < 90 || ((Z.t * 10 + o.id) | 0) % 3 === 0)) pose(o, dc < 90 ? dt : dt * 3, o.sp, dc < (mobile ? 30 : 55));
       if ((o.groanT -= dt) <= 0) { o.groanT = 4 + rnd() * 7; if (dc < 45 && sfx.groan && sfx.ctx) sfx.at ? sfx.at(o.pos, () => sfx.groan(), .3) : sfx.groan(); } }
     if (host) separate();
