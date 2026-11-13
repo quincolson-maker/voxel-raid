@@ -906,7 +906,7 @@ export function createHorseRider(ctx) {
   }
   function placesHud() { if (!town2 || !H.places) return; const sb = $('sub'); if (!sb || H.mounted && !sb) return; const ts = town2.towers, tn = town2.town, px = P.pos.x, pz = P.pos.z, dir = (x, z) => { const a = ((Math.atan2(x - px, -(z - pz)) * 180 / Math.PI) + 360) % 360; return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(a / 45) % 8]; };
     const inTown = tn && zombies && zombies.inSafeZone && zombies.inSafeZone(px, pz) === 'town'; let extra = inTown ? ' · 🛡 Safe zone' : '';
-    for (const t of ts) { const dd = Math.hypot(t.cx - px, t.cz - pz); if (dd > 30) extra += ` · 🗼${t.kind === 'armory' ? '1' : '2'} ${Math.round(dd)} m ${dir(t.cx, t.cz)}`; } if (tn) { const dd = Math.hypot(tn.cx - px, tn.cz - pz); if (dd > 40) extra += ` · 🏠 town ${Math.round(dd)} m ${dir(tn.cx, tn.cz)}`; }
+    for (const t of ts) { const dd = Math.hypot(t.cx - px, t.cz - pz); if (dd > 30) extra += ` · 🗼${t.kind === 'armory' ? '1' : '2'} ${Math.round(dd)} m ${dir(t.cx, t.cz)}`; } if (tn) { const dd = Math.hypot(tn.cx - px, tn.cz - pz); if (dd > 40) extra += ` · 🏠 town ${Math.round(dd)} m ${dir(tn.cx, tn.cz)}`; } if (H.cave) { const S = H.cave.site, dd = Math.hypot(S.x - px, S.z - pz); if (dd > 60) extra += ` · 💧 Bandit Falls ${Math.round(dd)} m ${dir(S.x, S.z)}`; } // v38
     if (extra && !sb.textContent.endsWith(extra)) sb.textContent += extra; }
   // v33: rolling kill leaderboard (everyone in the lobby, live; kills / points come from each rider's synced state, kill points are host-confirmed)
   let lbEl = null, lbHtml = '';
