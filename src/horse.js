@@ -16,6 +16,7 @@ import { createHrZombies } from './hrzombies.js';
 import { createFlora } from './hrflora.js';
 import { createTown, wearJacket } from './hrtown.js';
 import { createSaloon } from './hrsaloon.js';
+import { createBuild } from './hrbuild.js';
 import { buildFeatures, buildMask, createChunks, createWater } from './hrterrain.js';
 import { makeRawH, trailSegments, segDist as segD, createSky, terrainMaterial as terrainMat2, loadTerrainTextures, buildTerrain, createGrass, loadRockModels } from './hrworld.js';
 const $ = id => document.getElementById(id);
@@ -349,6 +350,7 @@ export function createHorseRider(ctx) {
     H.water = createWater(scene, F, hAt, { mobile });
     buildPlaces(F);
     buildTrees(); buildRocks(); buildLogs(); buildFlora(); buildGrass(); buildPen(); buildTrailMarks();
+    H.WALK = WALK; H.treeLOD = updateTreeLOD; createBuild({ scene, H, P, camera, sfx, msg, mobile, keys, T: town2, hAt, dev: new URLSearchParams(location.search).has('dev') }); // v35 woodcraft
     if (mobile) for (const im of H.rockMeshes || []) if (im.count > 100) im.castShadow = false; // v32: big scattered rock sets do not cast on phones
   }
   // v33: fire lookouts at the two trail tops furthest apart (above the snow line), the town on flat meadow ground facing the pen
@@ -378,14 +380,14 @@ export function createHorseRider(ctx) {
     for (let i = 0; i < nT * 8 && H.trees.length < nT; i++) { const x = (rnd() - .5) * 2 * (EDGE + 30), z = (rnd() - .5) * 2 * (EDGE + 30);
       if (Math.hypot(x - PEN.x, z - PEN.z) < 36 || Math.hypot(x - SPAWN.x, z - SPAWN.z) < 12 || clearing(x, z, 4) || trailDist(x, z) < 3.5 || inRange(x, z, 4)) continue; if (rnd() > .3 + .7 * (Math.sin(x * .02) * Math.cos(z * .025) * .5 + .5)) continue;
       const y = hAt(x, z); if (y - BASE > 44) continue; const s = .75 + rnd() * .65, conif = rnd() < (y - BASE > 12 ? .85 : .55);
-      const tr = rnd() * 6.28, hue = rnd(); if (FEAT.trailDist(x, z) < 4.2 || FEAT.waterDist(x, z) < 3.5) continue; H.trees.push({ x, y: y - .15, z, s, r: tr, conif, hue }); H.obst.push([x, z, (conif ? .4 : .45) * s, 11 * s]); }
+      const tr = rnd() * 6.28, hue = rnd(); if (FEAT.trailDist(x, z) < 4.2 || FEAT.waterDist(x, z) < 3.5) continue; H.trees.push({ x, y: y - .15, z, s, r: tr, conif, hue }); H.obst.push(H.trees[H.trees.length - 1].ob = [x, z, (conif ? .4 : .45) * s, 11 * s]); }
     { // v30: pine forests up the mountain slopes you can ride among (collision inside the rideable square), thinning out to the tree line
       const r2 = mulberry(77), n2 = (x, z) => Math.sin(x * .013 + Math.cos(z * .009) * 2) * Math.cos(z * .011 - Math.sin(x * .007) * 1.7), nM = mobile ? 1300 : HQ ? 4800 : 3000; let c = 0;
       for (let i = 0; i < nM * 14 && c < nM; i++) { const a = r2() * TAU, d = EDGE + 8 + Math.pow(r2(), 1.25) * (1420 - EDGE), x = Math.cos(a) * d, z = Math.sin(a) * d;
         if (Math.max(Math.abs(x), Math.abs(z)) < EDGE + 25 || FEAT.trailDist(x, z) < 4.2 || FEAT.waterDist(x, z) < 3.5) continue; const y = hAt(x, z), hh = y - BASE, sl = Math.hypot(hAt(x + 1.5, z) - y, hAt(x, z + 1.5) - y) / 1.5;
         if (sl > .85 || hh > 215 + n2(x, z) * 40 || hh < -10 || n2(x * 1.7, z * 1.7) < -.4 + Math.min(.5, hh / 420)) continue;
         const s = (.8 + r2() * .85) * (1 - Math.min(.35, Math.max(0, hh - 120) / 300)); H.trees.push({ x, y: y - .25, z, s, r: r2() * 6.28, conif: r2() < .94, hue: r2() }); c++;
-        if (Math.max(Math.abs(x), Math.abs(z)) < WALK + 8) H.obst.push([x, z, .4 * s, 11 * s]); } H.mountainTrees = c; }
+        if (Math.max(Math.abs(x), Math.abs(z)) < WALK + 8) H.obst.push(H.trees[H.trees.length - 1].ob = [x, z, .4 * s, 11 * s]); } H.mountainTrees = c; }
     const bark = pbr('bark', { color: 0x9a8a7a }); if (bark.map) { bark.map = bark.map.clone(); bark.map.repeat.set(1, 3); bark.normalMap = bark.normalMap.clone(); bark.normalMap.repeat.set(1, 3); }
     const leaf = foliage(new THREE.MeshStandardMaterial({ roughness: .92, vertexColors: true, color: 0x9aa07c }), 2.2), needle = foliage(new THREE.MeshStandardMaterial({ roughness: .95, vertexColors: true, color: 0x7f9478 }), 3.4);
     const nC = H.trees.filter(t => t.conif).length, nB = H.trees.length - nC;
@@ -393,13 +395,13 @@ export function createHorseRider(ctx) {
     H.tm = { cTrunk: mk(new THREE.CylinderGeometry(.16, .36, 12, 7).translate(0, 6, 0), bark, nC), bTrunk: mk(new THREE.CylinderGeometry(.18, .34, 5.2, 7).translate(0, 2.6, 0), bark, nB),
       cNear: mk(conifCards(mobile ? 11 : 16), cardMaterial(needleTexture(), 0xffffff, 3.4), nC), /* v32: branch cards */ cFar: mk(softFoliage(farConifer(), y => y, .6), needle, nC, false), bNear: mk(broadleafCards(11, mobile ? 8 : 12), cardMaterial(leafTexture(), 0xffffff, 2.2), nB), bFar: mk(softFoliage(broadleafGeo(0, 11), () => 5, .8), leaf, nB, false) }; // far LOD is never inside the shadow box
     // trunks never change LOD: fill once
-    let ic = 0, ib = 0; for (const t of H.trees) { m4.compose(v3.set(t.x, t.y, t.z), qq.setFromAxisAngle(up, t.r), sc3.set(t.s, t.s * (t.conif ? 1 : .9 + t.hue * .3), t.s)); if (t.conif) H.tm.cTrunk.setMatrixAt(ic++, m4); else H.tm.bTrunk.setMatrixAt(ib++, m4); }
+    let ic = 0, ib = 0; for (const t of H.trees) { m4.compose(v3.set(t.x, t.y, t.z), qq.setFromAxisAngle(up, t.r), sc3.set(t.s, t.s * (t.conif ? 1 : .9 + t.hue * .3), t.s)); if (t.conif) { t.ti = ic; H.tm.cTrunk.setMatrixAt(ic++, m4); } else { t.ti = ib; H.tm.bTrunk.setMatrixAt(ib++, m4); } }
     H.tm.cTrunk.count = ic; H.tm.bTrunk.count = ib; if (mobile) H.tm.cTrunk.castShadow = H.tm.bTrunk.castShadow = false; // v32: phones only shadow the near crowns (the trunk instances cover the whole map) updateTreeLOD(true);
   }
   function updateTreeLOD(force) {
     const T = H.tm; if (!T) return; const px = P.pos.x, pz = P.pos.z; if (!force && H.lodAt && Math.hypot(px - H.lodAt[0], pz - H.lodAt[1]) < 8) return; H.lodAt = [px, pz];
     const n = { cNear: 0, cFar: 0, bNear: 0, bFar: 0 };
-    for (const t of H.trees) { const near = Math.hypot(t.x - px, t.z - pz) < LOD_TREE, key = (t.conif ? 'c' : 'b') + (near ? 'Near' : 'Far'), im = T[key];
+    for (const t of H.trees) { if (t.cut) continue; const near = Math.hypot(t.x - px, t.z - pz) < LOD_TREE, key = (t.conif ? 'c' : 'b') + (near ? 'Near' : 'Far'), im = T[key];
       m4.compose(v3.set(t.x, t.y, t.z), qq.setFromAxisAngle(up, t.r), sc3.set(t.s, t.s * (t.conif ? 1 : .9 + t.hue * .3), t.s)); im.setMatrixAt(n[key], m4);
       im.setColorAt(n[key]++, near ? (t.conif ? col.setHSL(.29 + t.hue * .06, .2 + t.hue * .1, .46 + t.hue * .1) : col.setHSL(.2 + t.hue * .08, .28 + t.hue * .12, .52 + t.hue * .1)) : t.conif ? col.setHSL(.27 + t.hue * .06, .34 + t.hue * .1, .2 + t.hue * .06) : col.setHSL(.2 + t.hue * .09, .42 + t.hue * .15, .24 + t.hue * .08)); }
     for (const k in n) { const im = T[k]; im.count = n[k]; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; }
@@ -784,7 +786,7 @@ export function createHorseRider(ctx) {
       if (held && dk > 1.5) sideIn += Math.sin(H.t * .9) * Math.min(.55, (dk - 1.5) * .09) + Math.sin(H.t * 2.3 + 1) * Math.min(.25, (dk - 1.5) * .04); } else { H.lagF = fwdIn; H.lagS = sideIn; }
     const run = !!keys.ShiftLeft || !!keys.ShiftRight || (stick > .92 && fwdIn > .6);
     const jump = keys.Space || input.jump;
-    if (H.fallT > 0) H.fallT -= dt; if (town2) town2.tick(dt); if (H.saloon) H.saloon.tick(dt);
+    if (H.fallT > 0) H.fallT -= dt; if (town2) town2.tick(dt); if (H.saloon) H.saloon.tick(dt); if (H.build) H.build.tick(dt);
     if (H.dead) { H.fv.x = H.fv.y = 0; } else if (h) ride(h, dt, stick > .05 ? 0 : fwdIn, stick > .05 ? 0 : sideIn, stick, jump); else walk(dt, fwdIn, sideIn, stick, run, jump);
     for (const o of H.horses) { if (o === h) continue;
       if (H.ridden.has(o) || (H.follow && o.net)) { netHorse(o, dt); if (H.ridden.has(o)) dustEmit(o, dt); continue; } // ridden by another player / herd mirrored from the host
@@ -825,7 +827,7 @@ export function createHorseRider(ctx) {
   function camClear(from, to) { // pull the camera in front of tree trunks / rocks between it and the subject
     const dx = to.x - from.x, dz = to.z - from.z; for (let t = .3; t <= 1.001; t += .175) { const x = from.x + dx * t, z = from.z + dz * t;
       for (const [ox, oz, or] of obstNear(x, z)) if (Math.abs(ox - x) < or + .35 && Math.abs(oz - z) < or + .35 && Math.hypot(ox - x, oz - z) < or + .3) { to.x = from.x + dx * (t - .2); to.z = from.z + dz * (t - .2); to.y = from.y + (to.y - from.y) * (t - .2); return; } } }
-  function syncCamera(dt) { if (H.fovSave) { camera.fov = H.fovSave; H.fovSave = 0; camera.updateProjectionMatrix(); } camRig(dt); if (guns) guns.scopeCam(dt); if (H.saloon) H.saloon.postCam(); } // the scope takes over after the rig
+  function syncCamera(dt) { if (H.fovSave) { camera.fov = H.fovSave; H.fovSave = 0; camera.updateProjectionMatrix(); } camRig(dt); if (guns) guns.scopeCam(dt); if (H.saloon) H.saloon.postCam(); if (H.build) H.build.postCam(); } // the scope takes over after the rig
   function drunkCam(h) { // v33/34 drunk sway, double / triple vision, tunnel vision, hiccups and the fall-over camera
     { const dk = H.drunkK || 0; if (dk > .05) { const t = H.t, k = Math.min(2.8, dk / 5); camera.rotateZ(Math.sin(t * .55) * .09 * k + Math.sin(t * 1.3) * .02 * k); camera.rotateY(Math.sin(t * .43 + 1) * .03 * k); camera.rotateX(Math.sin(t * .71) * .025 * k); }
       { const k = Math.min(1.9, Math.pow(dk / 6, 1.3)); if (H.drunkPass) { H.drunkPass.enabled = k > .03; H.drunkPass.uniforms.uK.value = k; H.drunkPass.uniforms.uT.value = H.t; } else { const f = k > .03 ? `blur(${(Math.min(1, k) * 2.2).toFixed(1)}px)` : ''; if (GX.renderer.domElement.style.filter !== f) GX.renderer.domElement.style.filter = f; } }

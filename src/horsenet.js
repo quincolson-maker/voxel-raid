@@ -74,8 +74,8 @@ export function createHorseNet({ horse, P, msg }) {
       case 'zs': if (isClient() && H.zombies) H.zombies.apply(m); break; // the host's zombies (host-authoritative)
       case 'zh': if (isHost() && H.zombies) H.zombies.remoteHit(m, S.peers.get(from)); break; // a client shot one
       case 'zk': if (isClient() && H.zombies) { if (m.b) { H.saloon && H.saloon.banditKill(); } else { H.zombies.confirmKill(m); if (H.guns) H.guns.credit(!!m.h); } } break;
-      case 'sv': if (isHost() && H.saloon) H.saloon.netIn(m, S.peers.get(from)); break; // v35: a client's slot spin (the host draws the reels)
-      case 'svr': if (isClient() && H.saloon) H.saloon.netRes(m); break; // host-confirmed kill: my points
+      case 'sv': if (isHost() && H.build && H.build.owns(m.k)) H.build.netIn(m, S.peers.get(from)); else if (isHost() && H.saloon) H.saloon.netIn(m, S.peers.get(from)); break; // v35: a client's slot spin (the host draws the reels)
+      case 'svr': if (isClient() && H.build && H.build.owns(m.k)) H.build.netRes(m); else if (isClient() && H.saloon) H.saloon.netRes(m); break; // host-confirmed kill: my points
       case 'dt': if (isHost() && H.town2) H.town2.netIn(m, S.peers.get(from)); break; // darts: a client's throw / challenge (host runs the match)
       case 'dts': if (isClient() && H.town2) H.town2.netState(m); break;
       case 'ck': if (isHost() && H.town2) H.town2.ck.netIn(m, S.peers.get(from)); break; // checkers move / challenge (host runs the game)

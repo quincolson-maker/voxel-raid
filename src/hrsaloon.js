@@ -80,7 +80,7 @@ function makeDoll(o) { // o: { skin, hair, top, sleeve, bottom, legs, shoe, kind
 }
 // a doll pose for this frame: mode in idle | walk | run | sit | dance | punch | block | fight | ko | aim | cheer | lean
 function poseDoll(D, dt, mode = D.mode, v = 0) { D.t += dt; const t = D.t, [aL, aR] = D.arms, [lL, lR] = D.legs, H = D.hips, S = D.spine, s = Math.sin, c = Math.cos;
-  const reset = () => { H.position.y = .93; H.rotation.set(0, 0, 0); S.rotation.set(0, 0, 0); D.head.rotation.set(0, 0, 0); for (const [a, b] of [aL, aR, lL, lR]) { a.rotation.set(0, 0, 0); b.rotation.set(0, 0, 0); } aL[0].rotation.z = -.12; aR[0].rotation.z = .12; D.g.rotation.x = 0; D.g.position.y = 0; };
+  const reset = () => { H.position.y = .93; H.rotation.set(0, 0, 0); S.rotation.set(0, 0, 0); D.head.rotation.set(0, 0, 0); for (const [a, b] of [aL, aR, lL, lR]) { a.rotation.set(0, 0, 0); b.rotation.set(0, 0, 0); } aL[0].rotation.z = -.12; aR[0].rotation.z = .12; D.g.rotation.x = 0; };
   reset(); const br = s(t * 1.7) * .02; S.rotation.x = br;
   if (mode === 'walk' || mode === 'run') { D.ph += dt * (2 + v * 1.55); const p = D.ph, k = clamp(v / 4.5, .25, 1.1), run = mode === 'run' || v > 3.2;
     lL[0].rotation.x = -s(p) * .7 * k; lR[0].rotation.x = s(p) * .7 * k; lL[1].rotation.x = Math.max(0, s(p + 1.4)) * 1.1 * k; lR[1].rotation.x = Math.max(0, -s(p + 1.4)) * 1.1 * k;
@@ -95,7 +95,7 @@ function poseDoll(D, dt, mode = D.mode, v = 0) { D.t += dt; const t = D.t, [aL, 
     aL[0].rotation.x = -1.2; aL[1].rotation.x = -1.6; aR[0].rotation.x = -1.1; aR[1].rotation.x = -1.7; aL[0].rotation.z = .25; aR[0].rotation.z = -.25;
     if (mode === 'punch') { const k = s(clamp(D.pk || 0, 0, 1) * Math.PI); aR[0].rotation.x = -1.2 - k * .4; aR[1].rotation.x = -1.7 + k * 1.6; S.rotation.y = -k * .4; }
     if (mode === 'block') { aL[0].rotation.x = aR[0].rotation.x = -1.6; aL[1].rotation.x = aR[1].rotation.x = -2.2; aL[0].rotation.z = .5; aR[0].rotation.z = -.5; } }
-  else if (mode === 'ko') { const k = clamp(D.koT || 0, 0, 1); D.g.rotation.x = -k * 1.45; D.g.position.y = k * .12; aL[0].rotation.z = -1.2 * k; aR[0].rotation.z = 1.2 * k; }
+  else if (mode === 'ko') { const k = clamp(D.koT || 0, 0, 1); D.g.rotation.x = -k * 1.45; H.position.y = .93 + k * .12; aL[0].rotation.z = -1.2 * k; aR[0].rotation.z = 1.2 * k; }
   else if (mode === 'aim') { aR[0].rotation.x = -1.5; aR[1].rotation.x = 0; aL[0].rotation.x = -1.3; aL[0].rotation.z = .5; aL[1].rotation.x = -.6; S.rotation.y = -.15; lL[0].rotation.x = -.15; lR[0].rotation.x = .15; }
   else if (mode === 'cheer') { aL[0].rotation.x = aR[0].rotation.x = -2.8 + s(t * 8) * .2; H.position.y = .93 + Math.abs(s(t * 8)) * .05; }
   else if (mode === 'lean') { S.rotation.x = .25; aL[0].rotation.x = aR[0].rotation.x = -1; aL[1].rotation.x = aR[1].rotation.x = -.8; lR[0].rotation.x = .2; lR[1].rotation.x = .3; D.head.rotation.y = s(t * .5) * .5; }

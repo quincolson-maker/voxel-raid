@@ -420,13 +420,13 @@ export function createGuns(c) {
     camera.getWorldDirection(v1); const rt = v2.crossVectors(v1, UP).normalize(); return swV.copy(rt).multiplyScalar(Math.sin(clock.sway * 1.7) * amp).addScaledVector(UP, Math.sin(clock.sway * 2.9 + 1) * amp * .8); }
 
   // ---- input (only while Horse Rider runs; nothing global outside the mode) ----
-  const onKey = e => { if (!H.on || e.repeat || (e.target && /INPUT|TEXTAREA/.test(e.target.tagName))) return;
+  const onKey = e => { if (!H.on || e.repeat || (e.target && /INPUT|TEXTAREA/.test(e.target.tagName))) return; if (H.noGun || H.tool) return; // v35: fists / slots / dances / axe / build own the keys
     if (e.code === 'Digit1') draw('revolver'); else if (e.code === 'Digit2') draw('rifle'); else if (e.code === 'Digit3') draw('sniper'); else if (e.code === 'Digit4') draw('tommy'); else if (e.code === 'Digit5') draw('gold'); else if (e.code === 'KeyQ') { const o = owned(); if (state.weapon) draw(o[(o.indexOf(state.weapon) + 1) % o.length]); else draw(state.last); }
     else if ((e.code === 'Equal' || e.code === 'NumpadAdd') && state.weapon === 'gold') zoom(1); else if ((e.code === 'Minus' || e.code === 'NumpadSubtract') && state.weapon === 'gold') zoom(-1);
     else if (e.code === 'KeyX') holster(); else if (e.code === 'KeyR') { reloadHeld = true; reload(); } };
   const onKeyUp = e => { if (e.code === 'KeyR') reloadHeld = false; };
   const okPointer = () => H.on && !mobile && (document.pointerLockElement || c.dev);
-  const onDown = e => { if (!okPointer() || H.uiOpen || H.noGun) return; if (e.button === 0) { if (!state.weapon && !H.mountT) { draw(state.last); return; } fireHeld = true; firePend = true; } if (e.button === 2) aimHeld = true; };
+  const onDown = e => { if (!okPointer() || H.uiOpen || H.noGun || H.tool) return; if (e.button === 0) { if (!state.weapon && !H.mountT) { draw(state.last); return; } fireHeld = true; firePend = true; } if (e.button === 2) aimHeld = true; };
   const onUp = e => { if (e.button === 0) fireHeld = false; if (e.button === 2) aimHeld = false; };
   addEventListener('wheel', e => { if (H.on && state.weapon === 'gold' && state.scopeK > .5) zoom(e.deltaY < 0 ? 1 : -1, 1.18); }, { passive: true });
   { let pd = 0; addEventListener('touchmove', e => { if (!(H.on && state.weapon === 'gold' && state.scopeK > .5) || e.touches.length !== 2) { pd = 0; return; } const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); if (pd && Math.abs(d - pd) > 14) { zoom(d > pd ? 1 : -1, 1.12); pd = d; } else if (!pd) pd = d; }, { passive: true }); }
@@ -464,7 +464,7 @@ export function createGuns(c) {
     flash.visible = clock.flash > 0; if (light) light.intensity = clock.flash > 0 ? 14 * clock.flash / .05 : 0;
     updateTargets(dt);
     const w = state.weapon; if (w && (H.mountT > 0 || H.dismT > 0)) { for (const m of Object.values(models)) m.group.visible = false; state.aiming = false; H.scoped = false; H.gunAim = false; H.gunFace = null; return; }
-    if (w && H.noGun) holster();
+    if (w && (H.noGun || H.tool)) holster();
     if (!state.weapon) { for (const m of Object.values(models)) m.group.visible = false; state.aiming = false; H.scoped = false; state.aimK += (0 - state.aimK) * Math.min(1, dt * 10); H.aimK = state.aimK; H.gunFace = null; return; }
     state.aiming = !!(aimHeld || input.ads);
     const scoping = SCOPED(w) && state.aiming; state.scopeT = scoping ? state.scopeT + dt : 0;

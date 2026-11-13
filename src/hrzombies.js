@@ -141,6 +141,7 @@ export function createHrZombies(c) {
     if (safe && Math.hypot(tx - o.pos.x, tz - o.pos.z) < 1.2) { mx *= .2; mz *= .2; } // pressed up against the rails, groaning
     o.pos.x += mx; o.pos.z += mz;
     for (const [ox, oz, or] of (H.obstNear ? H.obstNear(o.pos.x, o.pos.z) : H.obst)) { const ddx = o.pos.x - ox, ddz = o.pos.z - oz; if (Math.abs(ddx) > or + .4 || Math.abs(ddz) > or + .4) continue; const dd = Math.hypot(ddx, ddz), rr = or + .35; if (dd < rr && dd > 1e-4) { o.pos.x = ox + ddx / dd * rr; o.pos.z = oz + ddz / dd * rr; } }
+    if (H.build && H.build.pieces.length && H.build.zHit(o.pos.x, o.pos.z, .35)) { o.pos.x -= mx; o.pos.z -= mz; } // v35: cabin walls stop them
     pushOutOfPen(o.pos); if (H.town2 && H.town2.towers) for (const t of H.town2.towers) if (H.town2.inFoot(t, o.pos.x, o.pos.z, 0)) { o.pos.x -= mx * 1.5; o.pos.z -= mz * 1.5; } // lookouts are solid for them
     o.pos.x = Math.max(-WALK, Math.min(WALK, o.pos.x)); o.pos.z = Math.max(-WALK, Math.min(WALK, o.pos.z));
     // v34 stuck watchdog: no progress toward the target for 8 s (while not at a safe-zone edge), or far from every player -> come back near them
