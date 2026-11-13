@@ -1,0 +1,289 @@
+Copy and paste this into Grok with the source ZIP attached:
+
+You are the senior Three.js/WebGL engineer implementing performance and correctness fixes for “Voxel Raid: Horse Rider.”
+Stack:
+- Three.js r170
+- Browser ES modules
+- PeerJS host-authoritative co-op
+- Up to 25 players
+- Existing source and build.sh supplied
+Implement the changes below. Do not merely describe them.
+CONSTRAINTS
+1. Preserve the existing look, features, gameplay, world generation, combat balance, and multiplayer functionality.
+2. Do not rewrite the game or change engines.
+3. Inspect the current source before editing. The findings below refer to an earlier source snapshot; verify each finding against the supplied version.
+4. Separate confirmed code defects from suspected performance problems.
+5. Never claim browser/device/performance testing you did not perform.
+6. Make changes in small, reviewable stages. Add meaningful regression checks for networking, authority, input lifecycle, and state transitions.
+7. Avoid disposing shared geometry, textures, or materials still used by other objects.
+8. index.html currently loads game.min.js. Rebuild using the existing build.sh workflow and update the bundle cache version so source edits actually reach players.
+9. If a visual optimization needs unavailable assets, implement its infrastructure and fallback, and explicitly identify the remaining asset work. Do not silently substitute worse-looking models.
+FIRST: ESTABLISH MEASUREMENTS
+Add an optional ?perf=1 overlay/instrumentation that reports:
+- Frame time: median, p95, longest frame
+- CPU time for simulation, zombie AI/separation, character posing, terrain generation, tree LOD, snapshot encoding/application
+- Actual renderer draw calls and submitted triangles across the complete normal composer frame
+- Geometry/texture counts
+- Current DPR, render dimensions, quality preset, active passes
+- Active zombie count and character LOD counts
+- Network messages/sec, serialized UTF-8 bytes/sec per message type and recipient
+- Buffered outgoing state and received snapshot age
+Do not use horse.stats() as the complete-frame benchmark: it performs an extra direct scene render and excludes the normal post-processing pipeline. Instrument the real render frame instead.
+Where supported, add asynchronous GPU timer queries and discard disjoint results. Do not introduce blocking GPU readbacks for profiling.
+Use repeatable scenarios:
+- 1, 8, and 25 players
+- 0, 18, 42, and eventually 420 zombies
+- Standing still, galloping through forests, scoped combat, all riders mounted/armed, respawn/teleport, and repeated join/leave
+- Treat same-browser loopback tests as protocol tests, not proof of real WebRTC network performance
+IMPLEMENTATION PRIORITIES
+1. FIX NETWORK SESSION AND HANDSHAKE RACES
+Inspect src/horsenet.js tryJoin(), reset(), hostLeft(), auto(), and src/coop.js connection callbacks.
+Potential defects to verify:
+- hi/full can arrive before tryJoin installs hiWait.
+- Old peer callbacks and timeout handlers can affect a newer session.
+- reset leaves forwarding/motion/timer state behind.
+- Transport role/code may remain stale.
+Implement:
+- Register handshake handling before connection establishment.
+- Use a monotonically increasing session/attempt generation.
+- Ignore callbacks from old generations.
+- Cancel timers and settle pending promises on reset.
+- Clear pending forwarding, previous position, smoothed speed, appropriate timers, transport role/code, and session-owned state.
+- Prevent duplicate reconnect/auto-join workflows.
+- Bound host creation/signaling waits.
+Test fast handshake, full room, timeout, failed joins, host disconnect while joining, rapid reconnect, and late old-session callbacks.
+2. FIX ZOMBIE AUTHORITY AND STATE RECOVERY
+Inspect src/hrzombies.js onHit(), apply(), remoteHit(), confirmKill(), and snapshot handling.
+Verify and fix:
+- Client-predicted death cannot recover when the host reports the zombie alive.
+- Client-supplied damage is accepted without adequate weapon/cadence/range validation.
+- Duplicate events can award or apply damage twice.
+Implement:
+- Separate predicted presentation from authoritative HP/alive state, or fully reconcile resurrection including corpse transforms/timers.
+- Host validates sender, shot ID, weapon, fire cadence, plausible origin/range/hit, and allowed damage.
+- Deduplicate shot/kill events.
+- Keep current weapon damage and headshot balance.
+- Reject malformed/non-finite/out-of-bounds state without expensive work.
+3. FIX INPUT AND MOBILE LIFECYCLE EDGE CASES
+Inspect main.js dropInput(), src/touch.js initTouch()/btn()/touchReset(), and src/hrguns.js input handlers.
+Preserve existing blur/pagehide/visibility/pointercancel handling.
+Verify and fix:
+- Button-local pid and .down state survive global touch reset.
+- firePend survives blur/reset.
+- P.lookPend survives reset and applies delayed scoped movement afterward.
+- Queued input can fire after returning from another app.
+Create one explicit reset path that clears:
+- Keyboard held state
+- Joystick state
+- Look pointer ownership
+- Every touch button’s pointer ownership and pressed styling
+- Fire/jump/use/ADS held state
+- Queued shot/reload/aim input as appropriate
+- Pending scoped-look deltas
+Test interruption while moving, firing, aiming, and using multiple fingers. Ensure the next touch works immediately.
+4. OPTIMIZE ZOMBIE CPU WORK
+Inspect src/hrzombies.js players(), chooseTarget(), stepHost(), separate(), tick(), apply(), and HUD.
+Implement:
+- Refresh reusable player records once per host simulation tick.
+- Targets retain IDs/references to refreshed records instead of stale coordinate snapshots.
+- Replace all-pairs separation with a spatial hash.
+- Preserve pair radius, push behavior, pen/town exclusion, and collision behavior.
+- Maintain a zombieById map for snapshots and hits.
+- Avoid per-frame list copies/filter arrays where unnecessary.
+- Maintain live counts explicitly.
+- Re-ground zombies after separation changes X/Z.
+- Replace the time-window animation throttle with per-zombie elapsed-time accumulators/deadlines. Pass actual accumulated time, not dt multiplied by a guessed factor.
+- Schedule distant steering/watchdog work less often while keeping close combat responsive.
+Test crowded safe-zone edges, slopes, moving targets, death/despawn, relocation, and 420-zombie separation cost.
+5. REDUCE CHARACTER POSING COST
+Inspect src/horse.js aimBone(), twistBone(), riderPose(), makeWalker(), avatar.update(), plus src/hrguns.js ik()/poseOn()/poseRemote().
+Current concern: many individual bone operations force root.updateMatrixWorld(true), repeatedly traversing the whole rig.
+Implement:
+- Preserve exact pose math.
+- Update required ancestor chains/subtrees during dependent bone operations.
+- Propagate the hierarchy once after a completed pose where possible.
+- Reuse scratch vectors/quaternions.
+- Remove avoidable per-frame allocations in gun IK and remote posing.
+- Cache reusable idle clips if their rig compatibility is verified.
+- Avoid cloning all five weapon scene graphs for every remote until needed.
+Do not blindly delete matrix updates. Compare bone world transforms against the original algorithm for standing, mounting, seated riding, galloping, aiming, and every weapon.
+6. ADD CHARACTER/ZOMBIE VISUAL LOD
+Asset measurements from the reviewed archive:
+- rider_hq.glb: 49,999 triangles, 24 joints
+- rider.glb: 27,229 triangles, 24 joints
+- horse.glb: 59,978 triangles
+- horse_mid.glb: 23,994 triangles
+- horse_far.glb: 8,942 triangles
+Verify current assets.
+Implement:
+- Full detail near the camera.
+- Decimated same-rig geometry at medium distance.
+- Cheap geometry or directional impostors at long distance.
+- Hysteresis to prevent switching flicker.
+- Distance-based animation frequency with elapsed-time accumulation.
+- Conservative character bounds for visibility eligibility; do not simply enable skinned-mesh culling with invalid animated bounds.
+- Keep hit proxies, authoritative positions, HP, and damage independent of visual LOD.
+- Keep nearby/local rider visuals unchanged.
+Start with the existing 24-joint rig. Reduced skeletons are optional later work requiring correct attachment/animation support.
+7. OPTIMIZE GRASS WITHOUT CHANGING ITS DISTRIBUTION
+Inspect src/horse.js buildGrass() and src/hrworld.js tuftGeometry()/createGrass().
+Concerns:
+- High preset submits roughly 2.9M grass triangles.
+- Ultra submits roughly 4.3M.
+- Tufts rejected by shader keep rules still incur vertex work.
+- Height/mask/noise calculations repeat for each blade vertex.
+Implement:
+- Preserve current deterministic world-cell placement, hashes, density rules, flowers, colors, and wind.
+- Compact eligible cells into per-instance attributes when crossing grass-cell boundaries.
+- Cache per-cell height/slope/static random values.
+- Leave time-dependent wind on the GPU.
+- Avoid costly full CPU regeneration every frame.
+- Budget grass height-map filling; do not synchronously sample all 16,384 heights after every large teleport.
+- Prevent old-height grass floating after teleport while new coverage is prepared.
+Measure CPU compaction cost against GPU savings. Preserve near-camera appearance.
+8. SPATIALLY PARTITION TREES AND FLORA
+Inspect src/horse.js buildTrees()/updateTreeLOD() and src/hrflora.js createFlora().
+Preserve instancing.
+Implement:
+- Spatial cells, initially around 128 m, grouped by species/material/LOD.
+- Conservative bounds including foliage wind.
+- Normal batch frustum culling.
+- Cached transforms/colors.
+- Update only cells affected by LOD-boundary movement.
+- Distance hysteresis.
+- Avoid rewriting/uploading the entire forest every 8 m.
+- Preserve correct off-camera shadow casters.
+- Avoid excessive tiny batches that trade triangle savings for too many draw calls.
+Measure submissions and uploads looking toward and away from forests.
+9. BUDGET TERRAIN STREAMING
+Inspect src/hrterrain.js createChunks()/build()/update().
+Implement:
+- Resumable chunk generation with a small elapsed-time budget.
+- Nearest-needed work first.
+- No unbounded “build the entire detail square now” on teleport.
+- Keep coarse terrain visible until replacement detail is complete.
+- Preserve skirts, border agreement, trails, water, and deterministic hAt().
+- Keep gameplay collision independent of temporary visual terrain LOD.
+Test startup, galloping, diagonal chunk crossings, teleport, respawn, and mountain travel for holes and frame spikes.
+10. OPTIMIZE TERRAIN SHADERS CAREFULLY
+Inspect src/hrworld.js terrainMaterial().
+Implement exact-result optimizations first:
+- Separate blend-weight calculation from texture evaluation.
+- Skip texture groups only when their final contribution is exactly zero.
+- Avoid triplanar projections with exactly zero contribution.
+- Reuse common noise/intermediate calculations.
+Then add a distant material variant retaining broad colors, snowline, trails, silhouettes, and atmospheric appearance while removing subpixel detail.
+Measure fixed-view GPU time. Branching is not automatically faster; revert changes that do not help.
+11. FIX POST-PROCESSING SIZING AND DPR POLICY
+Inspect src/gfx.js createGraphics()/resize() and main.js adaptive resolution.
+Implement:
+- Avoid redundant composer target reallocations from consecutive setPixelRatio()/setSize() calls.
+- Track actual applied dimensions/DPR.
+- Respect explicit quality/device DPR ceilings.
+- Do not let mobile low automatically creep from .75 to 1.5 merely because FPS exceeds 55.
+- Use frame-time headroom and stable hysteresis.
+- Exclude background/resume frames from adaptive decisions.
+- Add independent AO/bloom resolution controls while retaining effects.
+- Verify bloom sizing after composer resize; a half-size constructor argument alone may not preserve half resolution.
+- Dispose abandoned composer resources if falling back after an error.
+- Preserve the existing color-management and grading pipeline.
+Compare screenshots before accepting reduced-resolution effects.
+12. REPLACE FULL NETWORK STATE FLOODING WITH VERSIONED SNAPSHOTS
+Inspect src/horsenet.js tick(), src/coop.js send(), and src/hrzombies.js snap()/apply().
+Current nominal rates to verify:
+- Riders: 10 Hz <=4 players, 6.67 Hz <=8, 4 Hz <=16, 3.03 Hz <=25
+- Zombie full snapshots: ~8.33 Hz
+- Herd: 4 Hz
+- Heartbeats: every 1.5 seconds
+Implement:
+- Wall-clock send deadlines independent of simulation slowdown.
+- Protocol version, session epoch, sequence number, and timestamp.
+- Explicit spawn/death/remove events.
+- Per-recipient delta baselines and periodic full keyframes.
+- Send name/cosmetics on join/change, not every position update.
+- Dirty updates for stationary herd.
+- Per-recipient relevance tiers, retaining distant markers.
+- Backpressure: coalesce replaceable snapshots instead of queuing stale states.
+- Keep reliable gameplay events reliable.
+- Separate replaceable motion traffic where practical within existing PeerJS/WebRTC.
+- Count actual bytes per recipient.
+IMPORTANT: Current zombie apply() treats missing IDs as despawn. Do not send partial snapshots into that function unchanged.
+13. IMPROVE REMOTE MOTION
+Inspect horse.js avatar.update()/netHorse() and zombie client interpolation.
+Implement:
+- Timestamped snapshot buffers.
+- Position interpolation and shortest-angle interpolation.
+- Velocity-aware interpolation where useful.
+- Bounded extrapolation, initially 100–150 ms, then hold.
+- Explicit teleport/relocation flags.
+- Clock-offset estimation.
+- Preserve terrain grounding and mounted attachment consistency.
+Avoid simply increasing lerp strength. Test jitter, delayed packets, packet bursts, and changing lobby size.
+14. MAKE HORSE OWNERSHIP AUTHORITATIVE
+Current ownership conflict handling is local and compares player IDs.
+Implement host-granted mount ownership:
+- Request/grant/deny/release messages
+- One owner per horse
+- Disconnect cleanup
+- Reconnect/session validation
+- Responsive local prediction with correction
+Test two clients mounting the same horse simultaneously and disconnecting while mounted.
+15. FIX VOICE ADMISSION AND LIFECYCLE
+Inspect src/voice.js and horsenet proximity voice.
+Implement:
+- Enforce the same link-admission policy on incoming and outgoing offers.
+- Bound active links, preserve proximity hysteresis, and deterministically select nearest eligible peers.
+- Guard async getUserMedia and negotiation with a session generation.
+- Distinguish temporary room transition from final voice shutdown.
+- Release microphone tracks on final shutdown.
+- Handle track ended/mute/unmute and connection failure.
+- Preserve user mute preference.
+- On resume, retry media playback/AudioContext appropriately and show tap-to-resume if gesture is required.
+- Do not promise voice will always continue while the OS backgrounds the app.
+Test permissions denied, delayed permission resolution after shutdown, app switching, screen lock, calls/audio interruption, reconnect, and dense 25-player proximity.
+16. REDUCE HUD/DOM CHURN
+Inspect hrzombies.js hud(), horse HUD/tags, and gun HUD.
+Implement:
+- Persistent nodes
+- Update text/styles only when values change
+- Around 10 Hz for informational HUD values
+- Per-frame updates only for presentation that needs them
+- No full zombie HUD innerHTML rebuild each simulation frame
+Preserve appearance and responsiveness.
+17. CLEAN UP RESOURCE OWNERSHIP
+Inspect gfx.js HDR/PMREM loading, horse avatar disposal, zombie pools, and remote weapons.
+Implement:
+- Skip unused HDR loading for Horse Rider or dispose it when ownSky is active.
+- Explicit ownership/disposal for PMREM targets and generators.
+- Dispose private skeleton GPU resources and private tag textures/materials on avatar removal.
+- Uncache stopped animation mixers appropriately.
+- Preserve shared GLTF resources.
+- Bound pools and release excess private resources safely.
+Test repeated join/leave, reconnect, and zombie waves for a stable memory plateau.
+18. ADD A REAL WEBGL FAILURE SCREEN
+Catch renderer initialization failure before game startup.
+Show an HTML explanation, retry control, and useful diagnostics rather than a black page.
+Handle context loss/restoration without uncontrolled reload loops.
+Distinguish unsupported/disabled WebGL from an application shader/runtime failure.
+19. SUPPORT 10× ZOMBIES IN CHAOS MODE
+Do not just raise Z.cap.
+After the above work:
+- Support 420 desktop zombies as an explicit chaos setting.
+- Replace the current snapshot apply() 64-entry truncation with bounded, versioned, chunked/delta state handling.
+- Keep near combat authoritative and responsive.
+- Use spatial AI/separation and distance-based scheduling.
+- Use visual LOD and pooled bodies.
+- Budget spawning/asset preparation.
+- Preserve deterministic terrain and safe-zone rules.
+- Measure host and client separately.
+- Give mobile an explicit measured budget without pretending every phone can sustain 420 full-detail zombies.
+DELIVERY
+Provide:
+1. Actual modified source and rebuilt game.min.js.
+2. A concise change log with file/function references.
+3. Findings marked confirmed, suspected, fixed, or pending.
+4. Tests actually run and their results.
+5. Before/after measurements where available; no invented FPS or device results.
+6. Remaining risks and asset work.
+7. A final verification checklist for real iOS Safari, Android Chrome, and a 25-player WebRTC session.
+Prioritize correctness and lifecycle fixes first, then measured CPU/GPU/network improvements. Keep each stage reviewable and continue implementing rather than stopping at a proposal.
