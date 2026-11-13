@@ -11,7 +11,8 @@ const Q = new URLSearchParams(location.search);
 if (IS_TOUCH) document.body.classList.add('touch');
 // ---------------- Graphics ----------------
 const QNAME = pickQuality();
-const GX = createGraphics(QNAME); const { renderer, scene, camera } = GX;
+let GX; try { GX = createGraphics(QNAME); } catch (e) { window.__bootFail && window.__bootFail('gpu', e); throw e; } // v36: no black page
+const { renderer, scene, camera } = GX;
 const PBRS = loadPBR(renderer, QNAME == 'high' || QNAME == 'ultra');
 const sfx = new SFX();
 const G = { mode: 'horse', phase: 'menu', t: 0, over: false };
@@ -84,7 +85,11 @@ window.__t0 = performance.now(); // v34 reopen: the world is playable at once; t
 addEventListener('pageshow', e => { if (e.persisted) location.reload(); });
 let hiddenAt = 0; document.addEventListener('visibilitychange', () => { if (document.hidden) { hiddenAt = performance.now(); return; } last = performance.now(); // no giant dt after a pause
   if (hiddenAt && performance.now() - hiddenAt > 20000 && hnet.state.role !== 'solo' && !(hnet.net && hnet.net.open)) hnet.auto(); });
-renderer.domElement.addEventListener('webglcontextlost', e => { e.preventDefault(); if (!document.hidden) setTimeout(() => location.reload(), 300); else document.addEventListener('visibilitychange', () => location.reload(), { once: true }); });
+// v36: a lost 3D view reloads at most twice a minute (no reload loop); a third time shows the failure screen with retry
+renderer.domElement.addEventListener('webglcontextlost', e => { e.preventDefault(); let L = []; try { L = JSON.parse(sessionStorage.getItem('hr_ctxlost') || '[]').filter(t => Date.now() - t < 60000); } catch (_) {}
+  L.push(Date.now()); try { sessionStorage.setItem('hr_ctxlost', JSON.stringify(L)); } catch (_) {} window.__ctxLost = L.length;
+  if (L.length >= 2) { window.__bootFail && window.__bootFail('ctx'); return; }
+  const go = () => location.reload(); if (!document.hidden) setTimeout(go, 300); else document.addEventListener('visibilitychange', go, { once: true }); });
 // test hooks
 const syncCamera = dt => horse.syncCamera(dt);
 window.__sim = secs => { for (let i = 0; i < secs * 20; i++) update(.05); };
@@ -92,7 +97,7 @@ if (Q.get('dev') === '1') { window.__horse = horse; window.__hnet = hnet; window
 window.__cam = camera; window.__G = G; window.__P = P; window.__Q = QNAME;
 // ---------------- Loop with adaptive resolution ----------------
 const NORENDER = Q.has('norender'); const TSCALE = +(Q.get('ts') || 1); let last = performance.now(), fAcc = 0, fN = 0, lowT = 0, hiT = 0, pr = renderer.getPixelRatio(); const PR_MAX = Math.min(devicePixelRatio || 1, /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) ? Math.max(pr, 1.5) : Math.max(pr, 2));
-function loop(t) { requestAnimationFrame(loop); window.__frames = (window.__frames || 0) + 1; const rdt = Math.max(0, Math.min(.1, (t - last) / 1000)); last = t; const dt = Math.min(.05, rdt);
+function loop(t) { requestAnimationFrame(loop); window.__frames = (window.__frames || 0) + 1; if (window.__frames === 2) window.__booted = true; const rdt = Math.max(0, Math.min(.1, (t - last) / 1000)); last = t; const dt = Math.min(.05, rdt);
   try {
   for (let k = 0; k < TSCALE; k++) update(dt);
   if (G.phase != 'menu') { syncCamera(dt); sfx.listen(camera); hud(dt); }
@@ -106,3 +111,4 @@ function loop(t) { requestAnimationFrame(loop); window.__frames = (window.__fram
     fAcc = 0; fN = 0; }
   }
 requestAnimationFrame(loop);
+window.__mainDone = true; // v36 boot guard: the game script finished starting

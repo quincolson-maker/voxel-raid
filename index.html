@@ -201,6 +201,32 @@ body.hr-scoped #hrLB,body.hr-scoped #hrTags{display:none}
 <button id="vMute" hidden aria-pressed="false"></button>
 <div id="rot"><div class="ph"></div><p>Rotate your phone to landscape</p><button id="rotskip">Play anyway</button></div>
 <div id="ioshint" class="pill">For true fullscreen on iPhone: tap Share → <b>Add to Home Screen</b>, then launch Voxel Raid from your home screen. <button id="ioshintx" style="padding:.2em .6em">OK</button></div>
+<script>
+/* v36 boot guard: a real failure screen instead of a black page (WebGL off / unsupported vs. an app error), with retry */
+(function () {
+  var glOK = function () { try { var c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; } };
+  window.__bootFail = function (kind, err) {
+    if (document.getElementById('bootFail')) return; var gl = glOK(); if (kind !== 'ctx') kind = !gl ? 'nogl' : (kind || 'app');
+    var T = { nogl: ['3D graphics are turned off', 'This browser could not start WebGL. Turn on hardware acceleration (Chrome: Settings → System → "Use graphics acceleration"), update the browser, or try another browser / device.'],
+      gpu: ['The graphics card would not start', 'WebGL exists but the game could not create a 3D view (the GPU may be busy, blocked or out of memory). Close other tabs or apps and retry, or try low quality.'],
+      ctx: ['The graphics driver keeps resetting', 'The 3D view was lost twice in a minute. Close other tabs or apps and retry, or try low quality.'],
+      app: ['The game hit an error while starting', 'Something in the game failed to load. Retry; if it keeps happening, send the details below to Quin.'] }[kind] || ['Something went wrong', ''];
+    var d = document.createElement('div'); d.id = 'bootFail'; d.setAttribute('role', 'alert');
+    var msg = String((err && (err.stack || err.message)) || err || '').slice(0, 600);
+    var diag = 'kind: ' + kind + '\nwebgl: ' + (gl ? 'yes' : 'no') + '\nua: ' + navigator.userAgent + '\nscreen: ' + innerWidth + 'x' + innerHeight + ' @' + (devicePixelRatio || 1) + (msg ? '\nerror: ' + msg : '');
+    d.innerHTML = '<div class="bf"><h2></h2><p></p><div class="bb"><button id="bfRetry">Retry</button><button id="bfLow">Retry in low quality</button></div><details><summary>Details</summary><pre></pre></details></div>';
+    d.querySelector('h2').textContent = T[0]; d.querySelector('p').textContent = T[1]; d.querySelector('pre').textContent = diag;
+    var st = document.createElement('style'); st.textContent = '#bootFail{position:fixed;inset:0;z-index:99999;background:#14100c;color:#f4e6cc;display:flex;align-items:center;justify-content:center;font:16px system-ui,sans-serif;padding:20px}#bootFail .bf{max-width:560px}#bootFail h2{margin:0 0 10px;color:#ffd76a}#bootFail .bb{display:flex;gap:10px;margin:18px 0;flex-wrap:wrap}#bootFail button{font:700 16px system-ui;padding:12px 18px;border-radius:10px;border:2px solid #ffd76a;background:#3a2810;color:#fff}#bootFail pre{white-space:pre-wrap;font-size:12px;opacity:.8}';
+    document.head.appendChild(st); (document.body || document.documentElement).appendChild(d);
+    d.querySelector('#bfRetry').onclick = function () { try { sessionStorage.removeItem('hr_ctxlost'); } catch (e) {} location.reload(); };
+    d.querySelector('#bfLow').onclick = function () { try { localStorage.setItem('vr_quality', 'low'); sessionStorage.removeItem('hr_ctxlost'); } catch (e) {} location.reload(); };
+    window.__bootFailed = kind;
+  };
+  // only a game script that never finished starting counts (a stray early error over a working game does not)
+  addEventListener('error', function (e) { if (!window.__mainDone && !window.__bootErr) window.__bootErr = e.error || e.message; });
+  window.__bootCheck = function () { setTimeout(function () { if (!window.__mainDone) window.__bootFail('app', window.__bootErr || 'the game script did not start'); }, 0); };
+})();
+</script>
 <script src="./vendor/peerjs.min.js"></script>
-<script type="module" src="./game.min.js?v=35-saloon"></script>
+<script type="module" src="./game.min.js?v=36-fixes" onload="window.__bootCheck && window.__bootCheck()" onerror="window.__bootFail && window.__bootFail('app', 'game.min.js failed to load')"></script>
 </body></html>
