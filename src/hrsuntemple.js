@@ -111,6 +111,7 @@ export function createSunTemple({position=[0,0,0],rotationY=0,quality='high',vie
   floor(-17,-14,17,12);floor(-22,-22,12,8); // mirror chamber/approach
   floor(17,-52,16,10); // counterweight alcove
   floor(0,-65,30,18,-9); // inner sanctum ends at -74 (<80m from entrance)
+  floor(0,-56.47,12,.87,-8.23);floor(0,-57.34,12,.87,-8.62); // v39: two steps down into the sanctum (the hall ramp ends 1.2 m above its floor)
   const walls=[[-10,-4,-8],[-10,-23,-58],[10,-4,-47],[10,-57,-59]];
   for(const [x,a,b] of walls){const z=(a+b)/2;solid(x,rampY(z)+7,z,2,14,Math.abs(b-a));}
   // Portal headers leave actual walkable openings into the side chambers.

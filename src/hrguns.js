@@ -323,9 +323,11 @@ export function createGuns(c) {
     const zs = c.zombies && c.zombies(); if (zs) { const zh = zs.rayHit(o, d, best.t, raySphere, rayCyl); if (zh) best = { t: zh.t, kind: 'zombie', Z: zh.Z, head: zh.head }; } // the walking dead (head sphere + body)
     for (const ob of H.obst) { if (Math.abs(ob[0] - o.x) > maxT + 3 || Math.abs(ob[1] - o.z) > maxT + 3) continue; const g = hAt(ob[0], ob[1]), t = rayCyl(o, d, ob[0], ob[1], ob[2], g - .5, g + (ob[3] || 3)); if (t > 0 && t < best.t) best = { t, kind: (ob[3] || 3) > 4 ? 'tree' : 'rock' }; }
     if (H.cave) { const t = H.cave.rayHit(o, d, best.t); if (t > 0 && t < best.t) best = { t, kind: 'rock' }; } // v38: the hideout's rock walls stop bullets
+    if (H.temple) { const t = H.temple.rayHit(o, d, best.t); if (t > 0 && t < best.t) best = { t, kind: 'rock' }; } // v39: temple walls too
     for (const f of H.fence) { const t = raySeg(o, d, f[0], f[1], f[2], f[3], c.BASE, c.BASE + 1.45); if (t > 0 && t < best.t) best = { t, kind: 'wood' }; }
-    let pt = 0, ph = o.y - hAt(o.x, o.z); for (let t = 1; t <= best.t; t += t < 40 ? 1 : 2.5) { const x = o.x + d.x * t, y = o.y + d.y * t, z = o.z + d.z * t, hh = y - hAt(x, z);
-      if (hh < 0) { let a = pt, b = t; for (let k = 0; k < 7; k++) { const m = (a + b) / 2; if (o.y + d.y * m - hAt(o.x + d.x * m, o.z + d.z * m) < 0) b = m; else a = m; } if (b < best.t) best = { t: b, kind: 'ground' }; break; } pt = t; ph = hh; }
+    const TP = H.temple, gH = (x, y, z) => { if (TP) { const k = TP.cell(x, y, z); if (k === 1) return 1; if (k === 2) return -1; } return y - hAt(x, z); }; // v39: inside the temple's halls the mound above is air; above the halls it is rock
+    let pt = 0, ph = gH(o.x, o.y, o.z); for (let t = 1; t <= best.t; t += t < 40 ? 1 : 2.5) { const x = o.x + d.x * t, y = o.y + d.y * t, z = o.z + d.z * t, hh = gH(x, y, z);
+      if (hh < 0) { let a = pt, b = t; for (let k = 0; k < 7; k++) { const m = (a + b) / 2; if (gH(o.x + d.x * m, o.y + d.y * m, o.z + d.z * m) < 0) b = m; else a = m; } if (b < best.t) best = { t: b, kind: 'ground' }; break; } pt = t; ph = hh; }
     best.p = new THREE.Vector3().copy(d).multiplyScalar(best.t).add(o); return best; }
 
   function spreadDeg(fan) { const m = !!H.mounted, sp = Math.abs(m ? H.speed : H.fv.length()); let s = m ? S.swayHorse + sp * S.swayHorseSpeed : sp * S.swayWalk;
@@ -566,5 +568,5 @@ export function createGuns(c) {
   function upgrade(w) { const t = tier(w); if (t >= 3 || !state.owned[w]) return false; return buy(UP_COST[w][t], () => { state.up[w] = t + 1; state.ammo[w] = maxAmmo(w); say(`${WNAME[w]} → ${['', 'BRONZE', 'SILVER', 'GOLD'][t + 1]}`); }); }
   function purchase(w) { if (state.owned[w]) return false; return buy(PRICE[w], () => { give(w); say(`${WNAME[w]} bought`); }); }
   function credit(head, kind) { return award(head, kind); }
-  return { tommyFx: tfx, tsup, setTommySup, state, settings: S, models, save, give, upgrade, purchase, credit, pts, tier, maxAmmo, zoom, scopePop, PRICE, UP_COST, targets, range, update, scopeCam, hud, draw, holster, cycle, reload, shoot, netState, remoteShot, poseRemote, disposeRemote, aimAt, cast, syncUI };
+  return { rayCast: (o, d, maxT) => cast(o, d, maxT), tommyFx: tfx, tsup, setTommySup, state, settings: S, models, save, give, upgrade, purchase, credit, pts, tier, maxAmmo, zoom, scopePop, PRICE, UP_COST, targets, range, update, scopeCam, hud, draw, holster, cycle, reload, shoot, netState, remoteShot, poseRemote, disposeRemote, aimAt, cast, syncUI };
 }

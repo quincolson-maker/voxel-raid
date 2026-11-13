@@ -20,6 +20,8 @@ import { createFlora } from './hrflora.js';
 import { createTown, wearJacket } from './hrtown.js';
 import { createSaloon } from './hrsaloon.js';
 import { pickCaveSite, makePad, caveRect, createCave } from './hrcave.js';
+import { pickTempleSite, makeTemplePad, templeRect, createTemple } from './hrtemple.js';
+import { createSunItem } from './hrsunweapon.js';
 import { createBuild } from './hrbuild.js';
 import { buildFeatures, buildMask, createChunks, createWater } from './hrterrain.js';
 import { makeRawH, trailSegments, segDist as segD, createSky, terrainMaterial as terrainMat2, loadTerrainTextures, buildTerrain, createGrass, loadRockModels } from './hrworld.js';
@@ -43,8 +45,9 @@ function h0(x, z) { const d = Math.hypot(x - PEN.x, z - PEN.z); return BASE + (r
 let FEAT = null; const featAvoid = (x, z) => (Math.abs(x - PEN.x) < 75 && Math.abs(z - PEN.z) < 75) || clearing(x, z, 12) || inRange(x, z, 14) || trailDist(x, z) < 10;
 export function features() { return FEAT || (FEAT = buildFeatures(h0, { BASE, WALK, avoid: featAvoid })); }
 // v38 Bandit Falls: a flattened notch for the waterfall hideout, picked once from the carved terrain (same on every machine)
-let CAVE_SITE = null, CAVEPAD = null; const NOCAVE = typeof location !== 'undefined' && new URLSearchParams(location.search).get('cave') === '0';
-export function hAt(x, z) { const h = (FEAT || features()).carve(x, z, h0(x, z)); return CAVEPAD ? CAVEPAD(x, z, h) : h; }
+let CAVE_SITE = null, CAVEPAD = null, TEMPLE_SITE = null, TEMPLEPAD = null; const QS0 = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams(), NOCAVE = QS0.get('cave') === '0', NOTEMPLE = QS0.get('temple') === '0';
+// v39 The Hollow Sun: a mound raised over the temple's halls + a flat apron at its seal (same on every machine)
+export function hAt(x, z) { let h = (FEAT || features()).carve(x, z, h0(x, z)); if (CAVEPAD) h = CAVEPAD(x, z, h); return TEMPLEPAD ? TEMPLEPAD(x, z, h) : h; }
 
 function std(color, o = {}) { return new THREE.MeshStandardMaterial({ color, roughness: o.r ?? .85, metalness: o.m ?? 0, ...(o.map ? { map: o.map } : {}) }); }
 function box(g, w, h, d, m, x, y, z) { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); b.castShadow = true; g.add(b); return b; }
@@ -348,6 +351,7 @@ export function createHorseRider(ctx) {
   function buildWorld() {
     const F = H.F = features(); H.mask = buildMask(F, MASK_HALF, mobile ? 1024 : 2048);
     H.hAt = hAt; if (!CAVE_SITE && !NOCAVE) { CAVE_SITE = pickCaveSite(hAt, F, { PEN, WALK, avoid: (x, z) => (Math.abs(x - PEN.x) < 120 && Math.abs(z - PEN.z) < 120) || clearing(x, z, 10) || inRange(x, z, 14) || trailDist(x, z) < 8 }); if (CAVE_SITE) CAVEPAD = makePad(CAVE_SITE); }
+    if (!TEMPLE_SITE && !NOTEMPLE) { const cq = CAVE_SITE ? caveRect(CAVE_SITE, 60, 30) : null; TEMPLE_SITE = pickTempleSite(hAt, F, { PEN, WALK, avoid: (x, z) => (Math.abs(x - PEN.x) < 150 && Math.abs(z - PEN.z) < 150) || clearing(x, z, 10) || inRange(x, z, 14) || trailDist(x, z) < 8 || (cq && Math.abs(x - cq.x) < cq.hw && Math.abs(z - cq.z) < cq.hd) }); if (TEMPLE_SITE) TEMPLEPAD = makeTemplePad(TEMPLE_SITE); }
     const T = loadTerrainTextures(GX.renderer, HQ), XO = { mask: H.mask, maskHalf: MASK_HALF, chunkU: { value: new THREE.Vector4(0, 0, -1, 0) }, CH: CHUNK, LIM: CH_LIM };
     const mat = terrainMat2(T, PEN, SEG, BASE, HQ, XO), holeMat = terrainMat2(T, PEN, SEG, BASE, HQ, { ...XO, hole: true });
     // coarse inner square + far ring everywhere, streamed detail chunks (1.6-3.1 m grid) in a square around the player
@@ -375,13 +379,14 @@ export function createHorseRider(ctx) {
           if (mg > .8) continue; const sc = above * 2 + rel * .25 + mg * 3 + rr * .04; if (sc < bs) { bs = sc; best = [x, z, n ? 'station' : 'armory', rot, +mg.toFixed(2), +above.toFixed(2)]; } } }
       if (!best) best = [t[0] + 8, t[1] + 8, n ? 'station' : 'armory', 0, -1, -1]; return best; });
     let town = null, ts = 1e9; for (let d = 95; d <= 230; d += 15) for (let a = 0; a < TAU; a += TAU / 24) { const x = PEN.x + Math.cos(a) * d, z = PEN.z + Math.sin(a) * d;
-      let bad = false; for (const [u, v] of [[-20, -14], [20, -14], [-20, 14], [20, 14], [0, 0], [-20, 0], [20, 0], [0, 14], [0, -14]]) { const px = x + u, pz = z + v; if ((Math.abs(px - PEN.x) < 40 && Math.abs(pz - PEN.z) < 40) || (CAVE_SITE && (q => Math.abs(px - q.x) < q.hw && Math.abs(pz - q.z) < q.hd)(caveRect(CAVE_SITE, 14, 10))) || clearing(px, pz, 3) || inRange(px, pz, 6) || F.trailDist(px, pz) < 10 || F.waterDist(px, pz) < 8 || trailDist(px, pz) < 4) { bad = true; break; } } if (bad) continue;
+      let bad = false; for (const [u, v] of [[-20, -14], [20, -14], [-20, 14], [20, 14], [0, 0], [-20, 0], [20, 0], [0, 14], [0, -14]]) { const px = x + u, pz = z + v; if ((Math.abs(px - PEN.x) < 40 && Math.abs(pz - PEN.z) < 40) || (CAVE_SITE && (q => Math.abs(px - q.x) < q.hw && Math.abs(pz - q.z) < q.hd)(caveRect(CAVE_SITE, 14, 10))) || (TEMPLE_SITE && (q => Math.abs(px - q.x) < q.hw && Math.abs(pz - q.z) < q.hd)(templeRect(TEMPLE_SITE, 16))) || clearing(px, pz, 3) || inRange(px, pz, 6) || F.trailDist(px, pz) < 10 || F.waterDist(px, pz) < 8 || trailDist(px, pz) < 4) { bad = true; break; } } if (bad) continue;
       const sc = flat(x, z, 17, 12) + d * .004; if (sc < ts) { ts = sc; town = [x, z, Math.atan2(x - PEN.x, z - PEN.z)]; } }
-    ZONES = tw.map(t => [t[0], t[1], 9, 9]); if (town) ZONES.push([town[0], town[1], 22, 22]); if (CAVE_SITE) { const q = caveRect(CAVE_SITE, 6, 8); ZONES.push([q.x, q.z, q.hw, q.hd]); }
+    ZONES = tw.map(t => [t[0], t[1], 9, 9]); if (town) ZONES.push([town[0], town[1], 22, 22]); if (CAVE_SITE) { const q = caveRect(CAVE_SITE, 6, 8); ZONES.push([q.x, q.z, q.hw, q.hd]); } if (TEMPLE_SITE) { const q = templeRect(TEMPLE_SITE, 15); ZONES.push([q.x, q.z, q.hw, q.hd]); }
     town2 = H.town2 = createTown({ scene, hAt, H, P, mobile, msg, sfx, camera, send: m => H.zSend && H.zSend(m), jacket: on => { if (real()) wearJacket(rider, on); } }).build({ towers: tw, town });
     createSaloon({ scene, H, P, T: town2, camera, sfx, msg, mobile, input, keys, fx: ctx.fx, canvas: GX.renderer.domElement, makeHorse: () => makeHorse(...PROC_COATS[(Math.random() * 5) | 0]), procAnim, blocked: (x, z, r) => blocked(x, z, r), groundAt: (x, z, y) => town2.floorAt(x, z, y) }); // v35
     if (CAVE_SITE) H.cave = createCave({ scene, H, P, T: town2, hAt, sfx, msg, mobile, low: !HQ, site: CAVE_SITE, role: () => H.netRole ? H.netRole() : 'solo', send: m => H.zSend && H.zSend(m), remotes: () => H.netRemotes ? H.netRemotes() : [] }); // v38 Bandit Falls
-    H.obstWalls = town2.walls; H.places = { cave: H.cave ? H.cave.info() : null, towers: tw, town, tops: [tops[A], tops[B]].map(t => [Math.round(t[0]), Math.round(t[1]), Math.round(t[2] - BASE)]), townFlat: +ts.toFixed(2) }; }
+    if (TEMPLE_SITE) H.temple = createTemple({ scene, H, P, T: town2, hAt, sfx, msg, mobile, low: !HQ, site: TEMPLE_SITE, role: () => H.netRole ? H.netRole() : 'solo', send: m => H.zSend && H.zSend(m), remotes: () => H.netRemotes ? H.netRemotes() : [] }); // v39 The Hollow Sun
+    H.obstWalls = town2.walls; H.places = { temple: H.temple ? H.temple.info() : null, cave: H.cave ? H.cave.info() : null, towers: tw, town, tops: [tops[A], tops[B]].map(t => [Math.round(t[0]), Math.round(t[1]), Math.round(t[2] - BASE)]), townFlat: +ts.toFixed(2) }; }
   // woods: conifers + broadleaf trees, instanced, with a near (detailed) / far (low-poly) LOD swapped around the player
   function buildTrees() {
     const nT = Math.round(Q.trees * (mobile ? 2.2 : 3));
@@ -608,7 +613,7 @@ export function createHorseRider(ctx) {
   function blocked(x, z, r, skip) {
     if (Math.abs(x) > WALK || Math.abs(z) > WALK) return true;
     for (const f of H.fence) if (segDist(x, z, f) < r + .1) return true;
-    if (town2 && town2.wallHit(x, z, r, H.curY ?? -1e9)) return true; if (H.cave && H.cave.wallHit(x, z, r, H.curY ?? -1e9)) return true; if (town2 && r >= .7) for (const t of town2.towers) if (town2.inFoot(t, x, z, r)) return true; // horses stay off the lookouts
+    if (town2 && town2.wallHit(x, z, r, H.curY ?? -1e9)) return true; if (H.cave && H.cave.wallHit(x, z, r, H.curY ?? -1e9)) return true; if (H.temple && (H.temple.wallHit(x, z, r, H.curY ?? -1e9) || (r >= .7 && H.temple.inFoot(x, z, r)))) return true; // v39: walls; horses stay out of the temple if (town2 && r >= .7) for (const t of town2.towers) if (town2.inFoot(t, x, z, r)) return true; // horses stay off the lookouts
     for (const [ox, oz, or] of obstNear(x, z)) if (Math.abs(ox - x) < or + r && Math.abs(oz - z) < or + r && Math.hypot(ox - x, oz - z) < or + r) return true;
     for (const h of H.horses) if (h !== skip && h !== H.mounted && Math.hypot(h.pos.x - x, h.pos.z - z) < .75 + r) return true;
     return false;
@@ -679,6 +684,7 @@ export function createHorseRider(ctx) {
     P.yaw = Math.atan2(SPAWN.x - PEN.x, SPAWN.z - PEN.z); P.pitch = -.05; P.hp = 100;
     GX.setLighting('day', false); setupSky();
     guns = H.guns = createGuns({ scene, camera, P, H, hAt, sfx, fx: ctx.fx, msg, mobile, input, keys, renderer: GX.renderer, rig: () => real() ? rider : null, aimBone, twistBone, RANGE, BASE, dev: new URLSearchParams(location.search).has('dev'), send: m => H.netShot && H.netShot(m), zombies: () => zombies });
+    H.sun = createSunItem({ scene, H, P, camera, sfx, msg, mobile, fx: ctx.fx, role: () => H.netRole ? H.netRole() : 'solo', send: m => H.zSend && H.zSend(m) }); // v39 the Sun Pyramid
     if (town2 && town2.registerStoreItem && guns.models.tommy.setSuppressor) try { // v36: Tommy suppressor (900 pts, saved with the guns; needs the Tommy)
       const gs = guns.state, item = createTommySuppressorItem({ weapon: guns.models.tommy, price: 900, owned: gs.att.tsup.owned, equipped: gs.att.tsup.equipped,
         wallet: { spend: n => { if (!gs.owned.tommy) { msg && msg('Buy the Tommy first'); return false; } if (guns.pts() < n) { msg && msg('Not enough points'); return false; } gs.spent = (gs.spent || 0) + n; return true; } },
@@ -786,8 +792,8 @@ export function createHorseRider(ctx) {
       if (l > .12 && vv > 5 && dk > 3 && !H.noTrip && Math.random() < dt * (dk - 3) * .045 * Math.min(1.6, (vv - 4.5) / 2.7)) { H.fallD = H.fallT = 1.5 + Math.random() * 1.5; H.falls = (H.falls || 0) + 1; H.trips = (H.trips || 0) + 1; H.fallYaw = Math.random() < .5 ? -1 : 1; H.fv.set(0, 0); H.shake = Math.max(H.shake, .5); msg(dk > 10 ? 'You faceplant in the dirt' : 'You tripped and fell', 1.5); } } }
     const v = H.fv.length(), ox0 = P.pos.x, oz0 = P.pos.z, gy0 = hAt(ox0, oz0), onS = town2 && town2.onStruct(ox0, oz0, P.pos.y); H.curY = P.pos.y; moveCircle(P.pos, H.fv.x * dt, H.fv.y * dt, .35, null); H.curY = null;
     const nT = town2 && town2.towers.some(t => Math.hypot(P.pos.x - t.cx, P.pos.z - t.cz) < 22); // v34: you can always scramble up to a lookout, from any side
-    if (!onS && !(town2 && town2.onStruct(P.pos.x, P.pos.z, P.pos.y)) && (nT ? Math.hypot(H.fv.x, H.fv.y) > 2.2 && P.pos.y - gy0 > dt * 2.2 && H.fv.multiplyScalar(.97) && false : slopeGate(P.pos, ox0, oz0, gy0, 1.3, .35, null))) H.fv.multiplyScalar(.9); // scrambling up: only up to ~52 degrees
-    let g0 = town2 ? town2.floorAt(P.pos.x, P.pos.z, P.pos.y) : hAt(P.pos.x, P.pos.z); if (H.cave) g0 = H.cave.floorAt(P.pos.x, P.pos.z, P.pos.y, g0); if (jump && H.ground) { H.vy = 7; H.ground = false; }
+    if (!onS && !(town2 && town2.onStruct(P.pos.x, P.pos.z, P.pos.y)) && !(H.temple && H.temple.under(P.pos.x, P.pos.z, P.pos.y)) && (nT ? Math.hypot(H.fv.x, H.fv.y) > 2.2 && P.pos.y - gy0 > dt * 2.2 && H.fv.multiplyScalar(.97) && false : slopeGate(P.pos, ox0, oz0, gy0, 1.3, .35, null))) H.fv.multiplyScalar(.9); // scrambling up: only up to ~52 degrees
+    let g0 = town2 ? town2.floorAt(P.pos.x, P.pos.z, P.pos.y) : hAt(P.pos.x, P.pos.z); if (H.cave) g0 = H.cave.floorAt(P.pos.x, P.pos.z, P.pos.y, g0); if (H.temple) { const tg = H.temple.groundAt(P.pos.x, P.pos.z, P.pos.y); if (tg !== null) g0 = tg; } // v39: under the mound the temple's floors decide if (jump && H.ground) { H.vy = 7; H.ground = false; }
     H.vy -= 22 * dt; P.pos.y += H.vy * dt; if (P.pos.y <= g0) { P.pos.y = g0; H.vy = 0; H.ground = true; }
     const ob = P.bob; P.bob += dt * v * 1.6; if (H.ground && v > .5 && Math.floor(ob / Math.PI) !== Math.floor(P.bob / Math.PI)) sfx.step && sfx.step(false);
     if (H.gunFace != null) H.bodyYaw += wrapA(H.gunFace - H.bodyYaw) * Math.min(1, dt * 14); else if (v > .3) { const wy = Math.atan2(-H.fv.x, -H.fv.y); H.bodyYaw += wrapA(wy - H.bodyYaw) * Math.min(1, dt * 10); }
@@ -812,7 +818,7 @@ export function createHorseRider(ctx) {
       if (held && dk > 1.5) sideIn += Math.sin(H.t * .9) * Math.min(.55, (dk - 1.5) * .09) + Math.sin(H.t * 2.3 + 1) * Math.min(.25, (dk - 1.5) * .04); } else { H.lagF = fwdIn; H.lagS = sideIn; }
     const run = !!keys.ShiftLeft || !!keys.ShiftRight || (stick > .92 && fwdIn > .6);
     const jump = keys.Space || input.jump;
-    if (H.fallT > 0) H.fallT -= dt; PF.s('town'); if (town2) town2.tick(dt); PF.e('town'); PF.s('saloon'); if (H.saloon) H.saloon.tick(dt); PF.e('saloon'); PF.s('cave'); if (H.cave) H.cave.update(dt); PF.e('cave'); PF.s('build'); if (H.build) H.build.tick(dt); PF.e('build'); PF.s('player');
+    if (H.fallT > 0) H.fallT -= dt; PF.s('town'); if (town2) town2.tick(dt); PF.e('town'); PF.s('saloon'); if (H.saloon) H.saloon.tick(dt); PF.e('saloon'); PF.s('cave'); if (H.cave) H.cave.update(dt); if (H.temple) H.temple.update(dt); if (H.sun) H.sun.update(dt); PF.e('cave'); PF.s('build'); if (H.build) H.build.tick(dt); PF.e('build'); PF.s('player');
     if (H.dead) { H.fv.x = H.fv.y = 0; } else if (h) ride(h, dt, stick > .05 ? 0 : fwdIn, stick > .05 ? 0 : sideIn, stick, jump); else walk(dt, fwdIn, sideIn, stick, run, jump);
     PF.e('player'); PF.s('herd');
     for (const o of H.horses) { if (o === h) continue;
@@ -883,7 +889,7 @@ export function createHorseRider(ctx) {
     look.add(lookOff); want.add(lookOff); lastLook.copy(look).sub(lookOff);
     camClear(look, want); want.y = Math.max(want.y, hAt(want.x, want.z) + .5);
     want.sub(look); if (!H.camInit || !dt) { camPos.copy(want); H.camInit = true; } else camPos.lerp(want, Math.min(1, dt * k)); // smooth the offset, not the position: no lag at a gallop
-    camera.position.copy(look).add(camPos); camera.position.y = Math.max(camera.position.y, hAt(camera.position.x, camera.position.z) + .4); if (H.shake > 0) camera.position.add(tmp.set((Math.random() - .5), (Math.random() - .5), (Math.random() - .5)).multiplyScalar(H.shake * .12)); camera.lookAt(look);
+    camera.position.copy(look).add(camPos); if (!(H.temple && H.temple.underP)) camera.position.y = Math.max(camera.position.y, hAt(camera.position.x, camera.position.z) + .4); if (H.shake > 0) camera.position.add(tmp.set((Math.random() - .5), (Math.random() - .5), (Math.random() - .5)).multiplyScalar(H.shake * .12)); camera.lookAt(look);
     { const cp = h ? Math.max(-.7, Math.min(.35, P.pitch)) : Math.max(-.85, Math.min(.6, P.pitch)), ex = Math.max(-1.553, Math.min(1.553, P.pitch)) - cp; if (Math.abs(ex) > 1e-4) camera.rotateX(ex); } // v33: the camera keeps its orbit, the view tilts on to look straight up / down (+-89 deg)
     if (h) camera.rotateZ(H.roll * .3);
     drunkCam(h);
@@ -907,6 +913,7 @@ export function createHorseRider(ctx) {
   function placesHud() { if (!town2 || !H.places) return; const sb = $('sub'); if (!sb || H.mounted && !sb) return; const ts = town2.towers, tn = town2.town, px = P.pos.x, pz = P.pos.z, dir = (x, z) => { const a = ((Math.atan2(x - px, -(z - pz)) * 180 / Math.PI) + 360) % 360; return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(a / 45) % 8]; };
     const inTown = tn && zombies && zombies.inSafeZone && zombies.inSafeZone(px, pz) === 'town'; let extra = inTown ? ' · 🛡 Safe zone' : '';
     for (const t of ts) { const dd = Math.hypot(t.cx - px, t.cz - pz); if (dd > 30) extra += ` · 🗼${t.kind === 'armory' ? '1' : '2'} ${Math.round(dd)} m ${dir(t.cx, t.cz)}`; } if (tn) { const dd = Math.hypot(tn.cx - px, tn.cz - pz); if (dd > 40) extra += ` · 🏠 town ${Math.round(dd)} m ${dir(tn.cx, tn.cz)}`; } if (H.cave) { const S = H.cave.site, dd = Math.hypot(S.x - px, S.z - pz); if (dd > 60) extra += ` · 💧 Bandit Falls ${Math.round(dd)} m ${dir(S.x, S.z)}`; } // v38
+    if (H.temple) { const S = H.temple.site, dd = Math.hypot(S.x - px, S.z - pz); if (dd > 80) extra += ` · ☀ Hollow Sun ${Math.round(dd)} m ${dir(S.x, S.z)}`; } // v39
     if (extra && !sb.textContent.endsWith(extra)) sb.textContent += extra; }
   // v33: rolling kill leaderboard (everyone in the lobby, live; kills / points come from each rider's synced state, kill points are host-confirmed)
   let lbEl = null, lbHtml = '';

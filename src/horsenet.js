@@ -89,6 +89,9 @@ export function createHorseNet({ horse, P, msg }) {
       case 'ck': if (isHost() && H.town2) H.town2.ck.netIn(m, S.peers.get(from)); break; // checkers move / challenge (host runs the game)
       case 'cks': if (isClient() && H.town2) H.town2.ck.netState(m); break;
       case 'zd': if (isClient() && H.zombies) H.zombies.remoteHurt(m); break;
+      case 'tma': if (isHost() && H.temple) H.temple.netIn(m, S.peers.get(from)); break; // v39 Hollow Sun: a client's puzzle action
+      case 'tms': if (isClient() && H.temple) H.temple.netIn(m); break; // the host's ordered action log
+      case 'sun': { const id = isHost() ? S.peers.get(from) : m.id; if (!id || id === S.me) break; H.sun && H.sun.remote(m); if (isHost()) net.send({ t: 'sun', o: m.o, e: m.e, id }, null, from); break; } // a Sun Pyramid beam (visual)
       case 'cv': if (isClient() && H.cave) H.cave.netIn(m); break; // v38 Bandit Falls: the host's hideout state
       case 'cvk': if (isHost() && H.cave) H.cave.netIn(m, S.peers.get(from)); break; // a client took the vault key // a zombie hit me (host decides)
       case 'join': if (isClient()) addRemote(m.id); break;
