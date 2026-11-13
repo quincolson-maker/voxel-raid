@@ -123,11 +123,11 @@ export function createCave(c) {
       out.state.phase = ph; out.state.left = Number.isFinite(m.n) ? m.n : 0; } };
   const cp = new THREE.Vector3(), fallP = cave.group.localToWorld(new THREE.Vector3(0, 3, 2));
   // v38.1: the falls roar — one looped noise source (low rumble + hiss), loudness by distance, built only within 90 m
-  let wl = null; out.water = () => wl ? +wl.g.gain.value.toFixed(3) : 0;
+  let wl = null; out.water = () => wl ? +wl.v.toFixed(3) : 0; // the loudness it is heading for (tests: a suspended context never ramps)
   function waterSound(d) { const ac = sfx.ctx; if (!ac || !sfx.noise || !sfx.master) return;
     if (d < 90 && !wl) { const src = ac.createBufferSource(); src.buffer = sfx.noise; src.loop = true; src.playbackRate.value = .55; const lo = ac.createBiquadFilter(); lo.type = 'lowpass'; lo.frequency.value = 520; const hi = ac.createBiquadFilter(); hi.type = 'bandpass'; hi.frequency.value = 2600; hi.Q.value = .5;
       const hg = ac.createGain(); hg.gain.value = .35; const g = ac.createGain(); g.gain.value = 0; src.connect(lo); lo.connect(g); src.connect(hi); hi.connect(hg); hg.connect(g); g.connect(sfx.master); src.start(); wl = { src, g, nodes: [lo, hi, hg] }; }
-    if (!wl) return; const k = Math.max(0, 1 - d / 85), v = .2 * k * k; wl.g.gain.setTargetAtTime(v, ac.currentTime, .25);
+    if (!wl) return; const k = Math.max(0, 1 - d / 85), v = .2 * k * k; wl.v = v; wl.g.gain.setTargetAtTime(v, ac.currentTime, .25);
     if (d > 100) { const w = wl; wl = null; w.g.gain.setTargetAtTime(0, ac.currentTime, .1); setTimeout(() => { try { w.src.stop(); w.src.disconnect(); w.g.disconnect(); w.nodes.forEach(n => n.disconnect()); } catch (_) {} }, 600); } }
   out.update = dt => { cp.copy(P.pos); if (H.mounted) cp.copy(H.mounted.pos); cave.update(dt, null, cp); const near = cave.group.visible && cp.distanceToSquared(cave.entrance) < 70 * 70; waterSound(cp.distanceTo(fallP));
     if (!near) for (const l of cave.lights) l.intensity = 0; // lamps stay in the scene (no shader rebuilds), dark when you are away
