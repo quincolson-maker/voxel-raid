@@ -7,7 +7,17 @@ const http = require('http'), fs = require('fs'), path = require('path');
 const LB_FILE = process.env.LB_FILE || path.join(__dirname, 'leaderboard.json'), LB_MAX = 500;
 const isoWeek = (d = new Date()) => { const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())); const day = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - day); const y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1)); return t.getUTCFullYear() + '-W' + String(Math.ceil(((t - y0) / 864e5 + 1) / 7)).padStart(2, '0'); };
 let LB = { week: isoWeek(), riders: {} }; try { const v = JSON.parse(fs.readFileSync(LB_FILE, 'utf8')); if (v && v.week === LB.week && v.riders) LB = v; } catch (_) {}
-let lbDirty = false; setInterval(() => { if (!lbDirty) return; lbDirty = false; fs.writeFile(LB_FILE, JSON.stringify(LB), () => {}); }, 15000).unref();
+// Optional permanent storage: set REDIS_URL (e.g. a free Render Key Value instance's internal URL). Tiny RESP client, no npm packages.
+const net = require('net'), tls = require('tls'); const KV = process.env.REDIS_URL || process.env.KV_URL || '';
+function kv(cmd) { return new Promise(res => { if (!KV) return res(null); let u; try { u = new URL(KV); } catch (_) { return res(null); }
+  const opts = { host: u.hostname, port: +u.port || 6379, servername: u.hostname }, sock = (u.protocol === 'rediss:' ? tls : net).connect(opts); let buf = '', done = false; const fin = v => { if (done) return; done = true; try { sock.destroy(); } catch (_) {} res(v); };
+  const enc = a => '*' + a.length + '\r\n' + a.map(x => { x = String(x); return '$' + Buffer.byteLength(x) + '\r\n' + x + '\r\n'; }).join('');
+  const auth = u.password ? enc(u.username && u.username !== 'default' ? ['AUTH', decodeURIComponent(u.username), decodeURIComponent(u.password)] : ['AUTH', decodeURIComponent(u.password)]) : '';
+  sock.setTimeout(4000, () => fin(null)); sock.on('error', () => fin(null)); sock.on('connect', () => sock.write(auth + enc(cmd))); sock.on('secureConnect', () => {});
+  sock.on('data', d => { buf += d; const parts = buf.split('\r\n'); let i = 0; if (u.password) { if (!parts[0] || parts.length < 2) return; i = 1; } const h = parts[i]; if (h == null || h === '') return;
+    if (h[0] === '$') { const n = +h.slice(1); if (n < 0) return fin(null); const body = parts.slice(i + 1).join('\r\n'); if (Buffer.byteLength(body) >= n) fin(body.slice(0, n)); } else if (h[0] === '+' || h[0] === ':') fin(h.slice(1)); else if (h[0] === '-') fin(null); }); }); }
+kv(['GET', 'hr_lb']).then(v => { if (!v) return; try { const o = JSON.parse(v); if (o && o.week === isoWeek() && o.riders && Object.keys(o.riders).length >= Object.keys(LB.riders).length) LB = o; } catch (_) {} });
+let lbDirty = false; setInterval(() => { if (!lbDirty) return; lbDirty = false; const s = JSON.stringify(LB); fs.writeFile(LB_FILE, s, () => {}); kv(['SET', 'hr_lb', s]); }, 15000).unref();
 function lbRoll() { const w = isoWeek(); if (LB.week !== w) { LB = { week: w, riders: {} }; lbDirty = true; } }
 const num = (v, max) => Math.max(0, Math.min(max, Math.floor(+v || 0)));
 function lbTop(n = 25) { lbRoll(); return Object.values(LB.riders).sort((a, b) => b.pts - a.pts || b.k - a.k).slice(0, n).map(({ name, pts, k, b, s, rank }) => ({ name, pts, k, b, s, rank })); }
@@ -27,7 +37,7 @@ function list() { prune(); return [...rooms.values()].filter(r => r.players < r.
 function handler(req, res) {
   const url = new URL(req.url, 'http://x'), ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
   if (req.method === 'OPTIONS') return send(res, 204, null);
-  if (url.pathname === '/' || url.pathname === '/health') return send(res, 200, { ok: true, rooms: rooms.size, lb: true });
+  if (url.pathname === '/' || url.pathname === '/health') return send(res, 200, { ok: true, rooms: rooms.size, lb: true, lbStore: KV ? 'kv' : 'file' });
   if (url.pathname === '/lb' && req.method === 'GET') return send(res, 200, { week: LB.week, top: lbTop(+url.searchParams.get('n') || 25), riders: Object.keys(LB.riders).length });
   if (url.pathname === '/lb' && req.method === 'POST') {
     if (limited(ip)) return send(res, 429, { error: 'slow down' });
